@@ -115,3 +115,5 @@ result/
 *.tmp
 *.swp
 *.orig
+
+*.lscache
