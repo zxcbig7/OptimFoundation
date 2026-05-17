@@ -1,6 +1,6 @@
 # Merge Decisions — OptimFoundation Solver Abstraction
 
-Spec: [specs/2026-05-14-solver-abstraction-merge.md](specs/2026-05-14-solver-abstraction-merge.md)
+Spec: [2026-05-14-solver-abstraction-merge.md](2026-05-14-solver-abstraction-merge.md)
 狀態：stub 階段完成，逐層搬入中。
 
 ## 檔案來源對照表
