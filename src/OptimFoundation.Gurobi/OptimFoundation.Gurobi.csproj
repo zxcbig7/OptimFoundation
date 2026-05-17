@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>OptimFoundation.Gurobi</AssemblyName>
+    <RootNamespace>OptimFoundation.Gurobi</RootNamespace>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <!--
+    Gurobi 安裝後會設定 GUROBI_HOME 環境變數（例如 C:\gurobi1100\win64）。
+    DLL 存在時自動加入 GUROBI_INSTALLED define，啟用 GurobiEngine.cs 的完整實作。
+    不安裝 Gurobi 時保持 stub，solution 依舊可編譯。
+  -->
+  <PropertyGroup Condition="Exists('$(GUROBI_HOME)\bin\Gurobi110.NET.dll')">
+    <DefineConstants>$(DefineConstants);GUROBI_INSTALLED</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Gurobi110.NET"
+               Condition="Exists('$(GUROBI_HOME)\bin\Gurobi110.NET.dll')">
+      <HintPath>$(GUROBI_HOME)\bin\Gurobi110.NET.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <ProjectReference Include="..\OptimFoundation.Core\OptimFoundation.Core.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>OptimFoundation.Db</AssemblyName>
+    <RootNamespace>OptimFoundation.Db</RootNamespace>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Oracle.ManagedDataAccess" Version="21.11.0" />
+    <ProjectReference Include="..\OptimFoundation.Core\OptimFoundation.Core.csproj" />
+  </ItemGroup>
+</Project>

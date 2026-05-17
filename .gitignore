@@ -1,0 +1,117 @@
+############################################
+# OS / Editor
+############################################
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
+
+############################################
+# Visual Studio
+############################################
+
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+############################################
+# Build output
+############################################
+
+bin/
+obj/
+out/
+publish/
+
+############################################
+# .NET / ASP.NET Core
+############################################
+
+# App secrets
+appsettings.Development.json
+appsettings.Local.json
+
+# Logs
+logs/
+*.log
+
+# ASP.NET HTTPS dev cert
+aspnetcore-https.json
+
+############################################
+# NuGet
+############################################
+
+# NuGet packages (通常不建議 commit)
+packages/
+*.nupkg
+.nuget/
+
+############################################
+# Test results
+############################################
+
+TestResults/
+*.trx
+coverage/
+coverage.cobertura.xml
+
+############################################
+# Docker
+############################################
+
+# Docker local override
+docker-compose.override.yml
+
+# Docker volumes (如果有 bind mount)
+docker-data/
+docker-volumes/
+
+############################################
+# Optimization / Solver (CPLEX / Gurobi)
+############################################
+
+# Solver logs
+*.lp
+*.mps
+*.sav
+*.sol
+*.mst
+
+# Gurobi / CPLEX log
+gurobi.log
+cplex.log
+
+# Solver temp
+tmp/
+temp/
+
+############################################
+# Generated / Runtime files
+############################################
+
+# Runtime output
+runtime/
+output/
+result/
+
+############################################
+# Misc
+############################################
+
+# Backup files
+*.bak
+*.tmp
+*.swp
+*.orig

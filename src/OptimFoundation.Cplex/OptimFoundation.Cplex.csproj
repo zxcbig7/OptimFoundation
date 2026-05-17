@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>OptimFoundation.Cplex</AssemblyName>
+    <RootNamespace>OptimFoundation.Cplex</RootNamespace>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- CPLEX DLL 路徑：依實際安裝位置調整 -->
+    <Reference Include="ILOG.Concert">
+      <HintPath>..\..\..\..\..\..\..\IBM\ILOG\CPLEX_Studio2211\cplex\bin\x64_win64\ILOG.Concert.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="ILOG.CPLEX">
+      <HintPath>..\..\..\..\..\..\..\IBM\ILOG\CPLEX_Studio2211\cplex\bin\x64_win64\ILOG.CPLEX.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <ProjectReference Include="..\OptimFoundation.Core\OptimFoundation.Core.csproj" />
+  </ItemGroup>
+</Project>
