@@ -39,6 +39,7 @@ namespace OptimFoundation.Core
         //   GetObjectiveValue / GetVariableValue / Dispose
         //
         // 可選 override 的 virtual 方法（EngineBase 有 default 實作）：
+        //   AddVariables   — 批次建立變數（solver override 用原生 batch API 提升效能）
         //   BuildCVs / BuildIVs / BuildBVs — 批次建立變數，寫入 VariableSets
         //   CreateLeSoft / CreateGeSoft / CreateEqSoft — 軟性限制式（penalty 法）
         // ════════════════════════════════════════════════════════════════
@@ -62,75 +63,46 @@ namespace OptimFoundation.Core
 
         #region VariableManager — 批次建立變數
 
-        public virtual void BuildCVs<ElementClass>(params object[] sets)
+        /// <summary>
+        /// 批次建立變數並寫入 Variables dict。
+        /// Default：逐筆呼叫 AddVariable。
+        /// Solver override 此方法可使用原生 array API（CPLEX NumVarArray / Gurobi AddVars）
+        /// 大幅減少 .NET ↔ native interop 次數。
+        /// </summary>
+        protected virtual void AddVariables(IReadOnlyList<string> names, double lb, double ub, VarType type)
+        {
+            foreach (var name in names)
+                AddVariable(name, lb, ub, type);
+        }
+
+        private void BatchBuild<ElementClass>(double lb, double ub, VarType type, object[] sets)
         {
             string setName = typeof(ElementClass).Name;
             if (!VariableSets.ContainsKey(setName))
                 VariableSets[setName] = new Dictionary<string, TVar>();
 
-            VariableBuilder.BuildVars<ElementClass>(instance =>
-            {
-                string varName = instance.ToString();
-                var v = AddVariable(varName, 0, 1E100, VarType.Continuous);
-                VariableSets[setName][varName] = v;
-            }, sets);
+            var names = VariableBuilder.GetVarNames<ElementClass>(sets).ToList();
+            AddVariables(names, lb, ub, type);
+
+            var varSet = VariableSets[setName];
+            foreach (var name in names)
+                varSet[name] = Variables[name];
         }
+
+        public virtual void BuildCVs<ElementClass>(params object[] sets)
+            => BatchBuild<ElementClass>(0, 1E100, VarType.Continuous, sets);
 
         public virtual void BuildCVs<ElementClass>(double lb, double ub, params object[] sets)
-        {
-            string setName = typeof(ElementClass).Name;
-            if (!VariableSets.ContainsKey(setName))
-                VariableSets[setName] = new Dictionary<string, TVar>();
-
-            VariableBuilder.BuildVars<ElementClass>(instance =>
-            {
-                string varName = instance.ToString();
-                var v = AddVariable(varName, lb, ub, VarType.Continuous);
-                VariableSets[setName][varName] = v;
-            }, sets);
-        }
+            => BatchBuild<ElementClass>(lb, ub, VarType.Continuous, sets);
 
         public virtual void BuildIVs<ElementClass>(params object[] sets)
-        {
-            string setName = typeof(ElementClass).Name;
-            if (!VariableSets.ContainsKey(setName))
-                VariableSets[setName] = new Dictionary<string, TVar>();
-
-            VariableBuilder.BuildVars<ElementClass>(instance =>
-            {
-                string varName = instance.ToString();
-                var v = AddVariable(varName, 0, 1E100, VarType.Integer);
-                VariableSets[setName][varName] = v;
-            }, sets);
-        }
+            => BatchBuild<ElementClass>(0, 1E100, VarType.Integer, sets);
 
         public virtual void BuildIVs<ElementClass>(double lb, double ub, params object[] sets)
-        {
-            string setName = typeof(ElementClass).Name;
-            if (!VariableSets.ContainsKey(setName))
-                VariableSets[setName] = new Dictionary<string, TVar>();
-
-            VariableBuilder.BuildVars<ElementClass>(instance =>
-            {
-                string varName = instance.ToString();
-                var v = AddVariable(varName, lb, ub, VarType.Integer);
-                VariableSets[setName][varName] = v;
-            }, sets);
-        }
+            => BatchBuild<ElementClass>(lb, ub, VarType.Integer, sets);
 
         public virtual void BuildBVs<ElementClass>(params object[] sets)
-        {
-            string setName = typeof(ElementClass).Name;
-            if (!VariableSets.ContainsKey(setName))
-                VariableSets[setName] = new Dictionary<string, TVar>();
-
-            VariableBuilder.BuildVars<ElementClass>(instance =>
-            {
-                string varName = instance.ToString();
-                var v = AddVariable(varName, 0, 1, VarType.Binary);
-                VariableSets[setName][varName] = v;
-            }, sets);
-        }
+            => BatchBuild<ElementClass>(0, 1, VarType.Binary, sets);
 
         #endregion
 

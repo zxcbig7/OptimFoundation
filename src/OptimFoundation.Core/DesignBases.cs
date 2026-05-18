@@ -9,6 +9,13 @@ namespace OptimFoundation.Core
         protected string ElemName => ElemType.Name;
         protected PropertyInfo[] ElemProperties => ElemType.GetProperties();
 
+        protected ModelElementBase() { }
+
+        protected ModelElementBase(params object[] sets)
+        {
+            InitClassBySets(sets);
+        }
+
         public void InitClassBySets(params object[] sets)
         {
             var props = ElemProperties;

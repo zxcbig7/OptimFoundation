@@ -283,6 +283,34 @@ namespace OptimFoundation.Cplex
             return v;
         }
 
+        protected override void AddVariables(IReadOnlyList<string> names, double lb, double ub, VarType type)
+        {
+            int n = names.Count;
+            var lbs = new double[n];
+            var ubs = new double[n];
+            var types = new NumVarType[n];
+            var nameArr = new string[n];
+
+            NumVarType cplexType = type switch
+            {
+                VarType.Integer => NumVarType.Int,
+                VarType.Binary  => NumVarType.Bool,
+                _               => NumVarType.Float
+            };
+
+            for (int i = 0; i < n; i++)
+            {
+                lbs[i]     = lb;
+                ubs[i]     = ub;
+                types[i]   = cplexType;
+                nameArr[i] = names[i];
+            }
+
+            INumVar[] vars = Model.NumVarArray(n, lbs, ubs, types, nameArr);
+            for (int i = 0; i < n; i++)
+                Variables[nameArr[i]] = vars[i];
+        }
+
         protected override ILinearNumExpr LinearExpr(IEnumerable<(double coef, INumVar var)> terms)
         {
             var expr = Model.LinearNumExpr();

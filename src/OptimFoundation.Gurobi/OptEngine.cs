@@ -107,6 +107,36 @@ namespace OptimFoundation.Gurobi
             return v;
         }
 
+        protected override void AddVariables(IReadOnlyList<string> names, double lb, double ub, VarType type)
+        {
+            int n = names.Count;
+            var lbs     = new double[n];
+            var ubs     = new double[n];
+            var objs    = new double[n];
+            var types   = new char[n];
+            var nameArr = new string[n];
+
+            char grbType = type switch
+            {
+                VarType.Integer => GRB.INTEGER,
+                VarType.Binary  => GRB.BINARY,
+                _               => GRB.CONTINUOUS
+            };
+
+            for (int i = 0; i < n; i++)
+            {
+                lbs[i]     = lb;
+                ubs[i]     = ub;
+                types[i]   = grbType;
+                nameArr[i] = names[i];
+            }
+
+            GRBVar[] vars = Model.AddVars(lbs, ubs, objs, types, nameArr);
+            Model.Update();
+            for (int i = 0; i < n; i++)
+                Variables[nameArr[i]] = vars[i];
+        }
+
         protected override GRBLinExpr LinearExpr(IEnumerable<(double coef, GRBVar var)> terms)
         {
             var expr = new GRBLinExpr();
