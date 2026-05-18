@@ -30,6 +30,70 @@ namespace OptimFoundation.Gurobi
 
         #region EngineBase 抽象方法實作
 
+        public override void Configuration(ISolverConfig config)
+        {
+            var cfg = config as GurobiConfig;
+            _env = new GRBEnv();
+
+            if (cfg != null)
+            {
+                if (cfg.LicenseId.HasValue)
+                    _env.Set(GRB.IntParam.LicenseID, cfg.LicenseId.Value);
+                if (!string.IsNullOrEmpty(cfg.WlsAccessId))
+                    _env.Set(GRB.StringParam.WLSAccessID, cfg.WlsAccessId);
+                if (!string.IsNullOrEmpty(cfg.WlsSecret))
+                    _env.Set(GRB.StringParam.WLSSecret, cfg.WlsSecret);
+            }
+
+            if (!config.LogToConsole)
+                _env.Set(GRB.IntParam.OutputFlag, 0);
+
+            if (!string.IsNullOrEmpty(config.LogFilePath))
+                _env.Set(GRB.StringParam.LogFile, config.LogFilePath);
+
+            Model = new GRBModel(_env);
+
+            if (config.TimeLimit.HasValue)
+                Model.Set(GRB.DoubleParam.TimeLimit, config.TimeLimit.Value);
+            if (config.MipGap.HasValue)
+                Model.Set(GRB.DoubleParam.MIPGap, config.MipGap.Value);
+            if (config.Threads.HasValue)
+                Model.Set(GRB.IntParam.Threads, config.Threads.Value);
+
+            if (cfg != null)
+            {
+                if (cfg.Method.HasValue)
+                    Model.Set(GRB.IntParam.Method, cfg.Method.Value);
+                if (cfg.Presolve.HasValue)
+                    Model.Set(GRB.IntParam.Presolve, cfg.Presolve.Value);
+                if (cfg.MipFocus.HasValue)
+                    Model.Set(GRB.IntParam.MIPFocus, cfg.MipFocus.Value);
+                if (cfg.Seed.HasValue)
+                    Model.Set(GRB.IntParam.Seed, cfg.Seed.Value);
+                if (cfg.FeasibilityTol.HasValue)
+                    Model.Set(GRB.DoubleParam.FeasibilityTol, cfg.FeasibilityTol.Value);
+                if (cfg.OptimalityTol.HasValue)
+                    Model.Set(GRB.DoubleParam.OptimalityTol, cfg.OptimalityTol.Value);
+                if (cfg.Heuristics.HasValue)
+                    Model.Set(GRB.DoubleParam.Heuristics, cfg.Heuristics.Value);
+                if (cfg.SoftMemLimit.HasValue)
+                    Model.Set(GRB.DoubleParam.SoftMemLimit, cfg.SoftMemLimit.Value);
+
+                _exportLp  = cfg.ExportLp;
+                _exportMps = cfg.ExportMps;
+                _exportSol = cfg.ExportSol;
+
+                if (cfg.ExportLp || cfg.ExportSol)
+                {
+                    FolderDir.Model.CreateFolder();
+                    FolderDir.Sol.CreateFolder();
+                    FolderDir.IIS.CreateFolder();
+                }
+                if (cfg.ExportMps)
+                    FolderDir.Model.CreateFolder();
+            }
+        }
+
         protected override GRBVar AddVariable(string name, double lb, double ub, VarType type)
         {
             char grbType = type switch
@@ -71,80 +135,25 @@ namespace OptimFoundation.Gurobi
             Model.SetObjective(expr, grb);
         }
 
+        protected override void SetVariableBounds(GRBVar variable, double? lb, double? ub)
+        {
+            if (lb.HasValue) variable.LB = lb.Value;
+            if (ub.HasValue) variable.UB = ub.Value;
+        }
+
         #endregion
 
         #region ISolverEngine 實作
 
-        public override void Build()
-        {
-            var cfg = Config as GurobiConfig;
-            _env = new GRBEnv();
-
-            if (cfg != null)
-            {
-                if (cfg.LicenseId.HasValue)
-                    _env.Set(GRB.IntParam.LicenseID, cfg.LicenseId.Value);
-                if (!string.IsNullOrEmpty(cfg.WlsAccessId))
-                    _env.Set(GRB.StringParam.WLSAccessID, cfg.WlsAccessId);
-                if (!string.IsNullOrEmpty(cfg.WlsSecret))
-                    _env.Set(GRB.StringParam.WLSSecret, cfg.WlsSecret);
-            }
-
-            if (!Config.LogToConsole)
-                _env.Set(GRB.IntParam.OutputFlag, 0);
-
-            if (!string.IsNullOrEmpty(Config.LogFilePath))
-                _env.Set(GRB.StringParam.LogFile, Config.LogFilePath);
-
-            Model = new GRBModel(_env);
-
-            if (Config.TimeLimit.HasValue)
-                Model.Set(GRB.DoubleParam.TimeLimit, Config.TimeLimit.Value);
-            if (Config.MipGap.HasValue)
-                Model.Set(GRB.DoubleParam.MIPGap, Config.MipGap.Value);
-            if (Config.Threads.HasValue)
-                Model.Set(GRB.IntParam.Threads, Config.Threads.Value);
-
-            if (cfg != null)
-            {
-                if (cfg.Method.HasValue)
-                    Model.Set(GRB.IntParam.Method, cfg.Method.Value);
-                if (cfg.Presolve.HasValue)
-                    Model.Set(GRB.IntParam.Presolve, cfg.Presolve.Value);
-                if (cfg.MipFocus.HasValue)
-                    Model.Set(GRB.IntParam.MIPFocus, cfg.MipFocus.Value);
-                if (cfg.Seed.HasValue)
-                    Model.Set(GRB.IntParam.Seed, cfg.Seed.Value);
-                if (cfg.FeasibilityTol.HasValue)
-                    Model.Set(GRB.DoubleParam.FeasibilityTol, cfg.FeasibilityTol.Value);
-                if (cfg.OptimalityTol.HasValue)
-                    Model.Set(GRB.DoubleParam.OptimalityTol, cfg.OptimalityTol.Value);
-                if (cfg.Heuristics.HasValue)
-                    Model.Set(GRB.DoubleParam.Heuristics, cfg.Heuristics.Value);
-                if (cfg.SoftMemLimit.HasValue)
-                    Model.Set(GRB.DoubleParam.SoftMemLimit, cfg.SoftMemLimit.Value);
-
-                _exportLp = cfg.ExportLp;
-                _exportMps = cfg.ExportMps;
-                _exportSol = cfg.ExportSol;
-
-                if (cfg.ExportLp || cfg.ExportSol)
-                {
-                    FolderDir.LP.CreateFolder();
-                    FolderDir.Sol.CreateFolder();
-                    FolderDir.IIS.CreateFolder();
-                }
-                if (cfg.ExportMps)
-                    FolderDir.Model.CreateFolder();
-            }
-        }
+        public override void Build() => Configuration(Config);
 
         public override bool Solve()
         {
             string proj = (Config as GurobiConfig)?.ProjectName ?? "Project";
 
             if (_exportLp)
-                Model.Write(FolderDir.LP.GetFilePath($"{proj}_LP_{_startTime}.lp"));
+                Model.Write(FolderDir.Model.GetFilePath($"{proj}_LP_{_startTime}.lp"));
+
             if (_exportMps)
                 Model.Write(FolderDir.Model.GetFilePath($"{proj}_MPS_{_startTime}.mps"));
 
@@ -217,6 +226,13 @@ namespace OptimFoundation.Gurobi
         protected void Minimize(GRBLinExpr expr) => SetObjective(expr, ObjectiveSense.Minimize);
         protected void Maximize(GRBLinExpr expr) => SetObjective(expr, ObjectiveSense.Maximize);
 
+        protected override GRBConstr AddRangeConstraint(string name, GRBLinExpr expr, double lb, double ub)
+        {
+            var c = Model.AddRange(expr, lb, ub, name);
+            _constraints.Add(c);
+            return c;
+        }
+
         #endregion
 
         #region Pool 模式（方便動態組裝表達式）
@@ -228,7 +244,8 @@ namespace OptimFoundation.Gurobi
         private double _lhsConst;
         private double _rhsConst;
 
-        protected bool HasPool => _lhsVars.Count > 0 || _rhsVars.Count > 0;
+        [Obsolete("Use HasPool from EngineBase Pool instead")]
+        protected new bool HasPool => _lhsVars.Count > 0 || _rhsVars.Count > 0;
 
         protected GRBLinExpr LhsExpr
         {
@@ -258,36 +275,45 @@ namespace OptimFoundation.Gurobi
             }
         }
 
+        [Obsolete("Use AddLHS(double coeff, object varSpec) from EngineBase Pool instead")]
         protected void AddLhs(GRBVar v, double coef = 1.0) { _lhsVars.Add(v); _lhsCoefs.Add(coef); }
+        [Obsolete("Use AddLHS(double constant) from EngineBase Pool instead")]
         protected void AddLhs(double constant) => _lhsConst += constant;
+        [Obsolete("Use AddRHS(double coeff, object varSpec) from EngineBase Pool instead")]
         protected void AddRhs(GRBVar v, double coef = 1.0) { _rhsVars.Add(v); _rhsCoefs.Add(coef); }
+        [Obsolete("Use AddRHS(double constant) from EngineBase Pool instead")]
         protected void AddRhs(double constant) => _rhsConst += constant;
 
-        protected void ClearPool()
+        [Obsolete("Use ClearPool() from EngineBase Pool instead")]
+        protected new void ClearPool()
         {
             _lhsVars.Clear(); _lhsCoefs.Clear();
             _rhsVars.Clear(); _rhsCoefs.Clear();
             _lhsConst = 0; _rhsConst = 0;
         }
 
+        [Obsolete("Use CreateLessEqual(string name) from EngineBase Pool instead")]
         protected GRBConstr CommitLE(string name)
         {
             var c = Model.AddConstr(LhsExpr, GRB.LESS_EQUAL, RhsExpr, name);
             _constraints.Add(c); ClearPool(); return c;
         }
 
+        [Obsolete("Use CreateGreatEqual(string name) from EngineBase Pool instead")]
         protected GRBConstr CommitGE(string name)
         {
             var c = Model.AddConstr(LhsExpr, GRB.GREATER_EQUAL, RhsExpr, name);
             _constraints.Add(c); ClearPool(); return c;
         }
 
+        [Obsolete("Use CreateEqual(string name) from EngineBase Pool instead")]
         protected GRBConstr CommitEQ(string name)
         {
             var c = Model.AddConstr(LhsExpr, GRB.EQUAL, RhsExpr, name);
             _constraints.Add(c); ClearPool(); return c;
         }
 
+        [Obsolete("Use CreateRange(double lb, double ub, string name) from EngineBase Pool instead")]
         protected GRBConstr CommitRange(double lb, double ub, string name)
         {
             var c = Model.AddRange(LhsExpr, lb, ub, name);
@@ -299,7 +325,7 @@ namespace OptimFoundation.Gurobi
         #region 軟性限制式
 
         /// <summary>將 LHS &lt;= RHS 轉為 penalty 項加入目標式。</summary>
-        protected bool CreateLeSoft(double rhs, double penalty)
+        public override bool CreateLeSoft(double rhs, double penalty)
         {
             if (!HasPool) return false;
             int sense = Model.ModelSense;
@@ -311,7 +337,7 @@ namespace OptimFoundation.Gurobi
         }
 
         /// <summary>將 LHS &gt;= RHS 轉為 penalty 項加入目標式。</summary>
-        protected bool CreateGeSoft(double rhs, double penalty)
+        public override bool CreateGeSoft(double rhs, double penalty)
         {
             if (!HasPool) return false;
             int sense = Model.ModelSense;
@@ -323,7 +349,7 @@ namespace OptimFoundation.Gurobi
         }
 
         /// <summary>將 LHS == rhs 以雙向 delta 鬆弛加入目標式。</summary>
-        protected bool CreateEqSoft(double rhs, double penalty, string name)
+        public override bool CreateEqSoft(double rhs, double penalty, string name)
         {
             if (!HasPool) return false;
             int sense = Model.ModelSense;
@@ -358,7 +384,16 @@ namespace OptimFoundation.Gurobi
         protected override object AddConstraint(string name, object lhs, ConstraintSense sense, double rhs)
             => throw new NotSupportedException("Gurobi DLL 未安裝");
 
+        protected override object AddRangeConstraint(string name, object expr, double lb, double ub)
+            => throw new NotSupportedException("Gurobi DLL 未安裝");
+
         protected override void SetObjective(object expr, ObjectiveSense sense)
+            => throw new NotSupportedException("Gurobi DLL 未安裝");
+
+        protected override void SetVariableBounds(object variable, double? lb, double? ub)
+            => throw new NotSupportedException("Gurobi DLL 未安裝");
+
+        public override void Configuration(ISolverConfig config)
             => throw new NotSupportedException("Gurobi DLL 未安裝");
 
         public override void Build()           => throw new NotSupportedException("Gurobi DLL 未安裝");

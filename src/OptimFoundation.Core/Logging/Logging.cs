@@ -18,6 +18,7 @@ namespace OptimFoundation.Core
             lock (_lock)
             {
                 Console.WriteLine(line);
+                Directory.CreateDirectory(_logDir);
                 File.AppendAllText(_logFile, line + Environment.NewLine);
             }
         }

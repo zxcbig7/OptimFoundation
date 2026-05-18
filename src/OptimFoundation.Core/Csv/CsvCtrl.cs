@@ -91,8 +91,8 @@ namespace OptimFoundation.Core
         public static void SaveSolutionToCSV<T>(ISolverEngine engine, string dataId, string userId)
         {
             var classInfo = new ClassInfo(typeof(T));
-            FolderDir.Result.TryCreateFile($"{classInfo.TypeName}.csv");
-            string file = FolderDir.Result.GetFilePath($"{classInfo.TypeName}.csv");
+            FolderDir.Solution.TryCreateFile($"{classInfo.TypeName}.csv");
+            string file = FolderDir.Solution.GetFilePath($"{classInfo.TypeName}.csv");
             var sol = engine.GetSolution(classInfo.TypeName);
 
             using var sw = new StreamWriter(file);

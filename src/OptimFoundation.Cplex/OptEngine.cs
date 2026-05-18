@@ -1,20 +1,272 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using ILOG.Concert;
 using ILOG.CPLEX;
 using OptimFoundation.Core;
+using static ILOG.CPLEX.Cplex;
 
 namespace OptimFoundation.Cplex
 {
     /// <summary>
     /// CPLEX 求解器引擎。
-    /// 使用方式：繼承本類別並覆寫 Build()，在 Build() 內呼叫
-    /// AddVariable / LinearExpr / AddConstraint / SetObjective 定義模型，
-    /// 然後呼叫 base.Build() 初始化求解器後繼續定義。
+    /// 使用方式：繼承本類別並覆寫 Build()，在 Build() 內呼叫 base.Build() 初始化模型，
+    /// 再呼叫 AddVariable / LinearExpr / AddConstraint / SetObjective 定義模型。
+    /// 批次建立變數使用 BuildCVs / BuildIVs / BuildBVs，透過 ReadVar 存取。
     /// </summary>
     public class OptEngine : EngineBase<ILOG.CPLEX.Cplex, INumVar, ILinearNumExpr, IRange>
     {
+        private string _modelName;
+        private bool _exportLp;
+        private bool _exportMps;
+        private bool _exportSol;
+        private bool _enableLog;
+        private readonly List<IRange> _constraints = new List<IRange>();
+        private readonly string _startTime = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+
         public OptEngine(CplexConfig config) : base(config) { }
+        public OptEngine() : base(new CplexConfig()) { }
+
+        #region Configuration
+
+        public override void Configuration(ISolverConfig cfg)
+        {
+
+            Model = new ILOG.CPLEX.Cplex();
+            _constraints.Clear();
+            CplexConfig config = cfg as CplexConfig;
+
+            #region 設定執行緒上限
+            // CPLEX求解設定 - 工作執行緒上限 (預設: 32)
+            if (config.workThreads.HasValue)
+            {
+                Model.SetParam(IntParam.Threads, config.workThreads.Value);
+            }
+            #endregion
+
+            #region 設定限制式上限
+            // CPLEX求解設定 - 限制式上限 (預設: 30,000)
+            if (config.rowRead.HasValue)
+            {
+                Model.SetParam(IntParam.RowReadLim, config.rowRead.Value);
+            }
+            #endregion
+
+            #region 設定工作記憶體上限
+            // CPLEX求解設定 - 工作記憶體上限: 2 GB (預設)
+            // (double)(workMemory.Value / 1024), 1) GB
+            if (config.workMemory.HasValue)
+            {
+                Model.SetParam(IntParam.WorkMem, config.workMemory.Value);
+                Model.SetParam(IntParam.NodeFileInd, 0);
+            }
+            #endregion
+
+            #region 設定求解下限
+            // CPLEX求解設定 - 求解下限: epGap.Value * 100 % (預設: 1e-4 %)
+            if (config.epGap.HasValue)
+            {
+                Model.SetParam(DoubleParam.EpGap, config.epGap.Value);
+            }
+            #endregion
+
+            #region node 選擇策略
+            // CPLEX求解設定 - node選擇策略: (預設)
+            if (config.nodeSelect.HasValue)
+            {
+                Model.SetParam(Param.MIP.Strategy.NodeSelect, config.nodeSelect.Value);
+            }
+            #endregion
+
+            #region 設定 Random Seed
+            // CPLEX求解設定 - 隨機種子 (預設: 0)
+            if (config.randomSeed.HasValue)
+            {
+                Model.SetParam(Param.RandomSeed, config.randomSeed.Value);
+            }
+            #endregion
+
+            #region 是否紀錄LOG
+            if (config.enableLog == true)
+            {
+                _enableLog = true;
+                Logging.Info($"[Environment Setting] Enabled Solver Log File Output");
+            }
+            #endregion
+
+            #region 是否輸出 LP 檔案
+            if (config.exportLP == true)
+            {
+                _exportLp = true;
+                Logging.Info($"[Environment Setting] Enabled LP File (.lp) Output");
+            }
+            #endregion
+
+            #region 是否輸出 Model 檔案
+            if (config.exportMPS == true)
+            {
+                _exportMps = true;
+                Logging.Info($"[Environment Setting] Enabled Model File (.mps) Output");
+            }
+            #endregion
+
+            #region 是否輸出 sol 檔案
+            if (config.exportSol == true)
+            {
+                _exportSol = true;
+                Logging.Info($"[Environment Setting] Enabled Solution File (.sol) Output");
+            }
+            #endregion
+
+            if (_exportLp || _exportSol)
+            {
+                FolderDir.Model.CreateFolder();
+                FolderDir.Sol.CreateFolder();
+                FolderDir.IIS.CreateFolder();
+            }
+            if (_exportMps)
+                FolderDir.Model.CreateFolder();
+
+            #region 設定容忍區間(Optimality tolerance)
+            // "CPLEX求解設定 - Optimality tolerance (預設: 1e-06 )
+            if (config.epOpt.HasValue)
+            {
+                Model.SetParam(DoubleParam.EpOpt, config.epOpt.Value);
+            }
+            #endregion
+
+            #region 設定容忍區間(Feasibility tolerance)
+            // CPLEX求解設定 - Feasibility tolerance (預設: 1e-06)
+            if (config.epRHS.HasValue)
+            {
+                Model.SetParam(DoubleParam.EpRHS, config.epRHS.Value);
+            }
+            #endregion
+
+            #region 設定逾時秒數
+            // CPLEX求解設定 - 逾時秒數: (預設: 無限制)
+            if (config.timeLimit.HasValue)
+            {
+                Model.SetParam(DoubleParam.TiLim, config.timeLimit.Value);
+            }
+            #endregion
+
+            #region 設定 Solution Polishing 秒數
+            // CPLEX求解設定 - Solution Polishing秒數: (預設: 無)
+            if (config.polishAfterTime.HasValue)
+            {
+                Model.SetParam(DoubleParam.PolishAfterTime, config.polishAfterTime.Value);
+            }
+            #endregion
+
+            #region 設定解析模式
+            // CPLEX求解設定 - 解析模式: 平衡最佳可行解 (預設)
+            if (config.mipEmphasis.HasValue)
+            {
+                Model.SetParam(IntParam.MIPEmphasis, config.mipEmphasis.Value);
+
+                string mipEmphasisDescription = config.mipEmphasis.Value switch
+                {
+                    1 => "強調可行解優於最佳解",
+                    2 => "強調最佳解優於可行解",
+                    3 => "強調路徑的最佳解",
+                    4 => "強調尋找隱藏可行解",
+                    _ => "平衡最佳可行解 (預設)"
+                };
+                Logging.Info($"[Environment Setting] MIPEmphasis={config.mipEmphasis.Value} ({mipEmphasisDescription})");
+            }
+            #endregion
+
+            #region 設定分支模式
+            // CPLEX求解設定 - 分支模式: 自動選擇變數分支 (預設)
+            if (config.varSel.HasValue)
+            {
+                Model.SetParam(IntParam.VarSel, config.varSel.Value);
+
+                string varSelDescription = config.varSel.Value switch
+                {
+                    -1 => "以最小可行解選擇變數分支",
+                     1 => "以最大可行解選擇變數分支",
+                     2 => "以假定成本選擇分支",
+                     3 => "強分支",
+                     4 => "以假定降低成本選擇分支",
+                     _ => "自動選擇變數分支 (預設)"
+                };
+                Logging.Info($"[Environment Setting] VarSel={config.varSel.Value} ({varSelDescription})");
+            }
+            #endregion
+
+            #region 設定演算法
+            // CPLEX求解設定 - 演算法: 自動選擇 (預設)
+            if (config.algorithm.HasValue)
+            {
+                Model.SetParam(IntParam.RootAlgorithm, config.algorithm.Value);
+
+                string algorithmDescription = string.Empty;
+                switch (config.algorithm.Value)
+                {
+                    case 1:
+                        algorithmDescription = "基本演算法";
+                        break;
+                    case 2:
+                        algorithmDescription = "對偶演算法";
+                        break;
+                    case 3:
+                        algorithmDescription = "網路演算法";
+                        break;
+                    case 4:
+                        algorithmDescription = "屏障演算法";
+                        break;
+                    case 5:
+                        algorithmDescription = "過濾演算法";
+                        break;
+                    case 6:
+                        algorithmDescription = "混合式演算法";
+                        break;
+                    default:
+                        algorithmDescription = "自動選擇 (預設)";
+                        break;
+                }
+            }
+            #endregion
+
+            #region 設定節點資訊儲存模式
+            // CPLEX求解設定 - 節點資訊: 節點資訊壓縮存放於記憶體 (預設)
+            if (config.nodeFileInd.HasValue)
+            {
+                Model.SetParam(IntParam.NodeFileInd, config.nodeFileInd.Value);
+
+                string nodeFileIndDescription = string.Empty;
+                switch (config.nodeFileInd.Value)
+                {
+                    case 0:
+                        nodeFileIndDescription = "不儲存節點資訊";
+                        break;
+                    case 2:
+                        nodeFileIndDescription = "節點資訊存放於磁碟機";
+                        break;
+                    case 3:
+                        nodeFileIndDescription = "節點資訊壓縮存放於磁碟機";
+                        break;
+                    default:
+                        nodeFileIndDescription = "節點資訊壓縮存放於記憶體 (預設)";
+                        break;
+                }
+            }
+            #endregion
+
+        }
+
+
+        public void SetModelName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentException("Model name cannot be null or whitespace.", nameof(name));
+            _modelName = name;
+        }
+
+        #endregion
 
         #region EngineBase 抽象方法實作
 
@@ -23,8 +275,8 @@ namespace OptimFoundation.Cplex
             NumVarType cplexType = type switch
             {
                 VarType.Integer => NumVarType.Int,
-                VarType.Binary  => NumVarType.Bool,
-                _               => NumVarType.Float
+                VarType.Binary => NumVarType.Bool,
+                _ => NumVarType.Float
             };
             var v = Model.NumVar(lb, ub, cplexType, name);
             Variables[name] = v;
@@ -43,12 +295,21 @@ namespace OptimFoundation.Cplex
         {
             IRange r = sense switch
             {
-                ConstraintSense.LessEqual    => Model.AddLe(lhs, rhs),
-                ConstraintSense.Equal        => Model.AddEq(lhs, rhs),
+                ConstraintSense.LessEqual => Model.AddLe(lhs, rhs),
+                ConstraintSense.Equal => Model.AddEq(lhs, rhs),
                 ConstraintSense.GreaterEqual => Model.AddGe(lhs, rhs),
                 _ => throw new ArgumentOutOfRangeException(nameof(sense))
             };
             r.Name = name;
+            _constraints.Add(r);
+            return r;
+        }
+
+        protected override IRange AddRangeConstraint(string name, ILinearNumExpr expr, double lb, double ub)
+        {
+            var r = Model.AddRange(lb, expr, ub);
+            r.Name = name;
+            _constraints.Add(r);
             return r;
         }
 
@@ -60,6 +321,12 @@ namespace OptimFoundation.Cplex
                 Model.AddMaximize(expr);
         }
 
+        protected override void SetVariableBounds(INumVar variable, double? lb, double? ub)
+        {
+            if (lb.HasValue) variable.LB = lb.Value;
+            if (ub.HasValue) variable.UB = ub.Value;
+        }
+
         #endregion
 
         #region ISolverEngine 實作
@@ -68,47 +335,56 @@ namespace OptimFoundation.Cplex
         /// 初始化 CPLEX 模型並套用 Config 參數。
         /// 子類別覆寫時必須先呼叫 base.Build()。
         /// </summary>
-        public override void Build()
+        public override void Build() => Configuration(Config);
+
+        protected void SetProjectName(string name)
         {
-            Model = new ILOG.CPLEX.Cplex();
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentException("Project name cannot be null or whitespace.", nameof(name));
 
-            var cfg = Config as CplexConfig;
-
-            if (!Config.LogToConsole)
-                Model.SetOut(null);
-
-            if (Config.TimeLimit.HasValue)
-                Model.SetParam(ILOG.CPLEX.Cplex.Param.TimeLimit, Config.TimeLimit.Value);
-
-            if (Config.MipGap.HasValue)
-                Model.SetParam(ILOG.CPLEX.Cplex.Param.MIP.Tolerances.MIPGap, Config.MipGap.Value);
-
-            if (Config.Threads.HasValue)
-                Model.SetParam(ILOG.CPLEX.Cplex.Param.Threads, Config.Threads.Value);
-
-            if (cfg != null)
-            {
-                if (cfg.RootAlgorithm.HasValue)
-                    Model.SetParam(ILOG.CPLEX.Cplex.Param.RootAlgorithm, cfg.RootAlgorithm.Value);
-
-                if (cfg.NodeAlgorithm.HasValue)
-                    Model.SetParam(ILOG.CPLEX.Cplex.Param.NodeAlgorithm, cfg.NodeAlgorithm.Value);
-            }
+            if (Config is CplexConfig cplexConfig)
+                _modelName = name;
         }
 
         public override bool Solve()
         {
-            bool solved = Model.Solve();
+            string proj = _modelName ?? "Project";
+
+            if (_exportLp)
+                Model.ExportModel(FolderDir.Model.GetFilePath($"{proj}_LP_{_startTime}.lp"));
+
+            if (_exportMps)
+                Model.ExportModel(FolderDir.Model.GetFilePath($"{proj}_MPS_{_startTime}.mps"));
+
+            Model.Solve();
 
             var s = Model.GetStatus();
-            if      (s == ILOG.CPLEX.Cplex.Status.Optimal)               Status = SolveStatus.Optimal;
-            else if (s == ILOG.CPLEX.Cplex.Status.Feasible)              Status = SolveStatus.Feasible;
-            else if (s == ILOG.CPLEX.Cplex.Status.Infeasible)            Status = SolveStatus.Infeasible;
+            if (s == ILOG.CPLEX.Cplex.Status.Optimal) Status = SolveStatus.Optimal;
+            else if (s == ILOG.CPLEX.Cplex.Status.Feasible) Status = SolveStatus.Feasible;
+            else if (s == ILOG.CPLEX.Cplex.Status.Infeasible) Status = SolveStatus.Infeasible;
             else if (s == ILOG.CPLEX.Cplex.Status.InfeasibleOrUnbounded) Status = SolveStatus.Infeasible;
-            else if (s == ILOG.CPLEX.Cplex.Status.Unbounded)             Status = SolveStatus.Unbounded;
-            else                                                         Status = SolveStatus.Error;
+            else if (s == ILOG.CPLEX.Cplex.Status.Unbounded) Status = SolveStatus.Unbounded;
+            else Status = SolveStatus.Error;
 
-            return solved;
+            bool ok = Status == SolveStatus.Optimal || Status == SolveStatus.Feasible;
+
+            if (ok && _exportSol)
+                Model.WriteSolution(FolderDir.Sol.GetFilePath($"{proj}_Solution_{_startTime}.sol"));
+
+            if (Status == SolveStatus.Infeasible && _constraints.Count > 0)
+            {
+                FolderDir.IIS.CreateFolder();
+                var prefs = Enumerable.Repeat(1.0, _constraints.Count).ToArray();
+                Model.RefineConflict(_constraints.ToArray(), prefs);
+                string iisPath = FolderDir.IIS.GetFilePath($"{proj}_IIS_{_startTime}.ilp");
+                Model.WriteConflict(iisPath);
+                Logging.Info($"[OptEngine] IIS written: {iisPath}");
+            }
+
+            if (ok)
+                Logging.Info($"[OptEngine] ObjVal={Model.GetObjValue()}  BestBound={Model.GetBestObjValue()}  MIPGap={Model.GetMIPRelativeGap()}");
+
+            return ok;
         }
 
         public override double GetObjectiveValue() => Model.GetObjValue();
@@ -143,6 +419,55 @@ namespace OptimFoundation.Cplex
 
         protected void Minimize(ILinearNumExpr expr) => SetObjective(expr, Core.ObjectiveSense.Minimize);
         protected void Maximize(ILinearNumExpr expr) => SetObjective(expr, Core.ObjectiveSense.Maximize);
+
+        #endregion
+
+        #region 軟性限制式
+
+        public override bool CreateLeSoft(double rhs, double penalty)
+        {
+            if (!HasPool) return false;
+            var obj = Model.GetObjective();
+            double p = obj.Sense == ILOG.Concert.ObjectiveSense.Maximize ? -penalty : penalty;
+            var objExpr = (ILinearNumExpr)obj.Expr;
+            foreach (var (coef, var) in PoolLhsTerms)
+                objExpr.AddTerm(p * coef, var);
+            ClearPool();
+            return true;
+        }
+
+        public override bool CreateGeSoft(double rhs, double penalty)
+        {
+            if (!HasPool) return false;
+            var obj = Model.GetObjective();
+            double p = obj.Sense == ILOG.Concert.ObjectiveSense.Minimize ? -penalty : penalty;
+            var objExpr = (ILinearNumExpr)obj.Expr;
+            foreach (var (coef, var) in PoolLhsTerms)
+                objExpr.AddTerm(p * coef, var);
+            ClearPool();
+            return true;
+        }
+
+        public override bool CreateEqSoft(double rhs, double penalty, string name)
+        {
+            if (!HasPool) return false;
+            var obj = Model.GetObjective();
+            double p = obj.Sense == ILOG.Concert.ObjectiveSense.Maximize ? -penalty : penalty;
+            var dn = Model.NumVar(0, double.MaxValue, NumVarType.Float, $"Delta_Neg_{name}");
+            var dp = Model.NumVar(0, double.MaxValue, NumVarType.Float, $"Delta_Pos_{name}");
+            var lhs = Model.LinearNumExpr();
+            foreach (var (coef, var) in PoolLhsTerms)
+                lhs.AddTerm(coef, var);
+            lhs.AddTerm(1.0, dn);
+            lhs.AddTerm(-1.0, dp);
+            var constr = Model.AddEq(lhs, rhs - PoolLhsConst);
+            constr.Name = name;
+            var objExpr = (ILinearNumExpr)obj.Expr;
+            objExpr.AddTerm(p, dn);
+            objExpr.AddTerm(p, dp);
+            ClearPool();
+            return true;
+        }
 
         #endregion
     }

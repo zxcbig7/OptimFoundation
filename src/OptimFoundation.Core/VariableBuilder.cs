@@ -4,13 +4,6 @@ using System.Linq;
 
 namespace OptimFoundation.Core
 {
-    public interface IVariableSet<TVar>
-    {
-        string SetVarName { get; }
-        int SetVarCount { get; }
-        Dictionary<string, TVar> SetVars { get; set; }
-    }
-
     public static class VariableBuilder
     {
         /// <summary>
@@ -23,7 +16,11 @@ namespace OptimFoundation.Core
                 result = result.SelectMany(_ => list, (prefix, item) => $"{prefix}@{item}");
             return result;
         }
-
+        /// <summary>
+        /// 將多個 Set 轉換為字串列表，以便生成變數名稱；支援 List<DateTime>, List<int>, List<double>, List<string>
+        /// </summary>
+        /// <param name="lists">要轉換的 Set 列表</param>
+        /// <returns>轉換後的字串Array</returns>
         public static List<string>[] ConvertSetsToStringLists(params object[] lists)
         {
             var result = new List<string>[lists.Length];
@@ -33,7 +30,7 @@ namespace OptimFoundation.Core
                 {
                     List<DateTime> dtList => dtList.Select(d => d.ToString("yyyy-MM-dd")).ToList(),
                     List<int> intList => intList.Select(n => n.ToString()).ToList(),
-                    List<double> doubleList => doubleList.Select(n => n.ToString("0.#########")).ToList(), // 避免科學記號
+                    List<double> doubleList => doubleList.Select(n => n.ToString("0.##########")).ToList(), // 避免科學記號(支援小數點後10位數)
                     List<string> stringList => stringList.ToList(),
                     _ => throw new ArgumentException($"Unsupported set type: {lists[i].GetType()}")
                 };

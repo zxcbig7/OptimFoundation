@@ -10,7 +10,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OptimFoundation.Cplex", "sr
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OptimFoundation.Gurobi", "src\OptimFoundation.Gurobi\OptimFoundation.Gurobi.csproj", "{D4D4D4D4-4444-4444-4444-444444444444}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RotationProblem", "..\Template_New\RotationProblem.csproj", "{F250A312-587C-42B9-8E44-175C61C4CBBB}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RosteringProblem", "..\Template_CPLEX\RosteringProblem.csproj", "{1C9F2DDC-D682-41F7-A7F5-71DC2075E2CB}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -34,10 +34,10 @@ Global
 		{D4D4D4D4-4444-4444-4444-444444444444}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D4D4D4D4-4444-4444-4444-444444444444}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D4D4D4D4-4444-4444-4444-444444444444}.Release|Any CPU.Build.0 = Release|Any CPU
-		{F250A312-587C-42B9-8E44-175C61C4CBBB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{F250A312-587C-42B9-8E44-175C61C4CBBB}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{F250A312-587C-42B9-8E44-175C61C4CBBB}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{F250A312-587C-42B9-8E44-175C61C4CBBB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1C9F2DDC-D682-41F7-A7F5-71DC2075E2CB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1C9F2DDC-D682-41F7-A7F5-71DC2075E2CB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1C9F2DDC-D682-41F7-A7F5-71DC2075E2CB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1C9F2DDC-D682-41F7-A7F5-71DC2075E2CB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
