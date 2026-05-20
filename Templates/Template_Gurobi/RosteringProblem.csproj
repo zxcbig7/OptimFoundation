@@ -1,0 +1,32 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Oracle.ManagedDataAccess.Core" Version="23.6.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="ILOG.Concert">
+      <HintPath>..\..\..\..\..\IBM\ILOG\CPLEX_Studio2211\cplex\bin\x64_win64\ILOG.Concert.dll</HintPath>
+    </Reference>
+    <Reference Include="ILOG.CPLEX">
+      <HintPath>..\..\..\..\..\IBM\ILOG\CPLEX_Studio2211\cplex\bin\x64_win64\ILOG.CPLEX.dll</HintPath>
+    </Reference>
+    <Reference Include="NLog">
+      <HintPath>..\OptimFoundation\src\OptimFoundation.Core\bin\Debug\net48\NLog.dll</HintPath>
+    </Reference>
+    <Reference Include="OptimFoundation.Core">
+      <HintPath>..\OptimFoundation\src\OptimFoundation.Core\bin\Debug\net48\OptimFoundation.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="OptimFoundation.Cplex">
+      <HintPath>..\OptimFoundation\src\OptimFoundation.Cplex\bin\Debug\net48\OptimFoundation.Cplex.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>
