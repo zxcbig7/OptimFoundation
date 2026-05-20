@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 using OptimFoundation.Core;
 
-using OptimFoundation.Cplex;
+using OptimFoundation.Gurobi;
 using SandBox.Data;
 using SandBox.VariableClass;
 using static System.Runtime.InteropServices.JavaScript.JSType;
@@ -27,7 +27,6 @@ namespace SandBox.Constraints
         }
 
         /// <summary>
-        /// 連續工作六天
         /// </summary>
         public void Build()
         {
@@ -38,13 +37,10 @@ namespace SandBox.Constraints
                 {
                     dataload.Employee.ForEach(e =>
                     {
-                        // 往前6天的日期加總看是否有連續上班6天的情況，第6天懲處
-                        // 如果連續六天有任一天是O
                         var dates = dataload.Date.Where(sd => d.AddDays(-duration) < sd && sd <= d).ToList();
 
-                        if (dates.Count < duration) return; // 不足六天，不處理
+                        if (dates.Count < duration) return;
 
-                        // 上限: 如果連續六天有任一天是O，SixDayWork就一定是0
                         dates.ForEach(sd =>
                         {
                             optEngine.AddLHS(1, new VariableB_SixDayWork { Date = d, Employee = e });
@@ -54,7 +50,6 @@ namespace SandBox.Constraints
                             ConstraintCount++;
                         });
 
-                        // 下限: 如果連續六天任一不是O，SixDayWork就一定是1
                         optEngine.AddLHS(1, new VariableB_SixDayWork { Date = d, Employee = e });
                         optEngine.AddRHS(1);
                         dates.ForEach(sd =>
@@ -66,7 +61,7 @@ namespace SandBox.Constraints
                     });
                 });
 
-                Logging.Info($"{ConstraintName} ，共：{ConstraintCount}條");
+                Logging.Info($"[{ConstraintName}] {ConstraintCount}");
             }
             catch (Exception)
             {

@@ -25,7 +25,7 @@ namespace SandBox.Constraints
             this.dataload = dataload;
         }
 
-        #region 程式範例
+        #region
         #endregion
 
         public void Build()
@@ -49,7 +49,7 @@ namespace SandBox.Constraints
                 //    ConstraintCount++;
                 //});
 
-                Logging.Info($"{ConstraintName} ，共：{ConstraintCount}條");
+                Logging.Info($"[{ConstraintName}] {ConstraintCount}");
             }
             catch (Exception)
             {

@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 using OptimFoundation.Core;
 
-using OptimFoundation.Cplex;
+using OptimFoundation.Gurobi;
 using SandBox.Data;
 using SandBox.VariableClass;
 
@@ -31,20 +31,16 @@ namespace SandBox.Constraints
             {
                 int duration = 3;
 
-                // Flag �ֿn
                 dataload.Date.ForEach(d =>
                 {
-                    // ���ծ���T�Ѹ�ơA���ѡB�e�@�ѡB�e��ѡA�p�G�����T�ѴN���B�z
                     var dates = dataload.Date.Where(sd => d.AddDays(-duration) < sd && sd <= d).ToList();
-                    if (dates.Count < 2) return; // ����2�ѡA���B�z
+                    if (dates.Count < 2) return;
 
-                    // ���
                     dataload.Employee.ForEach(e =>
                     {
                         if (dates.Count == 2)
                         {
-                            // 2��
-                            var preD = d.AddDays(-1); // �Q��
+                            var preD = d.AddDays(-1);
 
                             optEngine.AddLHS(1, new VariableB_DoubleOffFlag { Date = d, Employee = e });
 
@@ -55,16 +51,13 @@ namespace SandBox.Constraints
                         }
                         else if (dates.Count == 3)
                         {
-                            // 3��
-                            var preD = d.AddDays(-1); // �Q��
-                            var prepreD = d.AddDays(-2); // �e��
+                            var preD = d.AddDays(-1);
+                            var prepreD = d.AddDays(-2);
                             optEngine.AddLHS(1, new VariableB_DoubleOffFlag { Date = d, Employee = e });
 
-                            // ��2
                             optEngine.AddRHS(1, new VariableB_ShiftAssign { Date = d, Employee = e, Group = "O" });
                             optEngine.AddRHS(1, new VariableB_ShiftAssign { Date = preD, Employee = e, Group = "O" });
 
-                            // �e�Ѱ�
                             optEngine.AddRHS(1);
                             optEngine.AddRHS(-1, new VariableB_ShiftAssign { Date = prepreD, Employee = e, Group = "O" });
 
@@ -75,24 +68,22 @@ namespace SandBox.Constraints
                         ConstraintCount++;
                     });
 
-                    // ����FLAG
 
                 });
 
-                // �P�_�O�_����
                 dataload.Employee.ForEach(e =>
                 {
                     dataload.Date.ForEach(d =>
                     {
                         optEngine.AddLHS(1, new VariableB_DoubleOffFlag { Date = d, Employee = e });
                     });
-                    optEngine.AddLHS(2, new VariableB_DoubleOffLT2 { Employee = e }); // ����2�}��
+                    optEngine.AddLHS(2, new VariableB_DoubleOffLT2 { Employee = e });
                     optEngine.AddRHS(2);
                     optEngine.CreateGreatEqual($"{ConstraintName}_b@{e}");
                     ConstraintCount++;
                 });
 
-                Logging.Info($"{ConstraintName} �A�@�G{ConstraintCount}��");
+                Logging.Info($"[{ConstraintName}] {ConstraintCount}");
             }
             catch (Exception)
             {

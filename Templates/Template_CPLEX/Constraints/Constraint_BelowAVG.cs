@@ -30,9 +30,9 @@ namespace SandBox.Constraints
         {
             try
             {
-                double totalEMP = dataload.Employee.Count; // 人員總數
-                double AllShift = dataload.Employee.Count * dataload.Date.Count; // 每個人每天上班總數
-                double AllDemand = dataload.parameter_ShiftDemand.Where(w => w.Group != "O").Sum(s => s.QTY); // 總工作量
+                double totalEMP = dataload.Employee.Count;
+                double AllShift = dataload.Employee.Count * dataload.Date.Count;
+                double AllDemand = dataload.parameter_ShiftDemand.Where(w => w.Group != "O").Sum(s => s.QTY);
                 double AVGOFF = Math.Floor((AllShift - AllDemand) / totalEMP) - 1;
 
 
@@ -50,7 +50,7 @@ namespace SandBox.Constraints
                     ConstraintCount++;
                 });
 
-                Logging.Info($"{ConstraintName} ，共：{ConstraintCount}條");
+                Logging.Info($"[{ConstraintName}] {ConstraintCount}");
             }
             catch (Exception)
             {

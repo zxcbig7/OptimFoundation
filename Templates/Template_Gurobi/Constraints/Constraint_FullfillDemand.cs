@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 using OptimFoundation.Core;
 
-using OptimFoundation.Cplex;
+using OptimFoundation.Gurobi;
 using SandBox.Data;
 using SandBox.VariableClass;
 
@@ -45,7 +45,7 @@ namespace SandBox.Constraints
                     });
                 });
 
-                Logging.Info($"{ConstraintName} ¡A¦@¡G{ConstraintCount}±ø");
+                Logging.Info($"[{ConstraintName}] {ConstraintCount}");
             }
             catch (Exception)
             {

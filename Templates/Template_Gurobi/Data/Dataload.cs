@@ -1,5 +1,5 @@
 ﻿using SandBox.VariableClass;
-using OptimFoundation.Cplex;
+using OptimFoundation.Gurobi;
 
 using OptimFoundation.Core;
 
@@ -24,7 +24,7 @@ namespace SandBox.Data
         public List<string> Group = new List<string>();
         public List<DateTime> Date = new List<DateTime>();
 
-        // 模型建構使用的參數  
+        // 模型建構使用的參數
         public List<Parameter_NightToDay> parameter_NightToDay = new List<Parameter_NightToDay>(); // 前一天-今天班別對應成本
         public List<Parameter_ShiftDemand> parameter_ShiftDemand = new List<Parameter_ShiftDemand>(); // 每日各班別需求
         public List<Parameter_CrossGroup> parameter_CrossGroup = new List<Parameter_CrossGroup>(); // 跨組別上班成本

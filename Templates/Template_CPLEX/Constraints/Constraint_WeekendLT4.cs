@@ -26,7 +26,6 @@ namespace SandBox.Constraints
         }
 
         /// <summary>
-        /// 週末班休息日<4，休越少扣越多分，4天以上不扣分
         /// </summary>
         public void Build()
         {
@@ -35,7 +34,6 @@ namespace SandBox.Constraints
 
                 dataload.Employee.ForEach(e =>
                 {
-                    // 只挑假日累計休息日
                     optEngine.AddLHS(1, new VariableX_WeekendLT4 { Employee = e });
 
                     optEngine.AddRHS(4);
@@ -48,14 +46,13 @@ namespace SandBox.Constraints
                     optEngine.CreateGreatEqual($"{ConstraintName}@{e}");
                     ConstraintCount++;
 
-                    //最少扣 0 (以防萬一可不寫)
                     //optEngine.AddPool(1, new VariableC_WeekendLT4(e));
                     //optEngine.AddPoolRHS(0);
                     //optEngine.CreateGreatEqual($"{ConstraintName}@{e}");
                     //ConstraintCount++;
                 });
 
-                Logging.Info($"{ConstraintName} ，共：{ConstraintCount}條");
+                Logging.Info($"[{ConstraintName}] {ConstraintCount}");
             }
             catch (Exception)
             {

@@ -27,22 +27,19 @@ namespace SandBox.Constraints
         }
 
         /// <summary>
-        /// 夜->早午行、午->早行、早午行->夜
         /// </summary>
         public void Build()
         {
             try
             {
-                //看兩天
                 int duration = 2;
                 dataload.Date.ForEach(d =>
                 {
                     dataload.Employee.ForEach(e =>
                     {
-                        // 抓兩天去看
                         var dates = dataload.Date.Where(sd => d.AddDays(-duration) < sd && sd <= d).ToList();
 
-                        if (dates.Count < duration) return; // 不足2天，不處理
+                        if (dates.Count < duration) return;
 
                         var preD = d.AddDays(-1);
 
@@ -58,7 +55,7 @@ namespace SandBox.Constraints
                     });
                 });
 
-                Logging.Info($"{ConstraintName} ，共：{ConstraintCount}條");
+                Logging.Info($"[{ConstraintName}] {ConstraintCount}");
             }
             catch (Exception)
             {

@@ -1,4 +1,4 @@
-using OptimFoundation.Cplex;
+using OptimFoundation.Gurobi;
 using OptimFoundation.Core;
 
 using SandBox.Data;
@@ -18,20 +18,11 @@ namespace SandBox.VariablesClass
             this.dataload = dataload;
         }
 
-        #region 程式範例
+        #region
         /* 
         ex: 
-            // 設立變數
-            optEngine.BuildBVs<物件>(維度1, 維度2, ...);
-            optEngine.BuildIVs<物件>(維度1, 維度2, ...);
-            optEngine.BuildCVs<物件>(維度1, 維度2, ...);
             
-            // 設立變數同時設立界限
-            optEngine.BuildIVs<物件>(LB, UB, 維度1, 維度2, ...);
-            optEngine.BuildCVs<物件>(LB, UB, 維度1, 維度2, ...);
 
-            // 設立界限
-            optEngine.SetVarRange(變數, LB, UB);
         */
         #endregion
 
@@ -39,7 +30,6 @@ namespace SandBox.VariablesClass
         {
             try
             {
-                // 建立變數 Pools
                 optEngine.BuildBVs<VariableB_ShiftAssign>(dataload.Date, dataload.Employee, dataload.Group);
                 optEngine.BuildBVs<VariableB_GroupMismatch>(dataload.Date, dataload.Employee);
                 optEngine.BuildBVs<VariableB_NightToDay>(dataload.Date, dataload.Employee);
@@ -48,11 +38,10 @@ namespace SandBox.VariablesClass
                 optEngine.BuildBVs<VariableB_Off1Day>(dataload.Date, dataload.Employee);
                 optEngine.BuildBVs<VariableB_SixDayWork>(dataload.Date, dataload.Employee);
 
-                //休0天扣4倍、超過4天不扣分
                 optEngine.BuildCVs<VariableX_BelowAVG>(dataload.Employee);
                 optEngine.BuildCVs<VariableX_WeekendLT4>(dataload.Employee);
 
-                Logging.Info($"【建立變數】 共建立 {varCount} 個變數");
+                Logging.Info($"Variables created: {varCount}");
             }
             catch (Exception)
             {

@@ -26,7 +26,6 @@ namespace SandBox.Constraints
         }
 
         /// <summary>
-        /// 同一天同一個員工只能上班一個組別
         /// </summary>
         public void Build()
         {
@@ -46,7 +45,7 @@ namespace SandBox.Constraints
                     });
                 });
 
-                Logging.Info($"{ConstraintName} ，共：{ConstraintCount}條");
+                Logging.Info($"[{ConstraintName}] {ConstraintCount}");
             }
             catch (Exception)
             {

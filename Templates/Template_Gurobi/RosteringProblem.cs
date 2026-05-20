@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-using OptimFoundation.Cplex;
+using OptimFoundation.Gurobi;
 using OptimFoundation.Core;
 
 using SandBox.Data;
@@ -32,15 +32,15 @@ namespace SandBox
         {
             totalTimer.Restart();
 
-            CplexConfig config = new CplexConfig
+            GurobiConfig config = new GurobiConfig
             {
-                epGap           = 0.03,
-                timeLimit       = 100,
-                workThreads     = 10,
-                enableLog       = true,
-                exportSol       = true,
-                exportLP        = true,
-                exportMPS       = true
+                MipGap       = 0.03,
+                TimeLimit    = 100,
+                Threads      = 10,
+                LogToConsole = true,
+                ExportSol    = true,
+                ExportLp     = true,
+                ExportMps    = true
             };
 
             optEngine = new OptEngine(config);

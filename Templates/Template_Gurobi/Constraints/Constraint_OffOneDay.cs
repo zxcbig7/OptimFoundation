@@ -1,5 +1,5 @@
 ﻿using OptimFoundation.Core;
-using OptimFoundation.Cplex;
+using OptimFoundation.Gurobi;
 using SandBox.Data;
 using SandBox.VariableClass;
 

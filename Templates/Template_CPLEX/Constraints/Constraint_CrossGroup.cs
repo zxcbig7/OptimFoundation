@@ -33,7 +33,6 @@ namespace SandBox.Constraints
                 {
                     dataload.Employee.ForEach(e =>
                     {
-                        // 取得員工 e 違反組別的資料
                         var inhi = dataload.parameter_CrossGroup.Where(p => p.Employee == e).ToList();
 
                         foreach (var g in inhi)
@@ -46,7 +45,7 @@ namespace SandBox.Constraints
                     });
                 });
 
-                Logging.Info($"{ConstraintName} ，共：{ConstraintCount}條");
+                Logging.Info($"[{ConstraintName}] {ConstraintCount}");
             }
             catch (Exception)
             {

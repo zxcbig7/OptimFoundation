@@ -16,15 +16,11 @@ namespace SandBox.Constraints
             this.dataload = dataload;
         }
 
-        #region µ{¦¡½d¨Ò
-        /* 
-        ex: 
-            this.optEngine.addPool([«Y¼Æ], VariableDeclare.ReadVar(new <ÅÜ¼Æª«¥ó>));  //¥[¤JLHS
+        #region
+        /*
+        ex:
             this.optEngine.addPool(1, VariableDeclare.ReadVar(new VariableX_Input(machine,product,period)));
-        
-        
-            this.optEngine.createMinimize(); // «Ø¥ß³Ì¤p¤Æ¥Ø¼Ð¦¡
-            this.optEngine.createMaximize(); // «Ø¥ß³Ì¤j¤Æ¥Ø¼Ð¦¡
+
         */
         #endregion
 
@@ -32,30 +28,29 @@ namespace SandBox.Constraints
         {
             try
             {
-                #region «ØºcExpr (¥Î DataLoad ¶^¥N)
+                #region
                 dataload.Date.ForEach(d =>
                 {
                     dataload.Employee.ForEach(e =>
                     {
-                        optEngine.AddLHS(dataload.Penalty_OffOneDay, new VariableB_Off1Day { Date = d, Employee = e }); // ³æ¤é¥ð®§
-                        optEngine.AddLHS(dataload.Penalty_SixDay, new VariableB_SixDayWork { Date = d, Employee = e }); // ³sÄò¤W¯Z¤»¤Ñ
-                        optEngine.AddLHS(dataload.Penalty_GroupMismatch, new VariableB_GroupMismatch { Date = d, Employee = e }); // ¸ó²Õ§O¤W¯Z(«DGroup¡BBackup)
-                        optEngine.AddLHS(dataload.Penalty_NightToDay, new VariableB_NightToDay { Date = d, Employee = e }); // ¨â¤Ñ¯Z§O°¾¦n
+                        optEngine.AddLHS(dataload.Penalty_OffOneDay, new VariableB_Off1Day { Date = d, Employee = e });
+                        optEngine.AddLHS(dataload.Penalty_SixDay, new VariableB_SixDayWork { Date = d, Employee = e });
+                        optEngine.AddLHS(dataload.Penalty_GroupMismatch, new VariableB_GroupMismatch { Date = d, Employee = e });
+                        optEngine.AddLHS(dataload.Penalty_NightToDay, new VariableB_NightToDay { Date = d, Employee = e });
 
                     });
                 });
 
-                
                 dataload.Employee.ForEach(e =>
                 {
-                    optEngine.AddLHS(dataload.Penalty_DoubleOffLT2, new VariableB_DoubleOffLT2 { Employee = e }); // ¤@­Ó¤ë¤º¨â¦¸Âù¥ð
-                    optEngine.AddLHS(dataload.Penalty_BelowAVG, new VariableX_BelowAVG { Employee = e }); // ¤u§@¶q§C©ó¾ãÅé¥­§¡
-                    optEngine.AddLHS(dataload.Penalty_Weekend4Day, new VariableX_WeekendLT4 { Employee = e }); // ¤@­Ó¤ë¤º¶g¥½¥ð®§¤Ö©ó4¤Ñ
+                    optEngine.AddLHS(dataload.Penalty_DoubleOffLT2, new VariableB_DoubleOffLT2 { Employee = e });
+                    optEngine.AddLHS(dataload.Penalty_BelowAVG, new VariableX_BelowAVG { Employee = e });
+                    optEngine.AddLHS(dataload.Penalty_Weekend4Day, new VariableX_WeekendLT4 { Employee = e });
                 });
                 #endregion
 
                 this.optEngine.CreateMinimize();
-                Logging.Info($"¥Ø¼Ð¦¡«Ø¥ß§¹¦¨");
+                Logging.Info("æ‘°ï—»?");
             }
             catch (Exception)
             {
