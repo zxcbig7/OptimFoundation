@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>OptimFoundation.Solver</AssemblyName>
+    <RootNamespace>OptimFoundation.Solver</RootNamespace>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="OptimFoundation.Core">
+      <HintPath>..\OptimFoundation.Core\bin\Debug\net48\OptimFoundation.Core.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="NLog">
+      <HintPath>..\OptimFoundation.Core\bin\Debug\net48\NLog.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Solver">
+      <HintPath>..\..\..\..\MILP Solver\Solver\Solver\bin\Debug\net8.0\Solver.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+</Project>
