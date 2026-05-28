@@ -11,6 +11,10 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OptimFoundation.Cplex", "sr
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OptimFoundation.Gurobi", "src\OptimFoundation.Gurobi\OptimFoundation.Gurobi.csproj", "{D4D4D4D4-4444-4444-4444-444444444444}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Template_ThreadTest", "..\Templates\Template_ThreadTest\Template_ThreadTest.csproj", "{69405C35-7641-4E25-914B-FFCD803A4BEB}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RosteringProblem", "..\Templates\Template_CPLEX\RosteringProblem.csproj", "{A13F6D8C-CDD1-4DA2-A04E-38E355A7BDF5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,6 +37,14 @@ Global
 		{D4D4D4D4-4444-4444-4444-444444444444}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D4D4D4D4-4444-4444-4444-444444444444}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D4D4D4D4-4444-4444-4444-444444444444}.Release|Any CPU.Build.0 = Release|Any CPU
+		{69405C35-7641-4E25-914B-FFCD803A4BEB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{69405C35-7641-4E25-914B-FFCD803A4BEB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{69405C35-7641-4E25-914B-FFCD803A4BEB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{69405C35-7641-4E25-914B-FFCD803A4BEB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A13F6D8C-CDD1-4DA2-A04E-38E355A7BDF5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A13F6D8C-CDD1-4DA2-A04E-38E355A7BDF5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A13F6D8C-CDD1-4DA2-A04E-38E355A7BDF5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A13F6D8C-CDD1-4DA2-A04E-38E355A7BDF5}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
