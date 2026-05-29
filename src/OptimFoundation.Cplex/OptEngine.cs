@@ -29,11 +29,13 @@ namespace OptimFoundation.Cplex
         private MemoryStream _solverLogStream;
         private StreamWriter _solverLogWriter;
 
-        private readonly HashSet<string> _verifyConstraints = new HashSet<string>();
+        // base 的 _verifyConstraints 管單次 Build 內的正常約束去重；這裡管跨 engine 的 thread 約束去重，生命週期不同
+        private readonly HashSet<string> _threadVerifyConstraints = new HashSet<string>();
         // Thread constraints：由 CreateXxxThread 建立，尚未屬於任何 model（用 Le/Ge/Eq 而非 AddLe/AddGe/AddEq）
         // 可被 MergeModel 加入另一個 model，或被 ResetThreadConstraint 從 master model 移除
         private int _threadRuleCount = 0;
         private readonly List<IRange> _threadConstraints = new List<IRange>();
+        private List<string> _conflictConstraints = null;
 
         public OptEngine(CplexConfig config) : base(config) { }
         public OptEngine() : base(new CplexConfig()) { }
@@ -45,6 +47,8 @@ namespace OptimFoundation.Cplex
 
             Model = new ILOG.CPLEX.Cplex();
             _constraints.Clear();
+            _conflictConstraints = null;
+            ResetVerifyConstraints();
 
             CplexConfig config = cfg as CplexConfig;
 
@@ -218,11 +222,11 @@ namespace OptimFoundation.Cplex
                 string varSelDescription = config.varSel.Value switch
                 {
                     -1 => "以最小可行解選擇變數分支",
-                     1 => "以最大可行解選擇變數分支",
-                     2 => "以假定成本選擇分支",
-                     3 => "強分支",
-                     4 => "以假定降低成本選擇分支",
-                     _ => "自動選擇變數分支 (預設)"
+                    1 => "以最大可行解選擇變數分支",
+                    2 => "以假定成本選擇分支",
+                    3 => "強分支",
+                    4 => "以假定降低成本選擇分支",
+                    _ => "自動選擇變數分支 (預設)"
                 };
                 Logging.Info($"[Environment Setting] VarSel={config.varSel.Value} ({varSelDescription})");
             }
@@ -325,15 +329,15 @@ namespace OptimFoundation.Cplex
             NumVarType cplexType = type switch
             {
                 VarType.Integer => NumVarType.Int,
-                VarType.Binary  => NumVarType.Bool,
-                _               => NumVarType.Float
+                VarType.Binary => NumVarType.Bool,
+                _ => NumVarType.Float
             };
 
             for (int i = 0; i < n; i++)
             {
-                lbs[i]     = lb;
-                ubs[i]     = ub;
-                types[i]   = cplexType;
+                lbs[i] = lb;
+                ubs[i] = ub;
+                types[i] = cplexType;
                 nameArr[i] = names[i];
             }
 
@@ -423,28 +427,29 @@ namespace OptimFoundation.Cplex
             var s = Model.GetStatus();
             if (s == ILOG.CPLEX.Cplex.Status.Optimal) Status = SolveStatus.Optimal;
             else if (s == ILOG.CPLEX.Cplex.Status.Feasible) Status = SolveStatus.Feasible;
-            else if (s == ILOG.CPLEX.Cplex.Status.Infeasible) Status = SolveStatus.Infeasible;
-            else if (s == ILOG.CPLEX.Cplex.Status.InfeasibleOrUnbounded) Status = SolveStatus.Infeasible;
+            else if (s == ILOG.CPLEX.Cplex.Status.Infeasible ||
+                     s == ILOG.CPLEX.Cplex.Status.InfeasibleOrUnbounded) Status = SolveStatus.Infeasible;
             else if (s == ILOG.CPLEX.Cplex.Status.Unbounded) Status = SolveStatus.Unbounded;
+            else if (s == ILOG.CPLEX.Cplex.Status.Unknown) Status = SolveStatus.TimeLimit;
             else Status = SolveStatus.Error;
 
             bool ok = Status == SolveStatus.Optimal || Status == SolveStatus.Feasible;
+
+            if (ok)
+            {
+                // Infeasible / Unbounded 時 CPLEX 會 throw，只在有解時才讀
+                BestObjValue = Model.GetBestObjValue();
+                MIPGap = Model.GetMIPRelativeGap();
+            }
 
             if (ok && _exportSol)
                 Model.WriteSolution(FolderDir.Sol.GetFilePath($"{proj}_Solution_{_startTime}.sol"));
 
             if (Status == SolveStatus.Infeasible && _constraints.Count > 0)
-            {
-                FolderDir.IIS.CreateFolder();
-                var prefs = Enumerable.Repeat(1.0, _constraints.Count).ToArray();
-                Model.RefineConflict(_constraints.ToArray(), prefs);
-                string iisPath = FolderDir.IIS.GetFilePath($"{proj}_IIS_{_startTime}.ilp");
-                Model.WriteConflict(iisPath);
-                Logging.Info($"[OptEngine] IIS written: {iisPath}");
-            }
+                _conflictConstraints = RunConflictAnalysis(proj);
 
             if (ok)
-                Logging.Info($"[OptEngine] Status={Status}  ObjVal={Model.GetObjValue()}  BestBound={Model.GetBestObjValue()}  MIPGap={Model.GetMIPRelativeGap()}");
+                Logging.Info($"[OptEngine] Status={Status}  ObjVal={Model.GetObjValue()}  BestBound={BestObjValue}  MIPGap={MIPGap}");
             else
                 Logging.Info($"[OptEngine] Status={Status}");
 
@@ -532,10 +537,12 @@ namespace OptimFoundation.Cplex
                 Model.Remove(_constraints.ToArray());
                 _constraints.Clear();
             }
-            _verifyConstraints.Clear();
+            _threadVerifyConstraints.Clear();
             _threadConstraints.Clear();
             _threadRuleCount = 0;
             ClearPool();
+            _conflictConstraints = null;
+            ResetVerifyConstraints();
         }
 
         #endregion
@@ -554,7 +561,7 @@ namespace OptimFoundation.Cplex
             if (targetTerms.Count == 0) return false;
 
             string verify = string.Join(",", targetTerms.OrderBy(t => t.var.Name).Select(t => t.var.Name));
-            if (!_verifyConstraints.Contains(verify))
+            if (!_threadVerifyConstraints.Contains(verify))
             {
                 var expr = targetEngine.Model.LinearNumExpr();
                 foreach (var (coef, v) in targetTerms)
@@ -563,7 +570,7 @@ namespace OptimFoundation.Cplex
                 var constraint = sourceEngine.Model.Le(value, expr);
                 constraint.Name = $"{ruleName}_{_threadRuleCount}";
                 _threadConstraints.Add(constraint);   // Le() 未加入任何 model，存入 _threadConstraints
-                _verifyConstraints.Add(verify);
+                _threadVerifyConstraints.Add(verify);
                 _threadRuleCount++;
             }
 
@@ -581,7 +588,7 @@ namespace OptimFoundation.Cplex
             if (targetTerms.Count == 0) return false;
 
             string verify = string.Join(",", targetTerms.OrderBy(t => t.var.Name).Select(t => t.var.Name));
-            if (!_verifyConstraints.Contains(verify))
+            if (!_threadVerifyConstraints.Contains(verify))
             {
                 var expr = targetEngine.Model.LinearNumExpr();
                 foreach (var (coef, v) in targetTerms)
@@ -590,7 +597,7 @@ namespace OptimFoundation.Cplex
                 var constraint = sourceEngine.Model.Ge(value, expr);
                 constraint.Name = $"{ruleName}_{_threadRuleCount}";
                 _threadConstraints.Add(constraint);   // Ge() 未加入任何 model
-                _verifyConstraints.Add(verify);
+                _threadVerifyConstraints.Add(verify);
                 _threadRuleCount++;
             }
 
@@ -608,7 +615,7 @@ namespace OptimFoundation.Cplex
             if (targetTerms.Count == 0) return false;
 
             string verify = string.Join(",", targetTerms.OrderBy(t => t.var.Name).Select(t => t.var.Name));
-            if (!_verifyConstraints.Contains(verify))
+            if (!_threadVerifyConstraints.Contains(verify))
             {
                 var expr = targetEngine.Model.LinearNumExpr();
                 foreach (var (coef, v) in targetTerms)
@@ -617,7 +624,7 @@ namespace OptimFoundation.Cplex
                 var constraint = sourceEngine.Model.Eq(value, expr);
                 constraint.Name = $"{ruleName}_{_threadRuleCount}";
                 _threadConstraints.Add(constraint);   // Eq() 未加入任何 model
-                _verifyConstraints.Add(verify);
+                _threadVerifyConstraints.Add(verify);
                 _threadRuleCount++;
             }
 
@@ -700,9 +707,79 @@ namespace OptimFoundation.Cplex
         public OptEngine VariableMerge(OptEngine targetEngine, HashSet<INumVar> variables)
         {
             foreach (var variable in variables)
-                targetEngine.Model.Abs(variable);
+                targetEngine.Model.Add(variable);
             return targetEngine;
         }
+
+        #endregion
+
+        #region IIS 衝突分析
+
+        private List<string> RunConflictAnalysis(string proj)
+        {
+            var constraintArr = _constraints.ToArray();
+            // 全 1.0 表示等權重：CPLEX Elastic Filtering 會自由選最小衝突子集，不偏向保留任何一條
+            var prefs = Enumerable.Repeat(1.0, constraintArr.Length).ToArray();
+            var conflictNames = new List<string>();
+
+            if (!Model.RefineConflict(constraintArr, prefs))
+                return conflictNames;
+
+            string iisPath = FolderDir.IIS.GetFilePath($"{proj}_IIS_{_startTime}.ilp");
+            Model.WriteConflict(iisPath);
+            Logging.Info($"[OptEngine] IIS written: {iisPath}");
+
+            var statuses = Model.GetConflict(constraintArr);
+            for (int i = 0; i < constraintArr.Length; i++)
+            {
+                if (statuses[i] == ConflictStatus.Member ||
+                    statuses[i] == ConflictStatus.PossibleMember)
+                {
+                    if (!string.IsNullOrEmpty(constraintArr[i].Name))
+                        conflictNames.Add(constraintArr[i].Name);
+                }
+            }
+
+            if (conflictNames.Count > 0)
+                Logging.Info($"[OptEngine] Conflict constraints ({conflictNames.Count}): {string.Join(", ", conflictNames)}");
+
+            return conflictNames;
+        }
+
+        /// <summary>
+        /// 回傳 RefineConflict 識別出的衝突限制式名稱清單。
+        /// Solve() 遇到 Infeasible 時會自動執行並快取結果；手動呼叫也可觸發。
+        /// </summary>
+        public List<string> GetConflictConstraints()
+        {
+            if (_conflictConstraints != null) return _conflictConstraints; // Solve() 已執行過則直接回傳，RefineConflict 很耗時不重跑
+            if (Status != SolveStatus.Infeasible || _constraints.Count == 0)
+                return new List<string>();
+            _conflictConstraints = RunConflictAnalysis(_modelName ?? "Project");
+            return _conflictConstraints;
+        }
+
+        #endregion
+
+        #region 分類型別解答
+
+        /// <summary>取出所有連續變數（Float）的解值。</summary>
+        public IReadOnlyDictionary<string, double> GetCVSolution()
+            => Variables
+                .Where(kv => kv.Value.Type == NumVarType.Float)
+                .ToDictionary(kv => kv.Key, kv => Model.GetValue(kv.Value));
+
+        /// <summary>取出所有整數變數（Int）的解值。</summary>
+        public IReadOnlyDictionary<string, double> GetIVSolution()
+            => Variables
+                .Where(kv => kv.Value.Type == NumVarType.Int)
+                .ToDictionary(kv => kv.Key, kv => Model.GetValue(kv.Value));
+
+        /// <summary>取出所有二元變數（Bool）的解值。</summary>
+        public IReadOnlyDictionary<string, double> GetBVSolution()
+            => Variables
+                .Where(kv => kv.Value.Type == NumVarType.Bool)
+                .ToDictionary(kv => kv.Key, kv => Model.GetValue(kv.Value));
 
         #endregion
 
@@ -766,7 +843,7 @@ namespace OptimFoundation.Cplex
 
             public TeeWriter(TextWriter primary, TextWriter secondary)
             {
-                _primary   = primary;
+                _primary = primary;
                 _secondary = secondary;
             }
 

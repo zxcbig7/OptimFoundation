@@ -32,7 +32,7 @@ namespace OptimFoundation.Cplex
         public double? TimeLimit { get => timeLimit; set => timeLimit = value; }
         public double? MipGap { get => epGap; set => epGap = value; }
         public int? Threads { get => workThreads; set => workThreads = value; }
-        public bool LogToConsole { get => !enableLog; set => enableLog = !value; }
+        public bool LogToConsole { get => enableLog; set => enableLog = value; }
         public string LogFilePath { get; set; }
         public int? RootAlgorithm { get => algorithm; set => algorithm = value; }
 

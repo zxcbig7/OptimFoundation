@@ -13,11 +13,15 @@ namespace OptimFoundation.Core
         public int TotalVarCount => VariableSets.Values.Sum(s => s.Count);
         public ISolverConfig Config { get; protected set; }
         public SolveStatus Status { get; protected set; } = SolveStatus.NotSolved;
+        public double BestObjValue { get; protected set; }
+        public double MIPGap { get; protected set; }
 
         private readonly List<(double coef, TVar var)> _lhsTerms = new List<(double, TVar)>();
         private readonly List<(double coef, TVar var)> _rhsTerms = new List<(double, TVar)>();
         private double _lhsConst = 0;
         private double _rhsConst = 0;
+        // 以 constraint name 為 key，而非 variable set：名稱含迴圈索引（如 "Cap@TruckA"），不同條件不會誤判重複
+        private readonly HashSet<string> _verifyConstraints = new HashSet<string>();
 
         protected EngineBase(ISolverConfig config)
         {
@@ -183,6 +187,8 @@ namespace OptimFoundation.Core
             Variables.Clear();
         }
 
+        protected void ResetVerifyConstraints() => _verifyConstraints.Clear();
+
         #endregion
 
         #region Pool — 狀態管理
@@ -248,8 +254,12 @@ namespace OptimFoundation.Core
         public bool CreateGreatEqual(string name)
         {
             if (!CheckHasPool()) return false;
-            AddConstraint(name, LinearExpr(BuildCombinedLhsMinusRhs()), ConstraintSense.GreaterEqual, _rhsConst - _lhsConst);
-            ClearPool();
+            if (!_verifyConstraints.Contains(name))
+            {
+                AddConstraint(name, LinearExpr(BuildCombinedLhsMinusRhs()), ConstraintSense.GreaterEqual, _rhsConst - _lhsConst);
+                _verifyConstraints.Add(name);
+            }
+            ClearPool(); // 即使 skip，也必須清空 pool，否則下一條約束的 LHS 會累積舊項目
             return true;
         }
 
@@ -263,7 +273,11 @@ namespace OptimFoundation.Core
         public bool CreateLessEqual(string name)
         {
             if (!CheckHasPool()) return false;
-            AddConstraint(name, LinearExpr(BuildCombinedLhsMinusRhs()), ConstraintSense.LessEqual, _rhsConst - _lhsConst);
+            if (!_verifyConstraints.Contains(name))
+            {
+                AddConstraint(name, LinearExpr(BuildCombinedLhsMinusRhs()), ConstraintSense.LessEqual, _rhsConst - _lhsConst);
+                _verifyConstraints.Add(name);
+            }
             ClearPool();
             return true;
         }
@@ -278,7 +292,11 @@ namespace OptimFoundation.Core
         public bool CreateEqual(string name)
         {
             if (!CheckHasPool()) return false;
-            AddConstraint(name, LinearExpr(BuildCombinedLhsMinusRhs()), ConstraintSense.Equal, _rhsConst - _lhsConst);
+            if (!_verifyConstraints.Contains(name))
+            {
+                AddConstraint(name, LinearExpr(BuildCombinedLhsMinusRhs()), ConstraintSense.Equal, _rhsConst - _lhsConst);
+                _verifyConstraints.Add(name);
+            }
             ClearPool();
             return true;
         }
