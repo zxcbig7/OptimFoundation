@@ -680,6 +680,7 @@ namespace OptimFoundation.Cplex
             if (!Model.RefineConflict(constraintArr, prefs))
                 return conflictNames;
 
+            FolderDir.IIS.CreateFolder();  // 即使未設定 exportLP/Sol，IIS 資料夾也必須存在才能寫入
             string iisPath = FolderDir.IIS.GetFilePath($"{proj}_IIS_{_startTime}.ilp");
             Model.WriteConflict(iisPath);
             Logging.Info($"[OptEngine] IIS written: {iisPath}");
