@@ -210,14 +210,9 @@ namespace OptimFoundation.Core
             return true;
         }
 
-        // 將 LHS 和 RHS 的合併為單一 list，RHS 項目的係數取負號，方便後續建立限制式時一次傳入 solver 的線性表達式方法
-        private List<(double coef, TVar var)> BuildCombinedLhsMinusRhs()
-        {
-            var combined = new List<(double coef, TVar var)>(_lhsTerms);
-            foreach (var (coef, v) in _rhsTerms)
-                combined.Add((-coef, v));
-            return combined;
-        }
+        // LHS − RHS 的 lazy 合併，不建立新 List，LinearExpr 單次迭代即可消費
+        private IEnumerable<(double coef, TVar var)> CombinedLhsMinusRhs()
+            => _lhsTerms.Concat(_rhsTerms.Select(t => (-t.coef, t.var)));
 
         #endregion
 
@@ -264,7 +259,7 @@ namespace OptimFoundation.Core
             if (!CheckHasPool()) return false;
             if (!_verifyConstraints.Contains(name))
             {
-                AddConstraint(name, LinearExpr(BuildCombinedLhsMinusRhs()), ConstraintSense.GreaterEqual, _rhsConst - _lhsConst);
+                AddConstraint(name, LinearExpr(CombinedLhsMinusRhs()), ConstraintSense.GreaterEqual, _rhsConst - _lhsConst);
                 _verifyConstraints.Add(name);
             }
             ClearPool(); // 即使 skip，也必須清空 pool，否則下一條約束的 LHS 會累積舊項目
@@ -283,7 +278,7 @@ namespace OptimFoundation.Core
             if (!CheckHasPool()) return false;
             if (!_verifyConstraints.Contains(name))
             {
-                AddConstraint(name, LinearExpr(BuildCombinedLhsMinusRhs()), ConstraintSense.LessEqual, _rhsConst - _lhsConst);
+                AddConstraint(name, LinearExpr(CombinedLhsMinusRhs()), ConstraintSense.LessEqual, _rhsConst - _lhsConst);
                 _verifyConstraints.Add(name);
             }
             ClearPool();
@@ -302,7 +297,7 @@ namespace OptimFoundation.Core
             if (!CheckHasPool()) return false;
             if (!_verifyConstraints.Contains(name))
             {
-                AddConstraint(name, LinearExpr(BuildCombinedLhsMinusRhs()), ConstraintSense.Equal, _rhsConst - _lhsConst);
+                AddConstraint(name, LinearExpr(CombinedLhsMinusRhs()), ConstraintSense.Equal, _rhsConst - _lhsConst);
                 _verifyConstraints.Add(name);
             }
             ClearPool();

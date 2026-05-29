@@ -335,9 +335,9 @@ namespace OptimFoundation.Cplex
 
             for (int i = 0; i < n; i++)
             {
-                lbs[i] = lb;
-                ubs[i] = ub;
-                types[i] = cplexType;
+                lbs[i]     = lb;
+                ubs[i]     = ub;
+                types[i]   = cplexType;
                 nameArr[i] = names[i];
             }
 
@@ -531,8 +531,9 @@ namespace OptimFoundation.Cplex
             }
             if (_constraints.Count > 0)
             {
-                Model.End(_constraints.ToArray());
-                Model.Remove(_constraints.ToArray());
+                var arr = _constraints.ToArray();
+                Model.End(arr);
+                Model.Remove(arr);
                 _constraints.Clear();
             }
             _threadVerifyConstraints.Clear();
@@ -547,88 +548,45 @@ namespace OptimFoundation.Cplex
 
         #region 多線程限制式同步
 
-        /// <summary>
-        /// 跨模型建立 >= 限制式（Benders/多線程）。
-        /// 以 targetEngine pool 的變數為 LHS，建立 value ≤ Σ(lhs) 的限制式，
-        /// 掛載至 sourceEngine 的 CPLEX 模型，追蹤於 this._constraints。
-        /// 呼叫後會清空 targetEngine 的 pool。
-        /// </summary>
+        // 三個公開方法共用的邏輯，差異只在最後建立限制式物件的方式（Le/Ge/Eq）
+        private bool CreateThreadConstraint(
+            double value, string ruleName, OptEngine targetEngine, OptEngine sourceEngine,
+            Func<double, ILinearNumExpr, IRange> factory)
+        {
+            var targetTerms = targetEngine.PoolLhsTerms.ToList();
+            if (targetTerms.Count == 0) return false;
+
+            string verify = string.Join(",", targetTerms.OrderBy(t => t.var.Name).Select(t => t.var.Name));
+            if (!_threadVerifyConstraints.Contains(verify))
+            {
+                var expr = targetEngine.Model.LinearNumExpr();
+                foreach (var (coef, v) in targetTerms)
+                    expr.AddTerm(coef, v);
+                var c = factory(value, expr);  // Le/Ge/Eq — 未加入任何 model，存入 _threadConstraints
+                c.Name = $"{ruleName}_{_threadRuleCount}";
+                _threadConstraints.Add(c);
+                _threadVerifyConstraints.Add(verify);
+                _threadRuleCount++;
+            }
+
+            targetEngine.ClearPool();
+            return true;
+        }
+
+        /// <summary>跨模型建立 &gt;= 限制式（value ≤ Σlhs）。呼叫後清空 targetEngine pool。</summary>
         public bool CreateGreatEqualThread(double value, string ruleName, OptEngine targetEngine, OptEngine sourceEngine)
-        {
-            var targetTerms = targetEngine.PoolLhsTerms.ToList();
-            if (targetTerms.Count == 0) return false;
+            => CreateThreadConstraint(value, ruleName, targetEngine, sourceEngine,
+                (v, expr) => sourceEngine.Model.Le(v, expr));
 
-            string verify = string.Join(",", targetTerms.OrderBy(t => t.var.Name).Select(t => t.var.Name));
-            if (!_threadVerifyConstraints.Contains(verify))
-            {
-                var expr = targetEngine.Model.LinearNumExpr();
-                foreach (var (coef, v) in targetTerms)
-                    expr.AddTerm(coef, v);
-
-                var constraint = sourceEngine.Model.Le(value, expr);
-                constraint.Name = $"{ruleName}_{_threadRuleCount}";
-                _threadConstraints.Add(constraint);   // Le() 未加入任何 model，存入 _threadConstraints
-                _threadVerifyConstraints.Add(verify);
-                _threadRuleCount++;
-            }
-
-            targetEngine.ClearPool();
-            return true;
-        }
-
-        /// <summary>
-        /// 跨模型建立 &lt;= 限制式（Benders/多線程）。
-        /// 以 targetEngine pool 的變數為 LHS，建立 Σ(lhs) ≤ value 的限制式。
-        /// </summary>
+        /// <summary>跨模型建立 &lt;= 限制式（Σlhs ≤ value）。呼叫後清空 targetEngine pool。</summary>
         public bool CreateLessEqualThread(double value, string ruleName, OptEngine targetEngine, OptEngine sourceEngine)
-        {
-            var targetTerms = targetEngine.PoolLhsTerms.ToList();
-            if (targetTerms.Count == 0) return false;
+            => CreateThreadConstraint(value, ruleName, targetEngine, sourceEngine,
+                (v, expr) => sourceEngine.Model.Ge(v, expr));
 
-            string verify = string.Join(",", targetTerms.OrderBy(t => t.var.Name).Select(t => t.var.Name));
-            if (!_threadVerifyConstraints.Contains(verify))
-            {
-                var expr = targetEngine.Model.LinearNumExpr();
-                foreach (var (coef, v) in targetTerms)
-                    expr.AddTerm(coef, v);
-
-                var constraint = sourceEngine.Model.Ge(value, expr);
-                constraint.Name = $"{ruleName}_{_threadRuleCount}";
-                _threadConstraints.Add(constraint);   // Ge() 未加入任何 model
-                _threadVerifyConstraints.Add(verify);
-                _threadRuleCount++;
-            }
-
-            targetEngine.ClearPool();
-            return true;
-        }
-
-        /// <summary>
-        /// 跨模型建立 = 限制式（Benders/多線程）。
-        /// 以 targetEngine pool 的變數為 LHS，建立 Σ(lhs) = value 的限制式。
-        /// </summary>
+        /// <summary>跨模型建立 = 限制式（Σlhs = value）。呼叫後清空 targetEngine pool。</summary>
         public bool CreateEqualThread(double value, string ruleName, OptEngine targetEngine, OptEngine sourceEngine)
-        {
-            var targetTerms = targetEngine.PoolLhsTerms.ToList();
-            if (targetTerms.Count == 0) return false;
-
-            string verify = string.Join(",", targetTerms.OrderBy(t => t.var.Name).Select(t => t.var.Name));
-            if (!_threadVerifyConstraints.Contains(verify))
-            {
-                var expr = targetEngine.Model.LinearNumExpr();
-                foreach (var (coef, v) in targetTerms)
-                    expr.AddTerm(coef, v);
-
-                var constraint = sourceEngine.Model.Eq(value, expr);
-                constraint.Name = $"{ruleName}_{_threadRuleCount}";
-                _threadConstraints.Add(constraint);   // Eq() 未加入任何 model
-                _threadVerifyConstraints.Add(verify);
-                _threadRuleCount++;
-            }
-
-            targetEngine.ClearPool();
-            return true;
-        }
+            => CreateThreadConstraint(value, ruleName, targetEngine, sourceEngine,
+                (v, expr) => sourceEngine.Model.Eq(v, expr));
 
         /// <summary>
         /// 從 this 的 CPLEX 模型中移除兩個子引擎的 thread 限制式，並清空各自的 _threadConstraints。
@@ -636,19 +594,18 @@ namespace OptimFoundation.Cplex
         /// </summary>
         public void ResetThreadConstraint(OptEngine threadEngine1, OptEngine threadEngine2)
         {
-            if (threadEngine1._threadConstraints.Count > 0)
-            {
-                Model.End(threadEngine1._threadConstraints.ToArray());
-                Model.Remove(threadEngine1._threadConstraints.ToArray());
-                threadEngine1._threadConstraints.Clear();
-            }
-            if (threadEngine2._threadConstraints.Count > 0)
-            {
-                Model.End(threadEngine2._threadConstraints.ToArray());
-                Model.Remove(threadEngine2._threadConstraints.ToArray());
-                threadEngine2._threadConstraints.Clear();
-            }
+            RemoveThreadConstraints(threadEngine1);
+            RemoveThreadConstraints(threadEngine2);
             _threadConstraints.Clear();
+        }
+
+        private void RemoveThreadConstraints(OptEngine engine)
+        {
+            if (engine._threadConstraints.Count == 0) return;
+            var arr = engine._threadConstraints.ToArray();
+            Model.End(arr);
+            Model.Remove(arr);
+            engine._threadConstraints.Clear();
         }
 
         #endregion
@@ -761,23 +718,24 @@ namespace OptimFoundation.Cplex
 
         #region 分類型別解答
 
+        // 批次取解值：Model.GetValues(INumVar[]) 一次 interop，取代逐筆 Model.GetValue()
+        private IReadOnlyDictionary<string, double> GetSolutionByType(NumVarType varType)
+        {
+            var matching = Variables.Where(kv => kv.Value.Type == varType).ToList();
+            if (matching.Count == 0) return new Dictionary<string, double>();
+            double[] values = Model.GetValues(matching.Select(kv => kv.Value).ToArray());
+            return matching.Select((kv, i) => (kv.Key, values[i]))
+                           .ToDictionary(t => t.Key, t => t.Item2);
+        }
+
         /// <summary>取出所有連續變數（Float）的解值。</summary>
-        public IReadOnlyDictionary<string, double> GetCVSolution()
-            => Variables
-                .Where(kv => kv.Value.Type == NumVarType.Float)
-                .ToDictionary(kv => kv.Key, kv => Model.GetValue(kv.Value));
+        public IReadOnlyDictionary<string, double> GetCVSolution() => GetSolutionByType(NumVarType.Float);
 
         /// <summary>取出所有整數變數（Int）的解值。</summary>
-        public IReadOnlyDictionary<string, double> GetIVSolution()
-            => Variables
-                .Where(kv => kv.Value.Type == NumVarType.Int)
-                .ToDictionary(kv => kv.Key, kv => Model.GetValue(kv.Value));
+        public IReadOnlyDictionary<string, double> GetIVSolution() => GetSolutionByType(NumVarType.Int);
 
         /// <summary>取出所有二元變數（Bool）的解值。</summary>
-        public IReadOnlyDictionary<string, double> GetBVSolution()
-            => Variables
-                .Where(kv => kv.Value.Type == NumVarType.Bool)
-                .ToDictionary(kv => kv.Key, kv => Model.GetValue(kv.Value));
+        public IReadOnlyDictionary<string, double> GetBVSolution() => GetSolutionByType(NumVarType.Bool);
 
         #endregion
 
