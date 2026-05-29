@@ -66,7 +66,8 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 將多個 Set 轉換為字串列表；支援 List&lt;DateTime&gt;、List&lt;int&gt;、List&lt;double&gt;、List&lt;string&gt;。
+        /// 將多個 Set 轉換為字串列表。
+        /// 支援 List&lt;T&gt;、T[] 及任何 IEnumerable&lt;T&gt;，T 可為 DateTime、int、double、string。
         /// double 使用 InvariantCulture，確保與 ModelElementBase.ToString() 的格式一致。
         /// </summary>
         public static List<string>[] ConvertSetsToStringLists(params object[] lists)
@@ -76,11 +77,11 @@ namespace OptimFoundation.Core
             {
                 result[i] = lists[i] switch
                 {
-                    List<DateTime> dtList     => dtList.Select(d => d.ToString("yyyy-MM-dd")).ToList(),
-                    List<int>      intList    => intList.Select(n => n.ToString()).ToList(),
-                    List<double>   doubleList => doubleList.Select(n => n.ToString(CultureInfo.InvariantCulture)).ToList(),
-                    List<string>   stringList => stringList.ToList(),
-                    _ => throw new ArgumentException($"Unsupported set type: {lists[i].GetType()}")
+                    IEnumerable<DateTime> seq => seq.Select(d => d.ToString("yyyy-MM-dd")).ToList(),
+                    IEnumerable<int>      seq => seq.Select(n => n.ToString()).ToList(),
+                    IEnumerable<double>   seq => seq.Select(n => n.ToString(CultureInfo.InvariantCulture)).ToList(),
+                    IEnumerable<string>   seq => seq.ToList(),
+                    _ => throw new ArgumentException($"不支援的 Set 型別：{lists[i].GetType().Name}。支援 IEnumerable<DateTime/int/double/string>。")
                 };
             }
             return result;
