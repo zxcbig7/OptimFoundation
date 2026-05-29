@@ -20,6 +20,7 @@ namespace OptimFoundation.Core
         private readonly List<(double coef, TVar var)> _rhsTerms = new List<(double, TVar)>();
         private double _lhsConst = 0;
         private double _rhsConst = 0;
+
         // 以 constraint name 為 key，而非 variable set：名稱含迴圈索引（如 "Cap@TruckA"），不同條件不會誤判重複
         private readonly HashSet<string> _verifyConstraints = new HashSet<string>();
 
@@ -209,6 +210,7 @@ namespace OptimFoundation.Core
             return true;
         }
 
+        // 將 LHS 和 RHS 的合併為單一 list，RHS 項目的係數取負號，方便後續建立限制式時一次傳入 solver 的線性表達式方法
         private List<(double coef, TVar var)> BuildCombinedLhsMinusRhs()
         {
             var combined = new List<(double coef, TVar var)>(_lhsTerms);
@@ -224,7 +226,10 @@ namespace OptimFoundation.Core
         public bool AddLHS(double coeff, object varSpec)
         {
             if (varSpec == null) return false;
-            _lhsTerms.Add((coeff, Variables[varSpec.ToString()]));
+            string key = varSpec.ToString();
+            if (!Variables.TryGetValue(key, out var v))
+                throw new KeyNotFoundException($"AddLHS: 找不到變數 '{key}'（type: {varSpec.GetType().Name}）。請確認 property 宣告順序與 Build*Vs 傳入 set 順序一致。");
+            _lhsTerms.Add((coeff, v));
             return true;
         }
 
@@ -237,7 +242,10 @@ namespace OptimFoundation.Core
         public bool AddRHS(double coeff, object varSpec)
         {
             if (varSpec == null) return false;
-            _rhsTerms.Add((coeff, Variables[varSpec.ToString()]));
+            string key = varSpec.ToString();
+            if (!Variables.TryGetValue(key, out var v))
+                throw new KeyNotFoundException($"AddRHS: 找不到變數 '{key}'（type: {varSpec.GetType().Name}）。請確認 property 宣告順序與 Build*Vs 傳入 set 順序一致。");
+            _rhsTerms.Add((coeff, v));
             return true;
         }
 

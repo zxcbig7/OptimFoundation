@@ -404,9 +404,7 @@ namespace OptimFoundation.Cplex
         {
             if (string.IsNullOrWhiteSpace(name))
                 throw new ArgumentException("Project name cannot be null or whitespace.", nameof(name));
-
-            if (Config is CplexConfig cplexConfig)
-                _modelName = name;
+            _modelName = name;
         }
 
         public override bool Solve()
