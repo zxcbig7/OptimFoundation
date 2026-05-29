@@ -741,6 +741,8 @@ namespace OptimFoundation.Cplex
 
         #region 軟性限制式
 
+        public override bool SupportsSoftConstraints => true;
+
         public override bool CreateLeSoft(double rhs, double penalty)
         {
             if (!HasPool) return false;

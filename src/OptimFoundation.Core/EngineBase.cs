@@ -9,7 +9,7 @@ namespace OptimFoundation.Core
         protected TModel Model;
         protected readonly Dictionary<string, TVar> Variables = new Dictionary<string, TVar>();
         protected readonly Dictionary<string, Dictionary<string, TVar>> VariableSets = new Dictionary<string, Dictionary<string, TVar>>();
-        public int varCount { get { return Variables.Count; } }
+        public int varCount => Variables.Count;
         public int TotalVarCount => VariableSets.Values.Sum(s => s.Count);
         public ISolverConfig Config { get; protected set; }
         public SolveStatus Status { get; protected set; } = SolveStatus.NotSolved;
@@ -344,14 +344,20 @@ namespace OptimFoundation.Core
         protected IEnumerable<(double coef, TVar var)> PoolLhsTerms => _lhsTerms;
         protected double PoolLhsConst => _lhsConst;
 
+        /// <summary>
+        /// 此 solver 是否支援軟性限制式。呼叫 CreateLeSoft/GeSoft/EqSoft 前先判斷，
+        /// 避免到 runtime 才拿到 NotImplementedException。
+        /// </summary>
+        public virtual bool SupportsSoftConstraints => false;
+
         public virtual bool CreateLeSoft(double rhs, double penalty)
-            => throw new NotImplementedException("Override CreateLeSoft in solver-specific engine");
+            => throw new NotImplementedException($"{GetType().Name} 不支援軟性限制式，請確認 SupportsSoftConstraints。");
 
         public virtual bool CreateGeSoft(double rhs, double penalty)
-            => throw new NotImplementedException("Override CreateGeSoft in solver-specific engine");
+            => throw new NotImplementedException($"{GetType().Name} 不支援軟性限制式，請確認 SupportsSoftConstraints。");
 
         public virtual bool CreateEqSoft(double rhs, double penalty, string name)
-            => throw new NotImplementedException("Override CreateEqSoft in solver-specific engine");
+            => throw new NotImplementedException($"{GetType().Name} 不支援軟性限制式，請確認 SupportsSoftConstraints。");
 
         #endregion
     }
