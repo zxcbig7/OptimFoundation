@@ -10,7 +10,7 @@ namespace OptimFoundation.Cplex
     {
         // ── CPLEX 專屬參數（單一來源，camelCase） ──────────────────────
         public int? workThreads = 32;
-        public bool enableLog = false;
+        public bool enableLog = true;
         public bool exportLP = false;
         public bool exportSol = false;
         public bool exportMPS = false;
