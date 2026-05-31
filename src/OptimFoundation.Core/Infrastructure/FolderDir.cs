@@ -4,37 +4,29 @@ namespace OptimFoundation.Core
 {
     public class FolderDir
     {
-
-        public static ProjFolder Data = new ProjFolder("Data");
+        public static ProjFolder Data     = new ProjFolder("Data");
         public static ProjFolder Solution = new ProjFolder("Solution");
-        public static ProjFolder Log = new ProjFolder("Logs");
-        public static ProjFolder Model = new ProjFolder("Models");
-        public static ProjFolder IIS = new ProjFolder("IISs");
-        public static ProjFolder Sol = new ProjFolder("Sols");
+        public static ProjFolder Log      = new ProjFolder("Logs");
+        public static ProjFolder Model    = new ProjFolder("Models");
+        public static ProjFolder IIS      = new ProjFolder("IISs");
+        public static ProjFolder Sol      = new ProjFolder("Sols");
 
         public class ProjFolder
         {
-            /// <summary>
-            //   ¥Ø«e±M®×ªº®Ú¥Ø¿ı¡A¹w³]¬°°õ¦æÀÉ©Ò¦bªº¥Ø¿ı
-            /// </summary>
+            /// <summary>åŸ·è¡Œæª”æ‰€åœ¨ç›®éŒ„ï¼ˆAppDomain.BaseDirectoryï¼‰</summary>
             public static string ProjectPath => System.AppDomain.CurrentDomain.BaseDirectory;
 
-            /// <summary>
-            /// ±M®×¤ºªº¸ê®Æ§¨¦WºÙ¡A·|¦Û°Ê¦b®Ú¥Ø¿ı¤U«Ø¥ß¹ïÀ³ªº¸ê®Æ§¨
-            /// </summary>
             private readonly string _folderName;
-
 
             public ProjFolder(string folderName)
             {
-                // ªì©l¤Æ¸ê®Æ§¨¦WºÙ¡A¨Ã½T«O¸ê®Æ§¨¦s¦b
                 _folderName = folderName;
             }
 
-            // «Ø¥ß¸ê®Æ§¨
-            public void CreateFolder() {
-                if (!Directory.Exists(GetPath())) Directory.CreateDirectory(GetPath());
-            }
+            /// <summary>
+            /// å»ºç«‹è³‡æ–™å¤¾ã€‚Directory.CreateDirectory æ˜¯ idempotentï¼Œç›®éŒ„å·²å­˜åœ¨æ™‚ä¸ throwã€‚
+            /// </summary>
+            public void CreateFolder() => Directory.CreateDirectory(GetPath());
 
             public string GetPath() => Path.Combine(ProjectPath, _folderName);
 
@@ -47,16 +39,14 @@ namespace OptimFoundation.Core
             {
                 string path = GetFilePath(fileName);
                 if (File.Exists(path)) return false;
-
-
                 File.CreateText(path).Close();
                 return true;
             }
         }
+
         public static void TryCreateFolder(string path)
         {
-            if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+            Directory.CreateDirectory(path);
         }
-
     }
 }

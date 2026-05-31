@@ -9,15 +9,20 @@ namespace OptimFoundation.Core
         protected TModel Model;
         protected readonly Dictionary<string, TVar> Variables = new Dictionary<string, TVar>();
         protected readonly Dictionary<string, Dictionary<string, TVar>> VariableSets = new Dictionary<string, Dictionary<string, TVar>>();
-        public int varCount { get { return Variables.Count; } }
+        public int varCount => Variables.Count;
         public int TotalVarCount => VariableSets.Values.Sum(s => s.Count);
         public ISolverConfig Config { get; protected set; }
         public SolveStatus Status { get; protected set; } = SolveStatus.NotSolved;
+        public double BestObjValue { get; protected set; }
+        public double MIPGap { get; protected set; }
 
         private readonly List<(double coef, TVar var)> _lhsTerms = new List<(double, TVar)>();
         private readonly List<(double coef, TVar var)> _rhsTerms = new List<(double, TVar)>();
         private double _lhsConst = 0;
         private double _rhsConst = 0;
+
+        // 以 constraint name 為 key，而非 variable set：名稱含迴圈索引（如 "Cap@TruckA"），不同條件不會誤判重複
+        private readonly HashSet<string> _verifyConstraints = new HashSet<string>();
 
         protected EngineBase(ISolverConfig config)
         {
@@ -183,6 +188,8 @@ namespace OptimFoundation.Core
             Variables.Clear();
         }
 
+        protected void ResetVerifyConstraints() => _verifyConstraints.Clear();
+
         #endregion
 
         #region Pool — 狀態管理
@@ -203,13 +210,9 @@ namespace OptimFoundation.Core
             return true;
         }
 
-        private List<(double coef, TVar var)> BuildCombinedLhsMinusRhs()
-        {
-            var combined = new List<(double coef, TVar var)>(_lhsTerms);
-            foreach (var (coef, v) in _rhsTerms)
-                combined.Add((-coef, v));
-            return combined;
-        }
+        // LHS − RHS 的 lazy 合併，不建立新 List，LinearExpr 單次迭代即可消費
+        private IEnumerable<(double coef, TVar var)> CombinedLhsMinusRhs()
+            => _lhsTerms.Concat(_rhsTerms.Select(t => (-t.coef, t.var)));
 
         #endregion
 
@@ -218,7 +221,10 @@ namespace OptimFoundation.Core
         public bool AddLHS(double coeff, object varSpec)
         {
             if (varSpec == null) return false;
-            _lhsTerms.Add((coeff, Variables[varSpec.ToString()]));
+            string key = varSpec.ToString();
+            if (!Variables.TryGetValue(key, out var v))
+                throw new KeyNotFoundException($"AddLHS: 找不到變數 '{key}'（type: {varSpec.GetType().Name}）。請確認 property 宣告順序與 Build*Vs 傳入 set 順序一致。");
+            _lhsTerms.Add((coeff, v));
             return true;
         }
 
@@ -231,7 +237,10 @@ namespace OptimFoundation.Core
         public bool AddRHS(double coeff, object varSpec)
         {
             if (varSpec == null) return false;
-            _rhsTerms.Add((coeff, Variables[varSpec.ToString()]));
+            string key = varSpec.ToString();
+            if (!Variables.TryGetValue(key, out var v))
+                throw new KeyNotFoundException($"AddRHS: 找不到變數 '{key}'（type: {varSpec.GetType().Name}）。請確認 property 宣告順序與 Build*Vs 傳入 set 順序一致。");
+            _rhsTerms.Add((coeff, v));
             return true;
         }
 
@@ -248,8 +257,12 @@ namespace OptimFoundation.Core
         public bool CreateGreatEqual(string name)
         {
             if (!CheckHasPool()) return false;
-            AddConstraint(name, LinearExpr(BuildCombinedLhsMinusRhs()), ConstraintSense.GreaterEqual, _rhsConst - _lhsConst);
-            ClearPool();
+            if (!_verifyConstraints.Contains(name))
+            {
+                AddConstraint(name, LinearExpr(CombinedLhsMinusRhs()), ConstraintSense.GreaterEqual, _rhsConst - _lhsConst);
+                _verifyConstraints.Add(name);
+            }
+            ClearPool(); // 即使 skip，也必須清空 pool，否則下一條約束的 LHS 會累積舊項目
             return true;
         }
 
@@ -263,7 +276,11 @@ namespace OptimFoundation.Core
         public bool CreateLessEqual(string name)
         {
             if (!CheckHasPool()) return false;
-            AddConstraint(name, LinearExpr(BuildCombinedLhsMinusRhs()), ConstraintSense.LessEqual, _rhsConst - _lhsConst);
+            if (!_verifyConstraints.Contains(name))
+            {
+                AddConstraint(name, LinearExpr(CombinedLhsMinusRhs()), ConstraintSense.LessEqual, _rhsConst - _lhsConst);
+                _verifyConstraints.Add(name);
+            }
             ClearPool();
             return true;
         }
@@ -278,7 +295,11 @@ namespace OptimFoundation.Core
         public bool CreateEqual(string name)
         {
             if (!CheckHasPool()) return false;
-            AddConstraint(name, LinearExpr(BuildCombinedLhsMinusRhs()), ConstraintSense.Equal, _rhsConst - _lhsConst);
+            if (!_verifyConstraints.Contains(name))
+            {
+                AddConstraint(name, LinearExpr(CombinedLhsMinusRhs()), ConstraintSense.Equal, _rhsConst - _lhsConst);
+                _verifyConstraints.Add(name);
+            }
             ClearPool();
             return true;
         }
@@ -323,14 +344,20 @@ namespace OptimFoundation.Core
         protected IEnumerable<(double coef, TVar var)> PoolLhsTerms => _lhsTerms;
         protected double PoolLhsConst => _lhsConst;
 
+        /// <summary>
+        /// 此 solver 是否支援軟性限制式。呼叫 CreateLeSoft/GeSoft/EqSoft 前先判斷，
+        /// 避免到 runtime 才拿到 NotImplementedException。
+        /// </summary>
+        public virtual bool SupportsSoftConstraints => false;
+
         public virtual bool CreateLeSoft(double rhs, double penalty)
-            => throw new NotImplementedException("Override CreateLeSoft in solver-specific engine");
+            => throw new NotImplementedException($"{GetType().Name} 不支援軟性限制式，請確認 SupportsSoftConstraints。");
 
         public virtual bool CreateGeSoft(double rhs, double penalty)
-            => throw new NotImplementedException("Override CreateGeSoft in solver-specific engine");
+            => throw new NotImplementedException($"{GetType().Name} 不支援軟性限制式，請確認 SupportsSoftConstraints。");
 
         public virtual bool CreateEqSoft(double rhs, double penalty, string name)
-            => throw new NotImplementedException("Override CreateEqSoft in solver-specific engine");
+            => throw new NotImplementedException($"{GetType().Name} 不支援軟性限制式，請確認 SupportsSoftConstraints。");
 
         #endregion
     }

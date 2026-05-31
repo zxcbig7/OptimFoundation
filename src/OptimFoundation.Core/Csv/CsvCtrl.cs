@@ -52,7 +52,11 @@ namespace OptimFoundation.Core
             return data;
         }
 
-        public static List<T> BuildParameter<T>(string fileName = null)
+        /// <summary>
+        /// 從 CSV 讀取 Parameter 列表。
+        /// T 必須繼承 ModelElementBase 並有無參建構子（properties-only 類別符合此要求）。
+        /// </summary>
+        public static List<T> BuildParameter<T>(string fileName = null) where T : ModelElementBase, new()
         {
             Type type = typeof(T);
             string path = fileName == null
@@ -64,14 +68,14 @@ namespace OptimFoundation.Core
             {
                 string combined = kv.Key + "@" + kv.Value;
                 string[] parts = combined.Split('@').Skip(1).ToArray();
-                data.Add((T)Activator.CreateInstance(type, new object[] { parts }));
+                var instance = new T();
+                instance.InitClassBySets(parts);   // string[] 透過 params object[] 傳入，InitClassBySets 負責型別轉換
+                data.Add(instance);
             }
             return data;
         }
 
-        /// <summary>
-        /// 讀取矩陣格式 CSV
-        /// </summary>
+        /// <summary>讀取矩陣格式 CSV</summary>
         public static double[,] ReadMatrixCsv(string fileName)
         {
             string path = FolderDir.Data.GetFilePath(fileName);
