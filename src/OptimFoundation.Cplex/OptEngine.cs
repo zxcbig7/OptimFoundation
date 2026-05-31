@@ -1,5 +1,7 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using ILOG.Concert;
@@ -24,6 +26,16 @@ namespace OptimFoundation.Cplex
         private bool _enableLog;
         private readonly List<IRange> _constraints = new List<IRange>();
         private readonly string _startTime = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+        private MemoryStream _solverLogStream;
+        private StreamWriter _solverLogWriter;
+
+        // base 的 _verifyConstraints 管單次 Build 內的正常約束去重；這裡管跨 engine 的 thread 約束去重，生命週期不同
+        private readonly HashSet<string> _threadVerifyConstraints = new HashSet<string>();
+        // Thread constraints：由 CreateXxxThread 建立，尚未屬於任何 model（用 Le/Ge/Eq 而非 AddLe/AddGe/AddEq）
+        // 可被 MergeModel 加入另一個 model，或被 ResetThreadConstraint 從 master model 移除
+        private int _threadRuleCount = 0;
+        private readonly List<IRange> _threadConstraints = new List<IRange>();
+        private List<string> _conflictConstraints = null;
 
         public OptEngine(CplexConfig config) : base(config) { }
         public OptEngine() : base(new CplexConfig()) { }
@@ -35,7 +47,33 @@ namespace OptimFoundation.Cplex
 
             Model = new ILOG.CPLEX.Cplex();
             _constraints.Clear();
+            _conflictConstraints = null;
+            ResetVerifyConstraints();
+
             CplexConfig config = cfg as CplexConfig;
+
+            // Solver log 路由：
+            //   enableLog = true  → CPLEX 直接寫 Console（即時顯示）
+            //   enableLog = false → CPLEX 輸出導入 MemoryStream 靜默捕捉（不顯示）
+            _solverLogStream?.Dispose();
+            _solverLogWriter?.Dispose();
+            _solverLogStream = new MemoryStream();
+            _solverLogWriter = new StreamWriter(_solverLogStream) { AutoFlush = true };
+
+            if (config.enableLog == true)
+            {
+                _enableLog = true;
+                // TeeWriter：即時寫 Console + 同時捕捉到 MemoryStream（供事後存 log 檔）
+                var tee = new TeeWriter(Console.Out, _solverLogWriter);
+                Model.SetOut(tee);
+                Model.SetWarning(tee);
+            }
+            else
+            {
+                // 靜默捕捉，不顯示在 Console
+                Model.SetOut(_solverLogWriter);
+                Model.SetWarning(_solverLogWriter);
+            }
 
             #region 設定執行緒上限
             // CPLEX求解設定 - 工作執行緒上限 (預設: 32)
@@ -88,11 +126,8 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region 是否紀錄LOG
-            if (config.enableLog == true)
-            {
-                _enableLog = true;
-                Logging.Info($"[Environment Setting] Enabled Solver Log File Output");
-            }
+            if (_enableLog)
+                Logging.Info($"[Environment Setting] CPLEX Log → Console (real-time)");
             #endregion
 
             #region 是否輸出 LP 檔案
@@ -187,11 +222,11 @@ namespace OptimFoundation.Cplex
                 string varSelDescription = config.varSel.Value switch
                 {
                     -1 => "以最小可行解選擇變數分支",
-                     1 => "以最大可行解選擇變數分支",
-                     2 => "以假定成本選擇分支",
-                     3 => "強分支",
-                     4 => "以假定降低成本選擇分支",
-                     _ => "自動選擇變數分支 (預設)"
+                    1 => "以最大可行解選擇變數分支",
+                    2 => "以假定成本選擇分支",
+                    3 => "強分支",
+                    4 => "以假定降低成本選擇分支",
+                    _ => "自動選擇變數分支 (預設)"
                 };
                 Logging.Info($"[Environment Setting] VarSel={config.varSel.Value} ({varSelDescription})");
             }
@@ -294,8 +329,8 @@ namespace OptimFoundation.Cplex
             NumVarType cplexType = type switch
             {
                 VarType.Integer => NumVarType.Int,
-                VarType.Binary  => NumVarType.Bool,
-                _               => NumVarType.Float
+                VarType.Binary => NumVarType.Bool,
+                _ => NumVarType.Float
             };
 
             for (int i = 0; i < n; i++)
@@ -369,9 +404,7 @@ namespace OptimFoundation.Cplex
         {
             if (string.IsNullOrWhiteSpace(name))
                 throw new ArgumentException("Project name cannot be null or whitespace.", nameof(name));
-
-            if (Config is CplexConfig cplexConfig)
-                _modelName = name;
+            _modelName = name;
         }
 
         public override bool Solve()
@@ -386,33 +419,64 @@ namespace OptimFoundation.Cplex
 
             Model.Solve();
 
+            // CPLEX solver log 讀出（enableLog 時輸出完整 log，否則只輸出摘要）
+            FlushSolverLog();
+
             var s = Model.GetStatus();
             if (s == ILOG.CPLEX.Cplex.Status.Optimal) Status = SolveStatus.Optimal;
             else if (s == ILOG.CPLEX.Cplex.Status.Feasible) Status = SolveStatus.Feasible;
-            else if (s == ILOG.CPLEX.Cplex.Status.Infeasible) Status = SolveStatus.Infeasible;
-            else if (s == ILOG.CPLEX.Cplex.Status.InfeasibleOrUnbounded) Status = SolveStatus.Infeasible;
+            else if (s == ILOG.CPLEX.Cplex.Status.Infeasible ||
+                     s == ILOG.CPLEX.Cplex.Status.InfeasibleOrUnbounded) Status = SolveStatus.Infeasible;
             else if (s == ILOG.CPLEX.Cplex.Status.Unbounded) Status = SolveStatus.Unbounded;
+            else if (s == ILOG.CPLEX.Cplex.Status.Unknown) Status = SolveStatus.TimeLimit;
             else Status = SolveStatus.Error;
 
             bool ok = Status == SolveStatus.Optimal || Status == SolveStatus.Feasible;
+
+            if (ok)
+            {
+                // Infeasible / Unbounded 時 CPLEX 會 throw，只在有解時才讀
+                BestObjValue = Model.GetBestObjValue();
+                MIPGap = Model.GetMIPRelativeGap();
+            }
 
             if (ok && _exportSol)
                 Model.WriteSolution(FolderDir.Sol.GetFilePath($"{proj}_Solution_{_startTime}.sol"));
 
             if (Status == SolveStatus.Infeasible && _constraints.Count > 0)
-            {
-                FolderDir.IIS.CreateFolder();
-                var prefs = Enumerable.Repeat(1.0, _constraints.Count).ToArray();
-                Model.RefineConflict(_constraints.ToArray(), prefs);
-                string iisPath = FolderDir.IIS.GetFilePath($"{proj}_IIS_{_startTime}.ilp");
-                Model.WriteConflict(iisPath);
-                Logging.Info($"[OptEngine] IIS written: {iisPath}");
-            }
+                _conflictConstraints = RunConflictAnalysis(proj);
 
             if (ok)
-                Logging.Info($"[OptEngine] ObjVal={Model.GetObjValue()}  BestBound={Model.GetBestObjValue()}  MIPGap={Model.GetMIPRelativeGap()}");
+                Logging.Info($"[OptEngine] Status={Status}  ObjVal={Model.GetObjValue()}  BestBound={BestObjValue}  MIPGap={MIPGap}");
+            else
+                Logging.Info($"[OptEngine] Status={Status}");
 
             return ok;
+        }
+
+        /// <summary>
+        /// 將 CPLEX solver log 從 MemoryStream 讀出並輸出。
+        /// enableLog=true → Logging.Info 完整 log；否則不輸出（仍清空 stream 供下次使用）。
+        /// </summary>
+        private void FlushSolverLog()
+        {
+            if (_solverLogWriter == null || _solverLogStream == null) return;
+
+            _solverLogWriter.Flush();
+            _solverLogStream.Position = 0;
+
+            if (_enableLog)
+            {
+                // Console 已有即時輸出，只把捕捉到的 log 另存進 log 檔（不重印到 Console）
+                string log = System.Text.Encoding.UTF8.GetString(
+                    _solverLogStream.GetBuffer(), 0, (int)_solverLogStream.Length);
+                if (!string.IsNullOrWhiteSpace(log))
+                    Logging.WriteToFile($"[CPLEX Log]{Environment.NewLine}{log}");
+            }
+
+            // 清空 stream 供下次 Solve() 使用（Benders 多輪迭代）
+            _solverLogStream.SetLength(0);
+            _solverLogStream.Position = 0;
         }
 
         public override double GetObjectiveValue() => Model.GetObjValue();
@@ -423,6 +487,8 @@ namespace OptimFoundation.Cplex
         {
             Model?.End();
             Model = null;
+            _solverLogWriter?.Dispose();
+            _solverLogStream?.Dispose();
         }
 
         #endregion
@@ -450,7 +516,233 @@ namespace OptimFoundation.Cplex
 
         #endregion
 
+        #region 限制式重置
+
+        /// <summary>
+        /// 清空目標式與所有限制式，保留變數，可在 Benders 迭代換輪次間呼叫。
+        /// </summary>
+        public void ResetConstraint()
+        {
+            var obj = Model.GetObjective();
+            if (obj != null)
+            {
+                Model.End(obj);
+                Model.Remove(obj);
+            }
+            if (_constraints.Count > 0)
+            {
+                var arr = _constraints.ToArray();
+                Model.End(arr);
+                Model.Remove(arr);
+                _constraints.Clear();
+            }
+            _threadVerifyConstraints.Clear();
+            _threadConstraints.Clear();
+            _threadRuleCount = 0;
+            ClearPool();
+            _conflictConstraints = null;
+            ResetVerifyConstraints();
+        }
+
+        #endregion
+
+        #region 多線程限制式同步
+
+        // 三個公開方法共用的邏輯，差異只在最後建立限制式物件的方式（Le/Ge/Eq）
+        private bool CreateThreadConstraint(
+            double value, string ruleName, OptEngine targetEngine, OptEngine sourceEngine,
+            Func<double, ILinearNumExpr, IRange> factory)
+        {
+            var targetTerms = targetEngine.PoolLhsTerms.ToList();
+            if (targetTerms.Count == 0) return false;
+
+            string verify = string.Join(",", targetTerms.OrderBy(t => t.var.Name).Select(t => t.var.Name));
+            if (!_threadVerifyConstraints.Contains(verify))
+            {
+                var expr = targetEngine.Model.LinearNumExpr();
+                foreach (var (coef, v) in targetTerms)
+                    expr.AddTerm(coef, v);
+                var c = factory(value, expr);  // Le/Ge/Eq — 未加入任何 model，存入 _threadConstraints
+                c.Name = $"{ruleName}_{_threadRuleCount}";
+                _threadConstraints.Add(c);
+                _threadVerifyConstraints.Add(verify);
+                _threadRuleCount++;
+            }
+
+            targetEngine.ClearPool();
+            return true;
+        }
+
+        /// <summary>跨模型建立 &gt;= 限制式（value ≤ Σlhs）。呼叫後清空 targetEngine pool。</summary>
+        public bool CreateGreatEqualThread(double value, string ruleName, OptEngine targetEngine, OptEngine sourceEngine)
+            => CreateThreadConstraint(value, ruleName, targetEngine, sourceEngine,
+                (v, expr) => sourceEngine.Model.Le(v, expr));
+
+        /// <summary>跨模型建立 &lt;= 限制式（Σlhs ≤ value）。呼叫後清空 targetEngine pool。</summary>
+        public bool CreateLessEqualThread(double value, string ruleName, OptEngine targetEngine, OptEngine sourceEngine)
+            => CreateThreadConstraint(value, ruleName, targetEngine, sourceEngine,
+                (v, expr) => sourceEngine.Model.Ge(v, expr));
+
+        /// <summary>跨模型建立 = 限制式（Σlhs = value）。呼叫後清空 targetEngine pool。</summary>
+        public bool CreateEqualThread(double value, string ruleName, OptEngine targetEngine, OptEngine sourceEngine)
+            => CreateThreadConstraint(value, ruleName, targetEngine, sourceEngine,
+                (v, expr) => sourceEngine.Model.Eq(v, expr));
+
+        /// <summary>
+        /// 從 this 的 CPLEX 模型中移除兩個子引擎的 thread 限制式，並清空各自的 _threadConstraints。
+        /// 用於 Benders 迭代換輪次前的清理。
+        /// </summary>
+        public void ResetThreadConstraint(OptEngine threadEngine1, OptEngine threadEngine2)
+        {
+            RemoveThreadConstraints(threadEngine1);
+            RemoveThreadConstraints(threadEngine2);
+            _threadConstraints.Clear();
+        }
+
+        private void RemoveThreadConstraints(OptEngine engine)
+        {
+            if (engine._threadConstraints.Count == 0) return;
+            var arr = engine._threadConstraints.ToArray();
+            Model.End(arr);
+            Model.Remove(arr);
+            engine._threadConstraints.Clear();
+        }
+
+        #endregion
+
+        #region 模型複製與合併
+
+        /// <summary>
+        /// 複製 sourceEngine 的目標式與第一個變數至新的 OptEngine 實例。
+        /// 用於 Benders 平行求解的初始模型分發。
+        /// </summary>
+        public OptEngine CopyModel(OptEngine sourceEngine)
+        {
+            var targetEngine = new OptEngine();
+            targetEngine.Configuration(targetEngine.Config);
+
+            var cloneManager = new SimpleCloneManager(sourceEngine.Model);
+
+            // Clone objective
+            var sourceObj = sourceEngine.Model.GetObjective();
+            if (sourceObj != null)
+            {
+                var objective = (IObjective)sourceObj.MakeClone(cloneManager);
+                targetEngine.Model.Add(objective);
+            }
+
+            // OptEngine 變數存在 Variables dict（不走 lpMatrix）
+            // 對應 CplexEngine copyModel 只 clone 第一個變數的行為
+            if (sourceEngine.Variables.Count > 0)
+            {
+                var firstVar = sourceEngine.Variables.Values.First();
+                var temp = (INumVar)firstVar.MakeClone(cloneManager);
+                targetEngine.Model.Add(temp);
+            }
+
+            return targetEngine;
+        }
+
+        /// <summary>
+        /// 將 sourceEngine 的限制式加入 targetEngine 的 CPLEX 模型。
+        /// 用於 Benders 子問題 cut 合併回主問題。
+        /// </summary>
+        public OptEngine MergeModel(OptEngine sourceEngine, OptEngine targetEngine)
+        {
+            // 只合併 _threadConstraints（用 Le/Ge/Eq 建立、尚未屬於任何 model）
+            // _constraints 的元素已在 sourceEngine.Model 內，不能跨 model 使用
+            if (sourceEngine._threadConstraints.Count > 0)
+                targetEngine.Model.Add(sourceEngine._threadConstraints.ToArray());
+            return targetEngine;
+        }
+
+        /// <summary>
+        /// 將指定的變數集合加入 targetEngine 的 CPLEX 模型。
+        /// </summary>
+        public OptEngine VariableMerge(OptEngine targetEngine, HashSet<INumVar> variables)
+        {
+            foreach (var variable in variables)
+                targetEngine.Model.Add(variable);
+            return targetEngine;
+        }
+
+        #endregion
+
+        #region IIS 衝突分析
+
+        private List<string> RunConflictAnalysis(string proj)
+        {
+            var constraintArr = _constraints.ToArray();
+            // 全 1.0 表示等權重：CPLEX Elastic Filtering 會自由選最小衝突子集，不偏向保留任何一條
+            var prefs = Enumerable.Repeat(1.0, constraintArr.Length).ToArray();
+            var conflictNames = new List<string>();
+
+            if (!Model.RefineConflict(constraintArr, prefs))
+                return conflictNames;
+
+            FolderDir.IIS.CreateFolder();  // 即使未設定 exportLP/Sol，IIS 資料夾也必須存在才能寫入
+            string iisPath = FolderDir.IIS.GetFilePath($"{proj}_IIS_{_startTime}.ilp");
+            Model.WriteConflict(iisPath);
+            Logging.Info($"[OptEngine] IIS written: {iisPath}");
+
+            var statuses = Model.GetConflict(constraintArr);
+            for (int i = 0; i < constraintArr.Length; i++)
+            {
+                if (statuses[i] == ConflictStatus.Member ||
+                    statuses[i] == ConflictStatus.PossibleMember)
+                {
+                    if (!string.IsNullOrEmpty(constraintArr[i].Name))
+                        conflictNames.Add(constraintArr[i].Name);
+                }
+            }
+
+            if (conflictNames.Count > 0)
+                Logging.Info($"[OptEngine] Conflict constraints ({conflictNames.Count}): {string.Join(", ", conflictNames)}");
+
+            return conflictNames;
+        }
+
+        /// <summary>
+        /// 回傳 RefineConflict 識別出的衝突限制式名稱清單。
+        /// Solve() 遇到 Infeasible 時會自動執行並快取結果；手動呼叫也可觸發。
+        /// </summary>
+        public List<string> GetConflictConstraints()
+        {
+            if (_conflictConstraints != null) return _conflictConstraints; // Solve() 已執行過則直接回傳，RefineConflict 很耗時不重跑
+            if (Status != SolveStatus.Infeasible || _constraints.Count == 0)
+                return new List<string>();
+            _conflictConstraints = RunConflictAnalysis(_modelName ?? "Project");
+            return _conflictConstraints;
+        }
+
+        #endregion
+
+        #region 分類型別解答
+
+        // 批次取解值：Model.GetValues(INumVar[]) 一次 interop，取代逐筆 Model.GetValue()
+        private IReadOnlyDictionary<string, double> GetSolutionByType(NumVarType varType)
+        {
+            var matching = Variables.Where(kv => kv.Value.Type == varType).ToList();
+            if (matching.Count == 0) return new Dictionary<string, double>();
+            double[] values = Model.GetValues(matching.Select(kv => kv.Value).ToArray());
+            return matching.Select((kv, i) => (kv.Key, values[i]))
+                           .ToDictionary(t => t.Key, t => t.Item2);
+        }
+
+        /// <summary>取出所有連續變數（Float）的解值。</summary>
+        public IReadOnlyDictionary<string, double> GetCVSolution() => GetSolutionByType(NumVarType.Float);
+
+        /// <summary>取出所有整數變數（Int）的解值。</summary>
+        public IReadOnlyDictionary<string, double> GetIVSolution() => GetSolutionByType(NumVarType.Int);
+
+        /// <summary>取出所有二元變數（Bool）的解值。</summary>
+        public IReadOnlyDictionary<string, double> GetBVSolution() => GetSolutionByType(NumVarType.Bool);
+
+        #endregion
+
         #region 軟性限制式
+
+        public override bool SupportsSoftConstraints => true;
 
         public override bool CreateLeSoft(double rhs, double penalty)
         {
@@ -498,5 +790,54 @@ namespace OptimFoundation.Cplex
         }
 
         #endregion
+
+        /// <summary>
+        /// 同時寫入兩個 TextWriter 的中繼器。
+        /// 用途：CPLEX log 即時輸出到 Console，同時捕捉到 MemoryStream 供事後存 log 檔。
+        /// </summary>
+        private sealed class TeeWriter : TextWriter
+        {
+            private readonly TextWriter _primary;   // Console.Out（即時顯示）
+            private readonly TextWriter _secondary; // StreamWriter → MemoryStream（捕捉）
+
+            public TeeWriter(TextWriter primary, TextWriter secondary)
+            {
+                _primary = primary;
+                _secondary = secondary;
+            }
+
+            public override System.Text.Encoding Encoding => _primary.Encoding;
+
+            public override void Write(char value)
+            {
+                _primary.Write(value);
+                _secondary.Write(value);
+            }
+
+            public override void Write(string value)
+            {
+                _primary.Write(value);
+                _secondary.Write(value);
+            }
+
+            public override void WriteLine(string value)
+            {
+                _primary.WriteLine(value);
+                _secondary.WriteLine(value);
+            }
+
+            public override void Flush()
+            {
+                _primary.Flush();
+                _secondary.Flush();
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                // _primary = Console.Out，不應 Dispose
+                if (disposing) _secondary?.Dispose();
+                base.Dispose(disposing);
+            }
+        }
     }
 }

@@ -10,7 +10,7 @@ namespace OptimFoundation.Cplex
     {
         // ── CPLEX 專屬參數（單一來源，camelCase） ──────────────────────
         public int? workThreads = 32;
-        public bool enableLog = false;
+        public bool enableLog = true;
         public bool exportLP = false;
         public bool exportSol = false;
         public bool exportMPS = false;
@@ -32,7 +32,7 @@ namespace OptimFoundation.Cplex
         public double? TimeLimit { get => timeLimit; set => timeLimit = value; }
         public double? MipGap { get => epGap; set => epGap = value; }
         public int? Threads { get => workThreads; set => workThreads = value; }
-        public bool LogToConsole { get => !enableLog; set => enableLog = !value; }
+        public bool LogToConsole { get => enableLog; set => enableLog = value; }
         public string LogFilePath { get; set; }
         public int? RootAlgorithm { get => algorithm; set => algorithm = value; }
 

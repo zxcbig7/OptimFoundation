@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Oracle.ManagedDataAccess.Core" Version="23.6.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="NLog">
+      <HintPath>..\..\src\OptimFoundation.Core\bin\Debug\net48\NLog.dll</HintPath>
+    </Reference>
+    <Reference Include="OptimFoundation.Core">
+      <HintPath>..\..\src\OptimFoundation.Core\bin\Debug\net48\OptimFoundation.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="OptimFoundation.Solver">
+      <HintPath>..\..\src\OptimFoundation.Solver\bin\Debug\net8.0\OptimFoundation.Solver.dll</HintPath>
+    </Reference>
+    <Reference Include="Solver">
+      <HintPath>..\..\..\..\MILP Solver\Solver\Solver\bin\Debug\net8.0\Solver.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>

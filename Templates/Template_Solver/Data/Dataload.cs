@@ -1,5 +1,5 @@
-ï»¿using SandBox.VariableClass;
-using OptimFoundation.Cplex;
+using SandBox.VariableClass;
+using OptimFoundation.Solver;
 
 using OptimFoundation.Core;
 
@@ -8,7 +8,7 @@ namespace SandBox.Data
 {
     public class Dataload
     {
-        // ç½°åˆ†æ¬Šé‡åƒæ•¸
+        // »@¤ÀÅv­«°Ñ¼Æ
         public double Penalty_SixDay = 1;
         public double Penalty_DoubleOffLT2 = 0.1;
         public double Penalty_GroupMismatch = 0.2;
@@ -19,37 +19,37 @@ namespace SandBox.Data
         public double Penalty_Weekend4Day = 0.1;
         public double Penalty_BackpuGroup = 0;
 
-        //è¨­å®šSets
+        //³]©wSets
         public List<string> Employee = new List<string>();
         public List<string> Group = new List<string>();
         public List<DateTime> Date = new List<DateTime>();
 
-        // æ¨¡å‹å»ºæ§‹ä½¿ç”¨çš„åƒæ•¸
-        public List<Parameter_NightToDay> parameter_NightToDay = new List<Parameter_NightToDay>(); // å‰ä¸€å¤©-ä»Šå¤©ç­åˆ¥å°æ‡‰æˆæœ¬
-        public List<Parameter_ShiftDemand> parameter_ShiftDemand = new List<Parameter_ShiftDemand>(); // æ¯æ—¥å„ç­åˆ¥éœ€æ±‚
-        public List<Parameter_CrossGroup> parameter_CrossGroup = new List<Parameter_CrossGroup>(); // è·¨çµ„åˆ¥ä¸Šç­æˆæœ¬
-        public List<Parameter_PreAssign> parameter_PreAssign = new List<Parameter_PreAssign>(); // è·¨çµ„åˆ¥ä¸Šç­æˆæœ¬
-        public List<Parameter_BackupGroup> parameter_BackupGroup = new List<Parameter_BackupGroup>(); // Backupçµ„åˆ¥
+        // ¼Ò«¬«Øºc¨Ï¥Îªº°Ñ¼Æ
+        public List<Parameter_NightToDay> parameter_NightToDay = new List<Parameter_NightToDay>(); // «e¤@¤Ñ-¤µ¤Ñ¯Z§O¹ïÀ³¦¨¥»
+        public List<Parameter_ShiftDemand> parameter_ShiftDemand = new List<Parameter_ShiftDemand>(); // ¨C¤é¦U¯Z§O»İ¨D
+        public List<Parameter_CrossGroup> parameter_CrossGroup = new List<Parameter_CrossGroup>(); // ¸ó²Õ§O¤W¯Z¦¨¥»
+        public List<Parameter_PreAssign> parameter_PreAssign = new List<Parameter_PreAssign>(); // ¸ó²Õ§O¤W¯Z¦¨¥»
+        public List<Parameter_BackupGroup> parameter_BackupGroup = new List<Parameter_BackupGroup>(); // Backup²Õ§O
 
-        // æ–¹ä¾¿éŠœæ¥ Pattern
+        // ¤è«K»Î±µ Pattern
         enum GroupE { O, D, E, N, C }
 
         public Dataload()
         {
-            // ç­åˆ¥ç¾¤çµ„
+            // ¯Z§O¸s²Õ
             this.Group.AddRange(Enum.GetNames(typeof(GroupE)));
 
 
-            // äººå“¡ç¾¤çµ„
-            (int, string)[] EMYNum_list = [(7, "D"), (5, "E"), (3, "N"), (1, "C")]; // Dã€Eã€Nã€Cç­äººæ•¸
-            int totalENum = EMYNum_list.Sum(s => s.Item1); // ç¸½äººæ•¸
+            // ¤H­û¸s²Õ
+            (int, string)[] EMYNum_list = [(7, "D"), (5, "E"), (3, "N"), (1, "C")]; // D¡BE¡BN¡BC¯Z¤H¼Æ
+            int totalENum = EMYNum_list.Sum(s => s.Item1); // Á`¤H¼Æ
             for (int e = 1; e <= totalENum; e++) { this.Employee.Add($"E{e}"); }
 
-            // è·¨çµ„åˆ¥ä¸Šç­æˆæœ¬(éœ€ç‰¹åˆ¥è¨­å®š)
+            // ¸ó²Õ§O¤W¯Z¦¨¥»(»İ¯S§O³]©w)
             int i = 1;
             foreach (var group in EMYNum_list)
             {
-                // ä¼‘ã€ä¸»è¦ã€Backupç­åˆ¥ä¹‹å¤–çš„ç­åˆ¥ï¼Œè·¨çµ„åˆ¥ä¸Šç­éƒ½è¦æ‰£åˆ†
+                // ¥ğ¡B¥D­n¡BBackup¯Z§O¤§¥~ªº¯Z§O¡A¸ó²Õ§O¤W¯Z³£­n¦©¤À
                 var inhig = this.Group.Where(w => w != group.Item2 && w != "O").ToList();
                 for (int j = 0; j < group.Item1; j++)
                 {
@@ -61,10 +61,10 @@ namespace SandBox.Data
                 }
             }
 
-            //å¡«è³‡æ–™
-            parameter_BackupGroup.Add(new Parameter_BackupGroup { Employee = "E1", Group = "C" }); // å“¡å·¥E1çš„Backupç­åˆ¥ç‚ºCï¼Œè·¨çµ„åˆ¥ä¸Šç­æˆæœ¬èª¿æ•´ç‚º Backup æˆæœ¬
+            //¶ñ¸ê®Æ
+            parameter_BackupGroup.Add(new Parameter_BackupGroup { Employee = "E1", Group = "C" }); // ­û¤uE1ªºBackup¯Z§O¬°C¡A¸ó²Õ§O¤W¯Z¦¨¥»½Õ¾ã¬° Backup ¦¨¥»
 
-            // æ‰¾åˆ°è©²å“¡å·¥è©²ç­åˆ¥çš„è·¨çµ„åˆ¥ä¸Šç­æˆæœ¬ï¼Œèª¿æ•´ç‚º Backup æˆæœ¬
+            // §ä¨ì¸Ó­û¤u¸Ó¯Z§Oªº¸ó²Õ§O¤W¯Z¦¨¥»¡A½Õ¾ã¬° Backup ¦¨¥»
             foreach (var backup in this.parameter_BackupGroup)
             {
                 var CrossGroup = parameter_CrossGroup.FirstOrDefault(w => w.Employee == backup.Employee && w.Group == backup.Group);
@@ -77,19 +77,19 @@ namespace SandBox.Data
 
 
 
-            // æ˜¨å¤©->ä»Šå¤©ç­åˆ¥å°æ‡‰æˆæœ¬
-            parameter_NightToDay.Add(new Parameter_NightToDay { PreGroup = "N", Group = "D", QTY = Penalty_PreGroup }); // æ™š->æ—©
-            parameter_NightToDay.Add(new Parameter_NightToDay { PreGroup = "N", Group = "E", QTY = Penalty_PreGroup }); // æ™š->åˆ
-            parameter_NightToDay.Add(new Parameter_NightToDay { PreGroup = "N", Group = "C", QTY = Penalty_PreGroup }); // æ™š->è¡Œ
-            parameter_NightToDay.Add(new Parameter_NightToDay { PreGroup = "E", Group = "D", QTY = Penalty_PreGroup }); // åˆ->æ—©
-            parameter_NightToDay.Add(new Parameter_NightToDay { PreGroup = "E", Group = "C", QTY = Penalty_PreGroup }); // åˆ->è¡Œ
-            parameter_NightToDay.Add(new Parameter_NightToDay { PreGroup = "D", Group = "N", QTY = Penalty_PreGroup }); // æ—©->æ™š
-            parameter_NightToDay.Add(new Parameter_NightToDay { PreGroup = "E", Group = "N", QTY = Penalty_PreGroup }); // åˆ->æ™š
-            parameter_NightToDay.Add(new Parameter_NightToDay { PreGroup = "C", Group = "N", QTY = Penalty_PreGroup }); // è¡Œ->æ™š
+            // ¬Q¤Ñ->¤µ¤Ñ¯Z§O¹ïÀ³¦¨¥»
+            parameter_NightToDay.Add(new Parameter_NightToDay { PreGroup = "N", Group = "D", QTY = Penalty_PreGroup }); // ±ß->¦­
+            parameter_NightToDay.Add(new Parameter_NightToDay { PreGroup = "N", Group = "E", QTY = Penalty_PreGroup }); // ±ß->¤È
+            parameter_NightToDay.Add(new Parameter_NightToDay { PreGroup = "N", Group = "C", QTY = Penalty_PreGroup }); // ±ß->¦æ
+            parameter_NightToDay.Add(new Parameter_NightToDay { PreGroup = "E", Group = "D", QTY = Penalty_PreGroup }); // ¤È->¦­
+            parameter_NightToDay.Add(new Parameter_NightToDay { PreGroup = "E", Group = "C", QTY = Penalty_PreGroup }); // ¤È->¦æ
+            parameter_NightToDay.Add(new Parameter_NightToDay { PreGroup = "D", Group = "N", QTY = Penalty_PreGroup }); // ¦­->±ß
+            parameter_NightToDay.Add(new Parameter_NightToDay { PreGroup = "E", Group = "N", QTY = Penalty_PreGroup }); // ¤È->±ß
+            parameter_NightToDay.Add(new Parameter_NightToDay { PreGroup = "C", Group = "N", QTY = Penalty_PreGroup }); // ¦æ->±ß
 
 
 
-            //  æ’ç¨‹æœˆä»½
+            //  ±Æµ{¤ë¥÷
             int year = 2026;
             int month = 1;   // 1~12
             int daysInMonth = DateTime.DaysInMonth(year, month);
@@ -100,22 +100,22 @@ namespace SandBox.Data
                 DateTime d = new DateTime(year, month, day);
                 Date.Add(d);
 
-                //æ¯æ—¥å„ç­åˆ¥éœ€æ±‚
-                parameter_ShiftDemand.Add(new Parameter_ShiftDemand { Date = d, Group = "D", QTY = random.Next(4, 6) }); // éš¨æ©Ÿ4~5äººéœ€æ±‚
+                //¨C¤é¦U¯Z§O»İ¨D
+                parameter_ShiftDemand.Add(new Parameter_ShiftDemand { Date = d, Group = "D", QTY = random.Next(4, 6) }); // ÀH¾÷4~5¤H»İ¨D
                 parameter_ShiftDemand.Add(new Parameter_ShiftDemand { Date = d, Group = "E", QTY = 3 });
                 parameter_ShiftDemand.Add(new Parameter_ShiftDemand { Date = d, Group = "N", QTY = 2 });
                 parameter_ShiftDemand.Add(new Parameter_ShiftDemand { Date = d, Group = "C", QTY = 1 });
             }
 
 
-            // é æ’ç­ (éœ€ç‰¹åˆ¥è¨­å®š)
+            // ¹w±Æ¯Z (»İ¯S§O³]©w)
             parameter_PreAssign.Add(new Parameter_PreAssign { Date = new DateTime(2026, 1, 1), Employee = "E1", Group = "E" });
             parameter_PreAssign.Add(new Parameter_PreAssign { Date = new DateTime(2026, 1, 1), Employee = "E3", Group = "O" });
             parameter_PreAssign.Add(new Parameter_PreAssign { Date = new DateTime(2026, 1, 2), Employee = "E2", Group = "D" });
             parameter_PreAssign.Add(new Parameter_PreAssign { Date = new DateTime(2026, 1, 2), Employee = "E3", Group = "E" });
 
 
-            #region è³‡æ–™è®€å– - CSV
+            #region ¸ê®ÆÅª¨ú - CSV
             //this.Set1 = CSVCtrl.ReadStrSet("Set_Set1.csv");
             //this.Set2 = CSVCtrl.ReadDoubleSet("Set_Set2.csv");
             //this.Set3 = CSVCtrl.ReadIntSet("Set_Set3.csv");
@@ -126,7 +126,7 @@ namespace SandBox.Data
 
         public void WriteToCSV(OptEngine engine)
         {
-            #region CSV æ“ä½œ
+            #region CSV ¾Ş§@
             //CSVCtrl.SaveToCSV<VariableB_ShiftAssign>(engine.GetSetVarSol<VariableB_ShiftAssign>(), DATA_ID: "V1", USER_ID: "VIC");
             //CSVCtrl.SaveToCSV<VariableX_WeekendLT4>(engine.GetSetVarSol<VariableX_WeekendLT4>(), DATA_ID: "V1", USER_ID: "VIC");
             //CSVCtrl.SaveToCSV<VariableX_BelowAVG>(engine.GetSetVarSol<VariableX_BelowAVG>(), DATA_ID: "V1", USER_ID: "VIC");
