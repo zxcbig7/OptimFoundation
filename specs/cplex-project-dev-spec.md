@@ -522,3 +522,153 @@ internal class Program
 □ 13. 執行，確認 CPLEX log 顯示 Optimal 或預期狀態
 □ 14. 開啟 Output/Model/*.lp 確認模型結構正確
 ```
+
+---
+
+## 16. 模組化架構：Constraint 與 Dataload 解耦
+
+### 核心原則
+
+> **Variable、Parameter、Constraint 不認識 Dataload。**  
+> Dataload 負責裝資料，BuildModel 負責把資料送給 Constraint。
+
+這樣做之後，Variable / Parameter / Constraint 這三類檔案可以直接複製到任何 Project 使用，不需要修改。
+
+---
+
+### 各類別的職責
+
+| 類別 | 職責 | 可跨 Project 共用 |
+| ---- | ---- | :-: |
+| `VariableB/I/X_Xxx` | 決策變數的索引結構（properties-only） | ✅ |
+| `Parameter_Xxx` | 輸入資料的欄位結構（properties-only + QTY） | ✅ |
+| `Constraint_Xxx` | 業務規則（只接 `List<T>` + `OptEngine`） | ✅ |
+| `ObjectiveFunction` | 目標式（只接 `List<T>` + 罰分 + `OptEngine`） | ✅ |
+| `Dataload` | 載入並儲存資料（Sets + Parameters） | ❌ project-specific |
+| `BuildModel` | 把 Dataload 資料接線到 Constraint | ❌ project-specific |
+
+---
+
+### Constraint 建構子寫法
+
+```csharp
+// ❌ 舊寫法：Constraint 耦合 Dataload，無法搬移
+public Constraint_FullfillDemand(Dataload dataload, OptEngine engine)
+
+// ✅ 新寫法：Constraint 只收它實際需要的資料
+public Constraint_FullfillDemand(
+    List<DateTime>               dates,
+    List<string>                 employees,
+    List<string>                 groups,
+    List<Parameter_ShiftDemand>  shiftDemand,
+    OptEngine                    engine)
+```
+
+原則：建構子參數 = 這個 Constraint 用到的所有 `dataload.Xxx`，逐一列出。
+
+---
+
+### BuildModel 的接線責任
+
+解耦後，BuildModel 成為唯一知道 Dataload 的地方：
+
+```csharp
+public class BuildModel
+{
+    private readonly Dataload  _data;
+    private readonly OptEngine _engine;
+
+    public BuildModel(Dataload data, OptEngine engine)
+    {
+        _data   = data;
+        _engine = engine;
+    }
+
+    public void Build()
+    {
+        Logging.Info("【建構目標式】");
+        new ObjectiveFunction(
+            _data.Date, _data.Employee,
+            _data.Penalty_SixDay, _data.Penalty_GroupMismatch,
+            _data.Penalty_NightToDay, _data.Penalty_DoubleOffLT2,
+            _data.Penalty_BelowAVG, _data.Penalty_Weekend4Day,
+            _data.Penalty_OffOneDay, _engine).Build();
+
+        Logging.Info("【建構限制式】");
+        new Constraint_FullfillDemand(
+            _data.Date, _data.Employee, _data.Group,
+            _data.parameter_ShiftDemand, _engine).Build();
+
+        new Constraint_OneGroup(
+            _data.Date, _data.Employee, _data.Group, _engine).Build();
+
+        new Constraint_SixDayWork(
+            _data.Date, _data.Employee, _engine).Build();
+
+        // ... 其他 Constraint
+    }
+}
+```
+
+BuildModel 本來就是 project-specific，由它承擔接線責任是正確的。
+
+---
+
+### 罰分與權重的管理
+
+Constraint 需要的是「數值」，不是「Dataload 物件」，直接傳 `double`：
+
+```csharp
+// ObjectiveFunction 建構子
+public ObjectiveFunction(
+    List<DateTime> dates,
+    List<string>   employees,
+    double penaltySixDay,
+    double penaltyGroupMismatch,
+    // ...
+    OptEngine engine)
+
+// 若罰分很多，可用 record 整理（Parameter Object pattern）
+public record PenaltyConfig(
+    double SixDay,
+    double GroupMismatch,
+    double NightToDay,
+    double DoubleOffLT2,
+    double BelowAVG,
+    double Weekend4Day,
+    double OffOneDay
+);
+
+// 由 Dataload 建立，傳入 ObjectiveFunction
+var penalties = new PenaltyConfig(
+    _data.Penalty_SixDay,
+    _data.Penalty_GroupMismatch,
+    // ...
+);
+new ObjectiveFunction(_data.Date, _data.Employee, penalties, _engine).Build();
+```
+
+---
+
+### 可共用資料夾結構（多 Project 情境）
+
+```
+Shared/                          ← 放跨 Project 共用的元素
+├── Variables/
+│   ├── VariableB_ShiftAssign.cs
+│   └── VariableX_BelowAVG.cs
+├── Parameters/
+│   └── Parameter_ShiftDemand.cs
+└── Constraints/
+    ├── Constraint_FullfillDemand.cs
+    ├── Constraint_OneGroup.cs
+    └── Constraint_SixDayWork.cs
+
+ProjectA/                        ← project-specific
+├── Data/Dataload.cs
+└── Constraints/BuildModel.cs
+
+ProjectB/                        ← 引用 Shared，只寫自己的 Dataload + BuildModel
+├── Data/Dataload.cs
+└── Constraints/BuildModel.cs
+```
