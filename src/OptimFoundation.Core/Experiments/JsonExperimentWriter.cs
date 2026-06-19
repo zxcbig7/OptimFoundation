@@ -22,7 +22,7 @@ namespace OptimFoundation.Core
             Converters = { new JsonStringEnumConverter() }                // SolveStatus 以字串輸出
         };
 
-        public string Extension => "json";
+        public ExpWriterType Extension => ExpWriterType.JSON;
 
         public void Write(Experiment experiment, string path)
         {
