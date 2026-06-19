@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace OptimFoundation.Core
 {
-    public abstract class EngineBase<TModel, TVar, TExpr, TConstr> : ISolverEngine
+    public abstract class EngineBase<TModel, TVar, TExpr, TConstr> : ISolverEngine, ITrajectorySource
     {
         protected TModel Model;
         protected readonly Dictionary<string, TVar> Variables = new Dictionary<string, TVar>();
@@ -16,6 +16,36 @@ namespace OptimFoundation.Core
         public double BestObjValue { get; protected set; }
         public double MIPGap { get; protected set; }
 
+        /// <summary>最近一次 Solve() 的統一 telemetry；由各 engine 的 Solve() 回填。</summary>
+        public SolveMetrics LastMetrics { get; protected set; }
+
+        /// <summary>已建立的限制式數量；預設 0，需要的 engine override。</summary>
+        public virtual int ConstraintCount => 0;
+
+        /// <summary>
+        /// 盡力擷取選用的整數型 telemetry（如 node 數 / iteration 數）。各 solver 方法名不一，
+        /// 依序嘗試傳入的無參數方法名，取不到回 null（不丟例外）。
+        /// </summary>
+        protected static long? TryInvokeLong(object target, params string[] methodNames)
+        {
+            if (target == null) return null;
+            foreach (var name in methodNames)
+            {
+                var mi = target.GetType().GetMethod(name, Type.EmptyTypes);
+                if (mi == null) continue;
+                try { return Convert.ToInt64(mi.Invoke(target, null)); }
+                catch { return null; }
+            }
+            return null;
+        }
+
+        // ── ITrajectorySource 預設：不支援（CPLEX override）。未支援者呼叫端不報錯 ──
+        public virtual bool SupportsTrajectory => false;
+        public virtual void EnableTrajectory() { /* no-op；支援的 engine override */ }
+        public virtual IReadOnlyList<ConvergencePoint> Trajectory =>
+            LastMetrics != null ? (IReadOnlyList<ConvergencePoint>)LastMetrics.Convergence
+                                : new List<ConvergencePoint>();
+
         private readonly List<(double coef, TVar var)> _lhsTerms = new List<(double, TVar)>();
         private readonly List<(double coef, TVar var)> _rhsTerms = new List<(double, TVar)>();
         private double _lhsConst = 0;
@@ -23,6 +53,13 @@ namespace OptimFoundation.Core
 
         // 以 constraint name 為 key，而非 variable set：名稱含迴圈索引（如 "Cap@TruckA"），不同條件不會誤判重複
         private readonly HashSet<string> _verifyConstraints = new HashSet<string>();
+
+        // 目標式追蹤：供軟性限制式把 penalty 併入目標式。
+        // 各 engine 目標式語意不同（CPLEX 新增 / Gurobi·Solver 覆寫），統一由 AddObjectiveTerm 處理。
+        private readonly List<(double coef, TVar var)> _objectiveTerms = new List<(double, TVar)>();
+        private readonly List<(double coef, TVar var)> _softPenaltyTerms = new List<(double, TVar)>();
+        private ObjectiveSense _objectiveSense = ObjectiveSense.Minimize;
+        private int _softCount = 0;
 
         protected EngineBase(ISolverConfig config)
         {
@@ -323,19 +360,23 @@ namespace OptimFoundation.Core
 
         #region Pool — 建立目標式
 
-        public void CreateMinimize()
+        public void CreateMinimize() => SetObjectiveFromPool(ObjectiveSense.Minimize);
+
+        public void CreateMaximize() => SetObjectiveFromPool(ObjectiveSense.Maximize);
+
+        private void SetObjectiveFromPool(ObjectiveSense sense)
         {
-            if (_lhsTerms.Count == 0) return;
-            SetObjective(LinearExpr(_lhsTerms), ObjectiveSense.Minimize);
+            if (_lhsTerms.Count == 0 && _softPenaltyTerms.Count == 0) return;
+            _objectiveTerms.Clear();
+            _objectiveTerms.AddRange(_lhsTerms);
+            _objectiveSense = sense;
+            ApplyObjective();
             ClearPool();
         }
 
-        public void CreateMaximize()
-        {
-            if (_lhsTerms.Count == 0) return;
-            SetObjective(LinearExpr(_lhsTerms), ObjectiveSense.Maximize);
-            ClearPool();
-        }
+        // 以追蹤的目標式項 + 已累積的軟性 penalty 項重設目標式。
+        private void ApplyObjective()
+            => SetObjective(LinearExpr(_objectiveTerms.Concat(_softPenaltyTerms)), _objectiveSense);
 
         #endregion
 
@@ -345,19 +386,78 @@ namespace OptimFoundation.Core
         protected double PoolLhsConst => _lhsConst;
 
         /// <summary>
-        /// 此 solver 是否支援軟性限制式。呼叫 CreateLeSoft/GeSoft/EqSoft 前先判斷，
-        /// 避免到 runtime 才拿到 NotImplementedException。
+        /// 是否支援軟性限制式。通用實作放在 EngineBase（pool 加彈性變數 + 目標式加 penalty），
+        /// 只要 engine 提供 AddVariable / AddConstraint / SetObjective primitive 即可，預設 true。
         /// </summary>
-        public virtual bool SupportsSoftConstraints => false;
+        public virtual bool SupportsSoftConstraints => true;
 
+        /// <summary>軟性 LHS &lt;= rhs：加 surplus 變數 dp≥0，建 lhs − dp &lt;= rhs，目標式 += penalty·dp。</summary>
         public virtual bool CreateLeSoft(double rhs, double penalty)
-            => throw new NotImplementedException($"{GetType().Name} 不支援軟性限制式，請確認 SupportsSoftConstraints。");
+            => BuildSoft(rhs, penalty, ConstraintSense.LessEqual, null);
 
+        /// <summary>軟性 LHS &gt;= rhs：加 deficit 變數 dn≥0，建 lhs + dn &gt;= rhs，目標式 += penalty·dn。</summary>
         public virtual bool CreateGeSoft(double rhs, double penalty)
-            => throw new NotImplementedException($"{GetType().Name} 不支援軟性限制式，請確認 SupportsSoftConstraints。");
+            => BuildSoft(rhs, penalty, ConstraintSense.GreaterEqual, null);
 
+        /// <summary>軟性 LHS == rhs：加 dn,dp≥0，建 lhs + dn − dp == rhs，目標式 += penalty·(dn+dp)。</summary>
         public virtual bool CreateEqSoft(double rhs, double penalty, string name)
-            => throw new NotImplementedException($"{GetType().Name} 不支援軟性限制式，請確認 SupportsSoftConstraints。");
+            => BuildSoft(rhs, penalty, ConstraintSense.Equal, name);
+
+        // 軟性限制式通用建構：彈性變數放進變數池，penalty 放進目標式。
+        // penalty 方向依目標式 sense：最小化 +penalty（懲罰違反量）、最大化 -penalty。
+        private bool BuildSoft(double rhs, double penalty, ConstraintSense sense, string name)
+        {
+            if (!HasPool) return false;
+            if (string.IsNullOrEmpty(name)) name = $"Soft_{sense}_{++_softCount}";
+
+            double adjustedRhs = rhs + _rhsConst - _lhsConst;
+            double p = _objectiveSense == ObjectiveSense.Maximize ? -penalty : penalty;
+            var terms = new List<(double coef, TVar var)>(CombinedLhsMinusRhs());
+            const double inf = double.MaxValue;
+
+            switch (sense)
+            {
+                case ConstraintSense.LessEqual:
+                    {
+                        var dp = AddVariable($"Surplus_{name}", 0, inf, VarType.Continuous);
+                        terms.Add((-1.0, dp));
+                        AddConstraint(name, LinearExpr(terms), ConstraintSense.LessEqual, adjustedRhs);
+                        AddObjectiveTerm(p, dp);
+                        break;
+                    }
+                case ConstraintSense.GreaterEqual:
+                    {
+                        var dn = AddVariable($"Deficit_{name}", 0, inf, VarType.Continuous);
+                        terms.Add((1.0, dn));
+                        AddConstraint(name, LinearExpr(terms), ConstraintSense.GreaterEqual, adjustedRhs);
+                        AddObjectiveTerm(p, dn);
+                        break;
+                    }
+                default: // Equal
+                    {
+                        var dn = AddVariable($"Delta_Neg_{name}", 0, inf, VarType.Continuous);
+                        var dp = AddVariable($"Delta_Pos_{name}", 0, inf, VarType.Continuous);
+                        terms.Add((1.0, dn));
+                        terms.Add((-1.0, dp));
+                        AddConstraint(name, LinearExpr(terms), ConstraintSense.Equal, adjustedRhs);
+                        AddObjectiveTerm(p, dn);
+                        AddObjectiveTerm(p, dp);
+                        break;
+                    }
+            }
+            ClearPool();
+            return true;
+        }
+
+        /// <summary>
+        /// 往目前目標式追加一個 penalty 項（coef·var）：累積後以 SetObjective 重設整個目標式。
+        /// 要求各 engine 的 SetObjective 為「覆寫」語意（Gurobi/Solver 原生即是；CPLEX 在 SetObjective 內先移除舊目標式達成）。
+        /// </summary>
+        protected virtual void AddObjectiveTerm(double coef, TVar variable)
+        {
+            _softPenaltyTerms.Add((coef, variable));
+            ApplyObjective();
+        }
 
         #endregion
     }

@@ -28,6 +28,8 @@ namespace OptimFoundation.Gurobi
 
         public OptEngine(GurobiConfig config) : base(config) { }
 
+        public override int ConstraintCount => _constraints.Count;
+
         #region EngineBase 抽象方法實作
 
         public override void Configuration(ISolverConfig config)
@@ -104,6 +106,7 @@ namespace OptimFoundation.Gurobi
             };
             var v = Model.AddVar(lb, ub, 0, grbType, name);
             Variables[name] = v;
+            Model.Update();   // lazy update：讓單顆新變數立即可用於後續 constraint / objective（如軟性限制式彈性變數）
             return v;
         }
 
@@ -187,7 +190,9 @@ namespace OptimFoundation.Gurobi
             if (_exportMps)
                 Model.Write(FolderDir.Model.GetFilePath($"{proj}_MPS_{_startTime}.mps"));
 
+            var solveTimer = System.Diagnostics.Stopwatch.StartNew();
             Model.Optimize();
+            solveTimer.Stop();
 
             int s = Model.Status;
             if (s == GRB.Status.OPTIMAL) Status = SolveStatus.Optimal;
@@ -198,6 +203,25 @@ namespace OptimFoundation.Gurobi
             else Status = SolveStatus.Error;
 
             bool ok = Status == SolveStatus.Optimal || Status == SolveStatus.Feasible;
+
+            bool isMip = Model.IsMIP == 1;
+            if (ok)
+            {
+                BestObjValue = isMip ? Model.ObjBound : Model.ObjVal;
+                MIPGap       = isMip ? Model.MIPGap   : 0.0;
+            }
+            LastMetrics = new SolveMetrics
+            {
+                Status          = Status,
+                ObjectiveValue  = ok ? Model.ObjVal : double.NaN,
+                BestBound       = ok ? BestObjValue : double.NaN,
+                MipGap          = ok ? MIPGap : double.NaN,
+                WallTimeMs      = solveTimer.Elapsed.TotalMilliseconds,
+                NodeCount       = (ok && isMip) ? (long?)Model.NodeCount : null,
+                IterationCount  = ok ? (long?)Model.IterCount : null,
+                VarCount        = varCount,
+                ConstraintCount = _constraints.Count
+            };
 
             if (ok && _exportSol)
                 Model.Write(FolderDir.Sol.GetFilePath($"{proj}_Solution_{_startTime}.sol"));
@@ -352,49 +376,7 @@ namespace OptimFoundation.Gurobi
 
         #endregion
 
-        #region 軟性限制式
-
-        /// <summary>將 LHS &lt;= RHS 轉為 penalty 項加入目標式。</summary>
-        public override bool CreateLeSoft(double rhs, double penalty)
-        {
-            if (!HasPool) return false;
-            int sense = Model.ModelSense;
-            if (sense == GRB.MAXIMIZE) penalty *= -1;
-            GRBLinExpr obj = Model.GetObjective() as GRBLinExpr ?? new GRBLinExpr();
-            Model.SetObjective(obj + (LhsExpr - rhs) * penalty, sense);
-            ClearPool();
-            return true;
-        }
-
-        /// <summary>將 LHS &gt;= RHS 轉為 penalty 項加入目標式。</summary>
-        public override bool CreateGeSoft(double rhs, double penalty)
-        {
-            if (!HasPool) return false;
-            int sense = Model.ModelSense;
-            if (sense == GRB.MINIMIZE) penalty *= -1;
-            GRBLinExpr obj = Model.GetObjective() as GRBLinExpr ?? new GRBLinExpr();
-            Model.SetObjective(obj + (rhs - LhsExpr) * penalty, sense);
-            ClearPool();
-            return true;
-        }
-
-        /// <summary>將 LHS == rhs 以雙向 delta 鬆弛加入目標式。</summary>
-        public override bool CreateEqSoft(double rhs, double penalty, string name)
-        {
-            if (!HasPool) return false;
-            int sense = Model.ModelSense;
-            if (sense == GRB.MAXIMIZE) penalty *= -1;
-            var dn = Model.AddVar(0, GRB.INFINITY, penalty, GRB.CONTINUOUS, $"Delta_Neg_{name}");
-            var dp = Model.AddVar(0, GRB.INFINITY, penalty, GRB.CONTINUOUS, $"Delta_Pos_{name}");
-            Model.Update();
-            AddLhs(dn, 1.0);
-            AddLhs(dp, -1.0);
-            AddRhs(rhs);
-            CommitEQ(name);
-            return true;
-        }
-
-        #endregion
+        // 軟性限制式：通用實作已上移 EngineBase（Gurobi 沿用預設 AddObjectiveTerm，以 SetObjective 覆寫重設）。
     }
 
 #else

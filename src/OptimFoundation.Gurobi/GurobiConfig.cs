@@ -2,7 +2,7 @@ using OptimFoundation.Core;
 
 namespace OptimFoundation.Gurobi
 {
-    public sealed class GurobiConfig : ISolverConfig
+    public sealed class GurobiConfig : ISolverConfig, ITunableConfig
     {
         // ISolverConfig 共用參數
         public double? TimeLimit    { get; set; }
@@ -31,5 +31,16 @@ namespace OptimFoundation.Gurobi
         public int?   LicenseId  { get; set; }
         public string WlsAccessId { get; set; }
         public string WlsSecret   { get; set; }
+
+        // ── ITunableConfig — delegate 到既有 Gurobi 欄位 ──
+        //    Seed / Presolve / FeasibilityTol / OptimalityTol 已由上方同名欄位直接滿足
+        public int?    Emphasis        { get => MipFocus;   set => MipFocus   = value; }
+        public int?    RootAlgorithm   { get => Method;     set => Method     = value; }
+        public double? HeuristicEffort { get => Heuristics; set => Heuristics = value; }
+        public double? MemoryLimitMb   // ITunableConfig 為 MB，Gurobi SoftMemLimit 為 GB
+        {
+            get => SoftMemLimit.HasValue ? SoftMemLimit.Value * 1024.0 : (double?)null;
+            set => SoftMemLimit = value.HasValue ? value.Value / 1024.0 : (double?)null;
+        }
     }
 }

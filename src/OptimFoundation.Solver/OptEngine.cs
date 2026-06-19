@@ -108,6 +108,7 @@ namespace OptimFoundation.Solver
                 v.Type == SolverModel.VarType.Integer || v.Type == SolverModel.VarType.Binary);
 
             SolverAlgo.SolveResult result;
+            var solveTimer = System.Diagnostics.Stopwatch.StartNew();
             if (needsMilp)
             {
                 var bnc = new SolverAlgo.BranchAndCut(Model)
@@ -131,6 +132,7 @@ namespace OptimFoundation.Solver
                     Logging.Info($"[OptEngine] ObjVal={result.ObjectiveValue:G6}");
             }
 
+            solveTimer.Stop();
             Model.UpdateResult(result);
 
             Status = result.Status switch
@@ -145,6 +147,24 @@ namespace OptimFoundation.Solver
             // TimeLimit with a non-trivial incumbent is still usable
             bool ok = Status == SolveStatus.Optimal || Status == SolveStatus.Feasible
                    || (Status == SolveStatus.TimeLimit && !double.IsInfinity(result.ObjectiveValue) && result.ObjectiveValue != 0);
+
+            if (ok)
+            {
+                BestObjValue = needsMilp ? result.BestBound : result.ObjectiveValue;
+                MIPGap       = needsMilp ? result.MipGap : 0.0;
+            }
+            LastMetrics = new SolveMetrics
+            {
+                Status          = Status,
+                ObjectiveValue  = ok ? result.ObjectiveValue : double.NaN,
+                BestBound       = ok ? BestObjValue : double.NaN,
+                MipGap          = ok ? MIPGap : double.NaN,
+                WallTimeMs      = solveTimer.Elapsed.TotalMilliseconds,
+                NodeCount       = null,   // 自研 solver 未暴露 node 數
+                IterationCount  = null,   // 自研 solver 未暴露 iteration 數
+                VarCount        = varCount,
+                ConstraintCount = ConstraintCount
+            };
 
             if (ok && _exportSol)
                 System.IO.File.WriteAllText(

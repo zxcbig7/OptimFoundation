@@ -40,6 +40,58 @@ namespace OptimFoundation.Cplex
         public OptEngine(CplexConfig config) : base(config) { }
         public OptEngine() : base(new CplexConfig()) { }
 
+        public override int ConstraintCount => _constraints.Count;
+
+        #region ITrajectorySource（CPLEX 支援逐點軌跡）
+        private bool _captureTrajectory;
+        public override bool SupportsTrajectory => true;
+        public override void EnableTrajectory() => _captureTrajectory = true;
+
+        /// <summary>
+        /// MIPInfoCallback：B&amp;B 過程中週期觸發，收集收斂軌跡。
+        /// 取樣：incumbent 改善 或 距上點 ≥ MinIntervalMs 即記一點；上限 MaxPoints 防爆；多執行緒求解以 lock 保護。
+        /// </summary>
+        private sealed class TrajectoryCallback : ILOG.CPLEX.Cplex.MIPInfoCallback
+        {
+            private const double MinIntervalMs = 200.0;
+            private const int    MaxPoints     = 2000;
+
+            private readonly System.Diagnostics.Stopwatch _sw;
+            private readonly object _lock = new object();
+            public readonly List<ConvergencePoint> Points = new List<ConvergencePoint>();
+            private double _lastObj    = double.NaN;
+            private double _lastTimeMs = double.NegativeInfinity;
+
+            public TrajectoryCallback(System.Diagnostics.Stopwatch sw) => _sw = sw;
+
+            public override void Main()
+            {
+                double nowMs = _sw.Elapsed.TotalMilliseconds;
+                bool   hasInc = HasIncumbent();
+                double inc    = hasInc ? GetIncumbentObjValue() : double.NaN;
+                double bound  = GetBestObjValue();
+                double gap    = hasInc ? GetMIPRelativeGap() : double.NaN;
+
+                lock (_lock)
+                {
+                    bool improved    = hasInc && inc != _lastObj;
+                    bool intervalHit = (nowMs - _lastTimeMs) >= MinIntervalMs;
+                    if ((!improved && !intervalHit) || Points.Count >= MaxPoints) return;
+
+                    Points.Add(new ConvergencePoint
+                    {
+                        TimeMs    = nowMs,
+                        Objective = inc,
+                        Bound     = bound,
+                        Gap       = gap
+                    });
+                    _lastObj    = inc;
+                    _lastTimeMs = nowMs;
+                }
+            }
+        }
+        #endregion
+
         #region Configuration
 
         public override void Configuration(ISolverConfig cfg)
@@ -47,6 +99,7 @@ namespace OptimFoundation.Cplex
 
             Model = new ILOG.CPLEX.Cplex();
             _constraints.Clear();
+            _objective = null;
             _conflictConstraints = null;
             ResetVerifyConstraints();
 
@@ -335,9 +388,9 @@ namespace OptimFoundation.Cplex
 
             for (int i = 0; i < n; i++)
             {
-                lbs[i]     = lb;
-                ubs[i]     = ub;
-                types[i]   = cplexType;
+                lbs[i] = lb;
+                ubs[i] = ub;
+                types[i] = cplexType;
                 nameArr[i] = names[i];
             }
 
@@ -376,12 +429,17 @@ namespace OptimFoundation.Cplex
             return r;
         }
 
+        private IObjective _objective;
+
+        // CPLEX 的 AddMinimize/AddMaximize 為「新增」語意（重複呼叫會多個目標式），
+        // 故先移除既有目標式再新增，使 SetObjective 成為「覆寫」語意。
+        // 如此 base 的軟性 penalty（多次重設目標式）即可正確運作，無需 override AddObjectiveTerm。
         protected override void SetObjective(ILinearNumExpr expr, Core.ObjectiveSense sense)
         {
-            if (sense == Core.ObjectiveSense.Minimize)
-                Model.AddMinimize(expr);
-            else
-                Model.AddMaximize(expr);
+            if (_objective != null) Model.Remove(_objective);
+            _objective = sense == Core.ObjectiveSense.Minimize
+                ? Model.AddMinimize(expr)
+                : Model.AddMaximize(expr);
         }
 
         protected override void SetVariableBounds(INumVar variable, double? lb, double? ub)
@@ -417,7 +475,16 @@ namespace OptimFoundation.Cplex
             if (_exportMps)
                 Model.ExportModel(FolderDir.Model.GetFilePath($"{proj}_MPS_{_startTime}.mps"));
 
+            var solveTimer = System.Diagnostics.Stopwatch.StartNew();
+            TrajectoryCallback trajCb = null;
+            if (_captureTrajectory)
+            {
+                trajCb = new TrajectoryCallback(solveTimer);
+                Model.Use(trajCb);   // 注意：掛 callback 會關閉 CPLEX dynamic search，可能影響求解時間（故為 opt-in）
+            }
             Model.Solve();
+            solveTimer.Stop();
+            if (trajCb != null) Model.ClearCallbacks();
 
             // CPLEX solver log 讀出（enableLog 時輸出完整 log，否則只輸出摘要）
             FlushSolverLog();
@@ -439,6 +506,20 @@ namespace OptimFoundation.Cplex
                 BestObjValue = Model.GetBestObjValue();
                 MIPGap = Model.GetMIPRelativeGap();
             }
+
+            LastMetrics = new SolveMetrics
+            {
+                Status          = Status,
+                ObjectiveValue  = ok ? Model.GetObjValue() : double.NaN,
+                BestBound       = ok ? BestObjValue : double.NaN,
+                MipGap          = ok ? MIPGap : double.NaN,
+                WallTimeMs      = solveTimer.Elapsed.TotalMilliseconds,
+                NodeCount       = TryInvokeLong(Model, "GetNnodes64", "GetNnodes", "Getnnodes"),
+                IterationCount  = TryInvokeLong(Model, "GetNiterations64", "GetNiterations", "Getniterations"),
+                VarCount        = varCount,
+                ConstraintCount = _constraints.Count,
+                Convergence     = trajCb != null ? trajCb.Points : new List<ConvergencePoint>()
+            };
 
             if (ok && _exportSol)
                 Model.WriteSolution(FolderDir.Sol.GetFilePath($"{proj}_Solution_{_startTime}.sol"));
@@ -529,6 +610,7 @@ namespace OptimFoundation.Cplex
                 Model.End(obj);
                 Model.Remove(obj);
             }
+            _objective = null;
             if (_constraints.Count > 0)
             {
                 var arr = _constraints.ToArray();
@@ -740,56 +822,7 @@ namespace OptimFoundation.Cplex
 
         #endregion
 
-        #region 軟性限制式
-
-        public override bool SupportsSoftConstraints => true;
-
-        public override bool CreateLeSoft(double rhs, double penalty)
-        {
-            if (!HasPool) return false;
-            var obj = Model.GetObjective();
-            double p = obj.Sense == ILOG.Concert.ObjectiveSense.Maximize ? -penalty : penalty;
-            var objExpr = (ILinearNumExpr)obj.Expr;
-            foreach (var (coef, var) in PoolLhsTerms)
-                objExpr.AddTerm(p * coef, var);
-            ClearPool();
-            return true;
-        }
-
-        public override bool CreateGeSoft(double rhs, double penalty)
-        {
-            if (!HasPool) return false;
-            var obj = Model.GetObjective();
-            double p = obj.Sense == ILOG.Concert.ObjectiveSense.Minimize ? -penalty : penalty;
-            var objExpr = (ILinearNumExpr)obj.Expr;
-            foreach (var (coef, var) in PoolLhsTerms)
-                objExpr.AddTerm(p * coef, var);
-            ClearPool();
-            return true;
-        }
-
-        public override bool CreateEqSoft(double rhs, double penalty, string name)
-        {
-            if (!HasPool) return false;
-            var obj = Model.GetObjective();
-            double p = obj.Sense == ILOG.Concert.ObjectiveSense.Maximize ? -penalty : penalty;
-            var dn = Model.NumVar(0, double.MaxValue, NumVarType.Float, $"Delta_Neg_{name}");
-            var dp = Model.NumVar(0, double.MaxValue, NumVarType.Float, $"Delta_Pos_{name}");
-            var lhs = Model.LinearNumExpr();
-            foreach (var (coef, var) in PoolLhsTerms)
-                lhs.AddTerm(coef, var);
-            lhs.AddTerm(1.0, dn);
-            lhs.AddTerm(-1.0, dp);
-            var constr = Model.AddEq(lhs, rhs - PoolLhsConst);
-            constr.Name = name;
-            var objExpr = (ILinearNumExpr)obj.Expr;
-            objExpr.AddTerm(p, dn);
-            objExpr.AddTerm(p, dp);
-            ClearPool();
-            return true;
-        }
-
-        #endregion
+        // 軟性限制式：通用實作已上移 EngineBase（AddObjectiveTerm override 處理 CPLEX 就地 mutate）。
 
         /// <summary>
         /// 同時寫入兩個 TextWriter 的中繼器。

@@ -8,6 +8,9 @@ namespace OptimFoundation.Core
         ISolverConfig Config { get; }
         SolveStatus Status { get; }
 
+        /// <summary>最近一次 Solve() 的統一 telemetry；尚未求解為 null。</summary>
+        SolveMetrics LastMetrics { get; }
+
         void Build();
         bool Solve();
         double GetObjectiveValue();

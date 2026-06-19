@@ -4,12 +4,13 @@ namespace OptimFoundation.Core
 {
     public class FolderDir
     {
-        public static ProjFolder Data     = new ProjFolder("Data");
+        public static ProjFolder Data = new ProjFolder("Data");
         public static ProjFolder Solution = new ProjFolder("Solution");
-        public static ProjFolder Log      = new ProjFolder("Logs");
-        public static ProjFolder Model    = new ProjFolder("Models");
-        public static ProjFolder IIS      = new ProjFolder("IISs");
-        public static ProjFolder Sol      = new ProjFolder("Sols");
+        public static ProjFolder Log = new ProjFolder("Logs");
+        public static ProjFolder Model = new ProjFolder("Models");
+        public static ProjFolder IIS = new ProjFolder("IISs");
+        public static ProjFolder Sol = new ProjFolder("Sols");
+        public static ProjFolder Experiment = new ProjFolder("Experiments");
 
         public class ProjFolder
         {
