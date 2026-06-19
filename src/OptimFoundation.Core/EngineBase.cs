@@ -95,6 +95,9 @@ namespace OptimFoundation.Core
         protected abstract void SetObjective(TExpr expr, ObjectiveSense sense);
         protected abstract void SetVariableBounds(TVar variable, double? lb, double? ub);
 
+        /// <summary>
+        /// 建立模型的入口，由外部呼叫。建議實作流程：
+        /// </summary>>
         public abstract void Build();
         public abstract bool Solve();
         public abstract double GetObjectiveValue();
@@ -130,6 +133,7 @@ namespace OptimFoundation.Core
             foreach (var name in names)
                 varSet[name] = Variables[name];
         }
+
 
         public virtual void BuildCVs<ElementClass>(params object[] sets)
             => BatchBuild<ElementClass>(0, 1E100, VarType.Continuous, sets);
