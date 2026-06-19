@@ -17,7 +17,7 @@ namespace OptimFoundation.Core
             "TimeLimit", "MipGap", "Threads"
         };
 
-        public string Extension => "csv";
+        public ExpWriterType Extension => ExpWriterType.CSV;
 
         public void Write(Experiment experiment, string path)
         {
