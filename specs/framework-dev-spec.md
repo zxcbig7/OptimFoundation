@@ -57,7 +57,7 @@ new Constraint_OneGroup { Engine = engine, Data = data }
 - `GetCtor(Type)` — 以 `Expression.Lambda` 編譯建構子 delegate，快取於 `ConcurrentDictionary<Type, Func<string[], object>>`
 - 優先使用無參數建構子（零建構子設計）；向下相容 `object[]`、`string[]` 建構子
 - `GenVarParts(List<string>[])` — 直接 yield `string[]`，避免字串拼接再 Split 的 overhead
-- `GetVarNames<T>(object[] sets)` — 主要對外方法，回傳所有變數名稱
+- `GetVarNames<TVariable>(object[] sets)` — 主要對外方法，回傳所有變數名稱
 
 **支援的 Set 型別：**  
 `List<DateTime>`、`List<int>`、`List<double>`、`List<string>`
@@ -90,7 +90,7 @@ Solver 實作的抽象基底。所有 Pool API、VariableSet 管理、批次建�
 | 方法 | Default 行為 | Override 目的 |
 |------|-------------|---------------|
 | `AddVariables(names, lb, ub, type)` | 逐筆呼叫 `AddVariable` | 使用 solver 原生 batch API（CPLEX `NumVarArray` / Gurobi `AddVars`），減少 interop 次數 |
-| `BuildCVs/BuildIVs/BuildBVs` | 呼叫 `BatchBuild<T>` | 通常不需 override |
+| `BuildCVs/BuildIVs/BuildBVs` | 呼叫 `BatchBuild<TVariable>` | 通常不需 override |
 | `CreateLeSoft/CreateGeSoft/CreateEqSoft` | `throw NotImplementedException` | 實作軟性限制式（penalty 法） |
 
 #### 2.3.3 VariableSet 管理
@@ -100,7 +100,7 @@ Variables          Dictionary<string, TVar>                      所有變數的
 VariableSets       Dictionary<string, Dictionary<string, TVar>>  依型別名稱分組
 ```
 
-建立變數後透過 `BuildBVs<T> / BuildIVs<T> / BuildCVs<T>` 自動分組。  
+建立變數後透過 `BuildBVs<TVariable> / BuildIVs<TVariable> / BuildCVs<TVariable>` 自動分組。  
 查詢時 `ReadVar(varObj)` 先用型別名稱找到 Set，再用 `varObj.ToString()` 查 key。
 
 #### 2.3.4 Pool API（限制式 / 目標式建構）

@@ -68,9 +68,9 @@ ProjectName/
 
 | 類別 | 前綴 | 建立方法 | 數值欄位 |
 |------|------|---------|---------|
-| Binary variable | `VariableB_` | `BuildBVs<T>()` | 無 |
-| Integer variable | `VariableI_` | `BuildIVs<T>()` | 無 |
-| Continuous variable | `VariableX_` | `BuildCVs<T>()` | 無 |
+| Binary variable | `VariableB_` | `BuildBVs<TVariable>()` | 無 |
+| Integer variable | `VariableI_` | `BuildIVs<TVariable>()` | 無 |
+| Continuous variable | `VariableX_` | `BuildCVs<TVariable>()` | 無 |
 | Parameter | `Parameter_` | — | `QTY`（最後一個） |
 | Constraint | `Constraint_` | — | — |
 
@@ -211,11 +211,11 @@ public class VariableCreate
 
 | 方法 | 預設 LB | 預設 UB |
 |------|---------|---------|
-| `BuildBVs<T>(sets…)` | 0 | 1 |
-| `BuildCVs<T>(sets…)` | 0 | 1E100 |
-| `BuildCVs<T>(lb, ub, sets…)` | 自訂 | 自訂 |
-| `BuildIVs<T>(sets…)` | 0 | 1E100 |
-| `BuildIVs<T>(lb, ub, sets…)` | 自訂 | 自訂 |
+| `BuildBVs<TVariable>(sets…)` | 0 | 1 |
+| `BuildCVs<TVariable>(sets…)` | 0 | 1E100 |
+| `BuildCVs<TVariable>(lb, ub, sets…)` | 自訂 | 自訂 |
+| `BuildIVs<TVariable>(sets…)` | 0 | 1E100 |
+| `BuildIVs<TVariable>(lb, ub, sets…)` | 自訂 | 自訂 |
 
 ---
 

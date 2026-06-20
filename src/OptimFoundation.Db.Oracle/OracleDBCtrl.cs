@@ -37,12 +37,12 @@ namespace OptimFoundation.Db.Oracle
             return rows;
         }
 
-        public override T QueryScalar<T>(string sql, params (string name, object value)[] parameters)
+        public override TResult QueryScalar<TResult>(string sql, params (string name, object value)[] parameters)
         {
             using var conn = CreateConnection();
             using var cmd = BuildCommand(sql, conn, parameters);
             object result = cmd.ExecuteScalar();
-            return (T)Convert.ChangeType(result, typeof(T));
+            return (TResult)Convert.ChangeType(result, typeof(TResult));
         }
 
         #endregion
@@ -90,7 +90,7 @@ namespace OptimFoundation.Db.Oracle
                 "SELECT COUNT(*) FROM USER_TABLES WHERE TABLE_NAME = '" + upper + "'") > 0;
         }
 
-        public void CreateParamTable<T>(string tableName)
+        public void CreateParamTable<TParameter>(string tableName)
         {
             tableName = tableName.ToUpper();
             if (CheckHasTable(tableName))
@@ -98,11 +98,11 @@ namespace OptimFoundation.Db.Oracle
                 Logging.Info($"[OracleDBCtrl] Table {tableName} already exists.");
                 return;
             }
-            Execute(new ClassInfo(typeof(T)).ParamTableCreateCmd(tableName));
+            Execute(new ClassInfo(typeof(TParameter)).ParamTableCreateCmd(tableName));
             Logging.Info($"[OracleDBCtrl] Created param table: {tableName}");
         }
 
-        public void CreateResultTable<T>(string tableName)
+        public void CreateResultTable<TVariable>(string tableName)
         {
             tableName = tableName.ToUpper();
             if (CheckHasTable(tableName))
@@ -110,7 +110,7 @@ namespace OptimFoundation.Db.Oracle
                 Logging.Info($"[OracleDBCtrl] Table {tableName} already exists.");
                 return;
             }
-            Execute(new ClassInfo(typeof(T)).VarTableCreateCmd(tableName));
+            Execute(new ClassInfo(typeof(TVariable)).VarTableCreateCmd(tableName));
             Logging.Info($"[OracleDBCtrl] Created result table: {tableName}");
         }
 
@@ -152,30 +152,30 @@ namespace OptimFoundation.Db.Oracle
         public List<string> ReadSet(string columnName, string tableName)
             => ReadStrSet($"SELECT DISTINCT {columnName.ToUpper()} FROM {tableName.ToUpper()} ORDER BY 1");
 
-        private List<T> ReadColumn<T>(string sql, Func<DataRow, T> selector)
+        private List<TValue> ReadColumn<TValue>(string sql, Func<DataRow, TValue> selector)
             => Query(sql).Rows.Cast<DataRow>().Select(selector).ToList();
 
-        public List<T> BuildParameter<T>(string sql)
+        public List<TParameter> BuildParameter<TParameter>(string sql)
         {
             return Query(sql).Rows.Cast<DataRow>().Select(row =>
             {
                 string combined = "@" + string.Join("@", row.ItemArray.Select(o => o.ToString()));
                 string[] parts = combined.Split('@').Skip(1).ToArray();
-                return (T)Activator.CreateInstance(typeof(T), new object[] { parts });
+                return (TParameter)Activator.CreateInstance(typeof(TParameter), new object[] { parts });
             }).ToList();
         }
 
-        public List<T> BuildParameter<T>(string[] columnNames, string tableName)
-            => BuildParameter<T>($"SELECT {string.Join(",", columnNames)} FROM {tableName.ToUpper()}");
+        public List<TParameter> BuildParameter<TParameter>(string[] columnNames, string tableName)
+            => BuildParameter<TParameter>($"SELECT {string.Join(",", columnNames)} FROM {tableName.ToUpper()}");
 
         #endregion
 
         #region 解結果寫入
 
-        public void SaveToDB<T>(ISolverEngine engine, string dataId, string tableName, string userId)
+        public void SaveToDB<TVariable>(ISolverEngine engine, string dataId, string tableName, string userId)
         {
             tableName = tableName.ToUpper();
-            var classInfo = new ClassInfo(typeof(T));
+            var classInfo = new ClassInfo(typeof(TVariable));
             var solution = engine.GetSolution(classInfo.TypeName);
             string insertCmd = classInfo.VarInsertCmd(tableName);
 

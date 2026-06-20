@@ -13,12 +13,12 @@ namespace OptimFoundation.Core
             sw.WriteLine("");
         }
 
-        public static void CreateParamTable<T>()
+        public static void CreateParamTable<TParameter>()
         {
-            string name = typeof(T).Name;
+            string name = typeof(TParameter).Name;
             FolderDir.Data.TryCreateFile($"{name}.csv");
             using var sw = new StreamWriter(FolderDir.Data.GetFilePath($"{name}.csv"));
-            string cols = "DATA_ID," + string.Join(",", ReflectionHelper.GetMemberNames(typeof(T)).Select(s => s.ToUpper()));
+            string cols = "DATA_ID," + string.Join(",", ReflectionHelper.GetMemberNames(typeof(TParameter)).Select(s => s.ToUpper()));
             sw.WriteLine(cols);
         }
 
@@ -27,9 +27,9 @@ namespace OptimFoundation.Core
         public static List<string>   ReadStrSet(string fileName)     => ReadLines(FolderDir.Data.GetFilePath(fileName), s => s);
         public static List<DateTime> ReadDateSet(string fileName)    => ReadLines(FolderDir.Data.GetFilePath(fileName), DateTime.Parse);
 
-        private static List<T> ReadLines<T>(string path, Func<string, T> parser)
+        private static List<TValue> ReadLines<TValue>(string path, Func<string, TValue> parser)
         {
-            var list = new List<T>();
+            var list = new List<TValue>();
             using var sr = new StreamReader(path);
             string line;
             while ((line = sr.ReadLine()) != null)
@@ -54,21 +54,21 @@ namespace OptimFoundation.Core
 
         /// <summary>
         /// 從 CSV 讀取 Parameter 列表。
-        /// T 必須繼承 ModelElementBase 並有無參建構子（properties-only 類別符合此要求）。
+        /// TParameter 必須繼承 ModelElementBase 並有無參建構子（properties-only 類別符合此要求）。
         /// </summary>
-        public static List<T> BuildParameter<T>(string fileName = null) where T : ModelElementBase, new()
+        public static List<TParameter> BuildParameter<TParameter>(string fileName = null) where TParameter : ModelElementBase, new()
         {
-            Type type = typeof(T);
+            Type type = typeof(TParameter);
             string path = fileName == null
                 ? FolderDir.Data.GetFilePath($"{type.Name}.csv")
                 : FolderDir.Data.GetFilePath(fileName);
 
-            var data = new List<T>();
+            var data = new List<TParameter>();
             foreach (var kv in ReadParameter(path))
             {
                 string combined = kv.Key + "@" + kv.Value;
                 string[] parts = combined.Split('@').Skip(1).ToArray();
-                var instance = new T();
+                var instance = new TParameter();
                 instance.InitClassBySets(parts);   // string[] 透過 params object[] 傳入，InitClassBySets 負責型別轉換
                 data.Add(instance);
             }
@@ -92,9 +92,9 @@ namespace OptimFoundation.Core
             return matrix;
         }
 
-        public static void SaveSolutionToCSV<T>(ISolverEngine engine, string dataId, string userId)
+        public static void SaveSolutionToCSV<TVariable>(ISolverEngine engine, string dataId, string userId)
         {
-            var classInfo = new ClassInfo(typeof(T));
+            var classInfo = new ClassInfo(typeof(TVariable));
             FolderDir.Solution.TryCreateFile($"{classInfo.TypeName}.csv");
             string file = FolderDir.Solution.GetFilePath($"{classInfo.TypeName}.csv");
             var sol = engine.GetSolution(classInfo.TypeName);

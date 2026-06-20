@@ -120,13 +120,13 @@ namespace OptimFoundation.Core
                 AddVariable(name, lb, ub, type);
         }
 
-        private void BatchBuild<ElementClass>(double lb, double ub, VarType type, object[] sets)
+        private void BatchBuild<TVariable>(double lb, double ub, VarType type, object[] sets)
         {
-            string setName = typeof(ElementClass).Name;
+            string setName = typeof(TVariable).Name;
             if (!VariableSets.ContainsKey(setName))
                 VariableSets[setName] = new Dictionary<string, TVar>();
 
-            var names = VariableBuilder.GetVarNames<ElementClass>(sets).ToList();
+            var names = VariableBuilder.GetVarNames<TVariable>(sets).ToList();
             AddVariables(names, lb, ub, type);
 
             var varSet = VariableSets[setName];
@@ -135,20 +135,20 @@ namespace OptimFoundation.Core
         }
 
 
-        public virtual void BuildCVs<ElementClass>(params object[] sets)
-            => BatchBuild<ElementClass>(0, 1E100, VarType.Continuous, sets);
+        public virtual void BuildCVs<TVariable>(params object[] sets)
+            => BatchBuild<TVariable>(0, 1E100, VarType.Continuous, sets);
 
-        public virtual void BuildCVs<ElementClass>(double lb, double ub, params object[] sets)
-            => BatchBuild<ElementClass>(lb, ub, VarType.Continuous, sets);
+        public virtual void BuildCVs<TVariable>(double lb, double ub, params object[] sets)
+            => BatchBuild<TVariable>(lb, ub, VarType.Continuous, sets);
 
-        public virtual void BuildIVs<ElementClass>(params object[] sets)
-            => BatchBuild<ElementClass>(0, 1E100, VarType.Integer, sets);
+        public virtual void BuildIVs<TVariable>(params object[] sets)
+            => BatchBuild<TVariable>(0, 1E100, VarType.Integer, sets);
 
-        public virtual void BuildIVs<ElementClass>(double lb, double ub, params object[] sets)
-            => BatchBuild<ElementClass>(lb, ub, VarType.Integer, sets);
+        public virtual void BuildIVs<TVariable>(double lb, double ub, params object[] sets)
+            => BatchBuild<TVariable>(lb, ub, VarType.Integer, sets);
 
-        public virtual void BuildBVs<ElementClass>(params object[] sets)
-            => BatchBuild<ElementClass>(0, 1, VarType.Binary, sets);
+        public virtual void BuildBVs<TVariable>(params object[] sets)
+            => BatchBuild<TVariable>(0, 1, VarType.Binary, sets);
 
         #endregion
 
@@ -175,17 +175,17 @@ namespace OptimFoundation.Core
         public string[] GetAllVarNames()
             => VariableSets.Values.SelectMany(s => s.Keys).ToArray();
 
-        public string[] GetSetVarNames<ElementClass>()
+        public string[] GetSetVarNames<TVariable>()
         {
-            string setName = typeof(ElementClass).Name;
+            string setName = typeof(TVariable).Name;
             return VariableSets.TryGetValue(setName, out var set)
                 ? set.Keys.ToArray()
                 : Array.Empty<string>();
         }
 
-        public Dictionary<string, double> GetSetVarValues<ElementClass>()
+        public Dictionary<string, double> GetSetVarValues<TVariable>()
         {
-            string setName = typeof(ElementClass).Name;
+            string setName = typeof(TVariable).Name;
             if (!VariableSets.TryGetValue(setName, out var set))
                 return new Dictionary<string, double>();
             return set.ToDictionary(kvp => kvp.Key, kvp => GetVariableValue(kvp.Key));

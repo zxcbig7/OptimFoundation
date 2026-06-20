@@ -12,7 +12,7 @@ namespace OptimFoundation.Core
         private static readonly ConcurrentDictionary<Type, Func<string[], object>> _ctorCache
             = new ConcurrentDictionary<Type, Func<string[], object>>();
 
-        // 保留供 BuildVars<T> 使用
+        // 保留供 BuildVars<TVariable> 使用
         private static Func<string[], object> GetCtor(Type t) => _ctorCache.GetOrAdd(t, ty =>
         {
             var defaultCtor = ty.GetConstructor(Type.EmptyTypes);
@@ -107,20 +107,20 @@ namespace OptimFoundation.Core
 
         /// <summary>
         /// 產生所有變數名稱（格式：TypeName@val1@val2@...）。
-        /// 直接組合字串，不建立 T 的實例，效能比舊版快 10x 以上（舊版每個名稱做 InitClassBySets + ToString 的反射）。
+        /// 直接組合字串，不建立 TVariable 的實例，效能比舊版快 10x 以上（舊版每個名稱做 InitClassBySets + ToString 的反射）。
         /// </summary>
-        public static IEnumerable<string> GetVarNames<T>(object[] sets)
+        public static IEnumerable<string> GetVarNames<TVariable>(object[] sets)
         {
-            string typeName = typeof(T).Name;
+            string typeName = typeof(TVariable).Name;
             var stringLists = ConvertSetsToStringLists(sets);
             foreach (var parts in GenVarParts(stringLists))
                 yield return typeName + "@" + string.Join("@", parts);
         }
 
         /// <summary>建立變數（保留給需要逐筆回呼的舊有用法）</summary>
-        public static void BuildVars<T>(Action<object> createVarMethod, object[] sets)
+        public static void BuildVars<TVariable>(Action<object> createVarMethod, object[] sets)
         {
-            var create = GetCtor(typeof(T));
+            var create = GetCtor(typeof(TVariable));
             var stringLists = ConvertSetsToStringLists(sets);
             foreach (var parts in GenVarParts(stringLists))
                 createVarMethod(create(parts));

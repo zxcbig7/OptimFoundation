@@ -40,7 +40,7 @@ new OptEngine(config)
           └── VariableCreate.Build()   ← BuildCVs / BuildIVs / BuildBVs
           └── BuildModel.Build()       ← AddLHS / AddRHS / Create* / CreateMinimize
     └── .Solve()                  ← 送出求解，回傳 bool
-    └── .GetSetVarValues<T>()     ← 取得解值
+    └── .GetSetVarValues<TVariable>()     ← 取得解值
     └── .Dispose()                ← 釋放 native 資源
 ```
 
@@ -88,9 +88,9 @@ public class VariableI_WorkCount : VariableBase
 
 | 前綴 | 變數類型 | 對應建立方法 |
 | --- | --- | --- |
-| `VariableB_` | Binary（0/1） | `BuildBVs<T>()` |
-| `VariableX_` | Continuous（連續） | `BuildCVs<T>()` |
-| `VariableI_` | Integer（整數） | `BuildIVs<T>()` |
+| `VariableB_` | Binary（0/1） | `BuildBVs<TVariable>()` |
+| `VariableX_` | Continuous（連續） | `BuildCVs<TVariable>()` |
+| `VariableI_` | Integer（整數） | `BuildIVs<TVariable>()` |
 
 > **重要**：Properties 的**宣告順序**決定 key 格式。建立變數時傳入的 Sets 順序必須與 properties 順序一致。
 
@@ -193,11 +193,11 @@ public void Build()
 
 | 方法 | 類型 | LB | UB |
 | --- | --- | --- | --- |
-| `BuildBVs<T>(sets)` | Binary | 0 | 1 |
-| `BuildCVs<T>(sets)` | Continuous | 0 | 1E100 |
-| `BuildCVs<T>(lb, ub, sets)` | Continuous | 自訂 | 自訂 |
-| `BuildIVs<T>(sets)` | Integer | 0 | 1E100 |
-| `BuildIVs<T>(lb, ub, sets)` | Integer | 自訂 | 自訂 |
+| `BuildBVs<TVariable>(sets)` | Binary | 0 | 1 |
+| `BuildCVs<TVariable>(sets)` | Continuous | 0 | 1E100 |
+| `BuildCVs<TVariable>(lb, ub, sets)` | Continuous | 自訂 | 自訂 |
+| `BuildIVs<TVariable>(sets)` | Integer | 0 | 1E100 |
+| `BuildIVs<TVariable>(lb, ub, sets)` | Integer | 自訂 | 自訂 |
 
 > **順序規則**：`sets` 的傳入順序必須與 Variable class 的 property 宣告順序完全一致。
 

@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OptimFoundation · 開發說明</title>
+<style>
+  :root{
+    --bg:#ffffff; --bg-soft:#fafafa; --bg-side:#f6f7f9;
+    --ink:#16181d; --muted:#6b7280; --line:#e6e8ec; --line-2:#eceef1;
+    --accent:#2b41ff; --accent-soft:#eef0ff;
+    --code-bg:#0e1116; --code-ink:#e6edf3;
+    --c-kw:#ff7b9c; --c-str:#7ee787; --c-com:#6e7681; --c-num:#79c0ff;
+    --l1:#2b41ff; --l2:#0ea5a4; --l3:#d97706; --l4:#7c3aed;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,"Segoe UI",Roboto,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.65;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+
+  /* ---------- layout ---------- */
+  .wrap{display:grid;grid-template-columns:264px minmax(0,1fr);max-width:1280px;margin:0 auto}
+  aside{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;border-right:1px solid var(--line);background:var(--bg-side);padding:26px 20px 60px}
+  main{padding:0 clamp(20px,5vw,64px)}
+  @media(max-width:880px){
+    .wrap{grid-template-columns:1fr}
+    aside{position:fixed;z-index:40;left:0;top:0;width:280px;transform:translateX(-100%);transition:.25s;box-shadow:0 0 40px rgba(0,0,0,.18)}
+    aside.open{transform:none}
+    .navbtn{display:inline-flex !important}
+  }
+
+  /* ---------- sidebar ---------- */
+  .brand{font-family:var(--mono);font-weight:700;font-size:15px;letter-spacing:.02em;display:flex;align-items:center;gap:9px;margin-bottom:4px}
+  .brand .dot{width:11px;height:11px;background:var(--accent);border-radius:3px;transform:rotate(45deg)}
+  .brand small{color:var(--muted);font-weight:500}
+  .ver{font-family:var(--mono);font-size:11px;color:var(--muted);margin:2px 0 22px;padding-left:20px}
+  nav h5{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:22px 0 8px}
+  nav a{display:block;padding:5px 10px;border-radius:7px;font-size:13.5px;color:#3b3f46;border-left:2px solid transparent}
+  nav a:hover{background:#eef0f3;color:var(--ink)}
+  nav a.active{background:var(--accent-soft);color:var(--accent);border-left-color:var(--accent);font-weight:600}
+
+  /* ---------- typography ---------- */
+  section{padding:54px 0 8px;border-top:1px solid var(--line-2)}
+  section:first-of-type{border-top:none}
+  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.1em;color:var(--accent);text-transform:uppercase}
+  h1{font-size:clamp(30px,4.4vw,46px);line-height:1.1;letter-spacing:-.02em;margin:.35em 0 .25em}
+  h2{font-size:clamp(22px,3vw,30px);letter-spacing:-.015em;margin:.2em 0 .5em;display:flex;align-items:baseline;gap:12px}
+  h2 .n{font-family:var(--mono);font-size:14px;color:var(--accent);font-weight:600}
+  h3{font-size:18px;margin:1.4em 0 .4em}
+  p{margin:.5em 0;color:#2b2f36}
+  .lead{font-size:18px;color:#3b3f46;max-width:64ch}
+  .muted{color:var(--muted)}
+  code.inl{font-family:var(--mono);font-size:.88em;background:#f1f2f5;border:1px solid var(--line);padding:1px 6px;border-radius:5px;color:#283042}
+
+  /* ---------- hero meta ---------- */
+  .hero-meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}
+  .pill{font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:999px;padding:5px 12px;background:var(--bg-soft);color:#3b3f46}
+  .pill b{color:var(--accent)}
+
+  /* ---------- architecture stack ---------- */
+  .stack{margin:18px 0 6px;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .layer{display:grid;grid-template-columns:150px 1fr;gap:0;border-bottom:1px solid var(--line)}
+  .layer:last-child{border-bottom:none}
+  .layer .lbl{padding:16px 18px;font-family:var(--mono);font-size:13px;font-weight:600;color:#fff;display:flex;flex-direction:column;justify-content:center;gap:3px}
+  .layer .lbl small{font-weight:400;opacity:.85;font-size:11px}
+  .layer .body{padding:14px 18px;background:var(--bg)}
+  .layer .body b{font-size:14px}
+  .layer .body p{margin:.15em 0;font-size:13.5px;color:#3b3f46}
+  .L-proj .lbl{background:linear-gradient(135deg,#2b41ff,#5566ff)}
+  .L-solv .lbl{background:linear-gradient(135deg,#0ea5a4,#16b8b6)}
+  .L-core .lbl{background:linear-gradient(135deg,#111827,#374151)}
+  .arrow{text-align:center;font-family:var(--mono);font-size:12px;color:var(--muted);padding:6px}
+
+  /* ---------- task levels ---------- */
+  .levels{display:flex;flex-direction:column;gap:14px;margin-top:14px}
+  .lvl{border:1px solid var(--line);border-radius:14px;padding:18px 20px;position:relative;background:var(--bg);transition:.18s}
+  .lvl:hover{box-shadow:0 8px 30px rgba(20,24,40,.07);transform:translateY(-2px)}
+  .lvl::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:4px;border-radius:4px;background:var(--lc)}
+  .lvl .top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .lvl .num{font-family:var(--mono);font-size:12px;font-weight:700;color:#fff;background:var(--lc);padding:3px 9px;border-radius:6px}
+  .lvl .role{font-size:17px;font-weight:700}
+  .lvl .scope{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-left:auto}
+  .lvl .desc{margin:.5em 0 .4em;font-size:14px;color:#3b3f46}
+  .lvl .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 22px;margin-top:8px;font-size:13px}
+  .lvl .grid b{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:2px}
+  .badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+  .badge{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:5px;background:#f1f2f5;border:1px solid var(--line);color:#374151;cursor:pointer}
+  .badge:hover{border-color:var(--accent);color:var(--accent)}
+  .lvl.l1{--lc:var(--l1)} .lvl.l2{--lc:var(--l2)} .lvl.l3{--lc:var(--l3)} .lvl.l4{--lc:var(--l4)}
+
+  /* ---------- forms grid ---------- */
+  .forms{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:16px;margin-top:18px}
+  .form{border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;background:var(--bg);transition:.18s}
+  .form:hover{box-shadow:0 10px 34px rgba(20,24,40,.08);transform:translateY(-2px)}
+  .form .head{padding:15px 17px 12px;border-bottom:1px solid var(--line-2)}
+  .form .fno{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .form .ftitle{font-size:16px;font-weight:700;margin:3px 0 5px}
+  .form .ftag{font-family:var(--mono);font-size:10.5px;padding:2px 7px;border-radius:5px;color:#fff}
+  .form .fdesc{font-size:13px;color:#3b3f46;padding:0 17px;margin:11px 0}
+  .form pre{margin:0;border-radius:0;flex:1}
+  .form .api{padding:10px 17px;border-top:1px solid var(--line-2);font-family:var(--mono);font-size:11.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px}
+  .form .api span{background:#f1f2f5;border:1px solid var(--line);padding:1px 7px;border-radius:5px;color:#374151}
+  .t1{background:var(--l1)} .t2{background:var(--l2)} .t3{background:var(--l3)} .t4{background:var(--l4)}
+
+  /* ---------- code ---------- */
+  pre{background:var(--code-bg);color:var(--code-ink);font-family:var(--mono);font-size:12.5px;line-height:1.55;padding:15px 17px;border-radius:11px;overflow-x:auto;margin:14px 0}
+  pre code{font-family:inherit}
+  .c-kw{color:var(--c-kw)} .c-str{color:var(--c-str)} .c-com{color:var(--c-com);font-style:italic} .c-num{color:var(--c-num)}
+
+  /* ---------- tables ---------- */
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line-2);vertical-align:top}
+  th{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line)}
+  td code{font-family:var(--mono);font-size:12px;color:#283042}
+  tbody tr:hover{background:var(--bg-soft)}
+
+  /* ---------- callout ---------- */
+  .note{border:1px solid var(--line);border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:10px;padding:12px 16px;margin:16px 0;font-size:13.5px}
+  .note b{color:var(--accent)}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:680px){.two{grid-template-columns:1fr}}
+
+  footer{border-top:1px solid var(--line);margin-top:60px;padding:30px 0 60px;font-size:12.5px;color:var(--muted);font-family:var(--mono)}
+
+  .navbtn{display:none;position:fixed;z-index:50;top:14px;left:14px;width:42px;height:42px;border-radius:11px;border:1px solid var(--line);background:#fff;align-items:center;justify-content:center;font-size:18px;box-shadow:0 4px 14px rgba(0,0,0,.1);cursor:pointer}
+  .scrim{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:35}
+  .scrim.open{display:block}
+</style>
+</head>
+<body>
+<button class="navbtn" id="navbtn" aria-label="menu">≡</button>
+<div class="scrim" id="scrim"></div>
+
+<div class="wrap">
+  <!-- ============ SIDEBAR ============ -->
+  <aside id="aside">
+    <div class="brand"><span class="dot"></span> OptimFoundation</div>
+    <div class="ver">solver-agnostic MIP framework · net48</div>
+    <nav id="nav">
+      <h5>總覽</h5>
+      <a href="#overview">框架是什麼</a>
+      <a href="#arch">三層架構</a>
+      <h5>分層</h5>
+      <a href="#levels">任務層級（應用 → 底層）</a>
+      <h5>開發形式</h5>
+      <a href="#forms">支援的開發形式</a>
+      <a href="#concepts">核心概念</a>
+      <h5>參考</h5>
+      <a href="#api">API 速查</a>
+      <a href="#packages">套件與環境</a>
+    </nav>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main>
+    <!-- OVERVIEW -->
+    <section id="overview">
+      <div class="kicker">開發說明 / Developer Guide</div>
+      <h1>OptimFoundation<br>開發分層與開發形式</h1>
+      <p class="lead">一個 solver-agnostic 的混合整數規劃（MIP）建模框架。把「定義問題」與「呼叫求解器」徹底分離：上層只描述變數、參數、限制式與目標式，下層負責對接 CPLEX / Gurobi。本頁依<strong>任務層級</strong>（從應用開發到核心底層）拆解，並列出框架支援的各種<strong>開發形式</strong>。</p>
+      <div class="hero-meta">
+        <span class="pill">核心 <b>OptimFoundation.Core</b></span>
+        <span class="pill">求解器 <b>Cplex / Gurobi / Solver</b></span>
+        <span class="pill">資料 <b>Csv / Db.Oracle</b></span>
+        <span class="pill">建模 <b>Generators（宣告式）</b></span>
+        <span class="pill">研究 <b>Experiments / Tuning</b></span>
+      </div>
+    </section>
+
+    <!-- ARCHITECTURE -->
+    <section id="arch">
+      <h2><span class="n">01</span> 三層架構</h2>
+      <p class="muted">上層依賴下層，下層不知道上層存在。Solver 可替換、Core 永不需為了某個問題而修改。</p>
+      <div class="stack">
+        <div class="layer L-proj">
+          <div class="lbl">Project Layer<small>問題定義者</small></div>
+          <div class="body">
+            <b>你的最佳化問題</b>（如 RosteringProblem）
+            <p>Dataload、Parameter_*、Variable_*、Constraint_*、ObjectiveFunction、組裝與執行入口。</p>
+          </div>
+        </div>
+        <div class="arrow">▲ 依賴 ▲</div>
+        <div class="layer L-solv">
+          <div class="lbl">Solver Layer<small>求解器實作</small></div>
+          <div class="body">
+            <b>OptimFoundation.Cplex / .Gurobi / .Solver</b>
+            <p>各自一個 <code class="inl">OptEngine : EngineBase&lt;TModel,TVar,TExpr,TConstr&gt;</code> + 對應 <code class="inl">ISolverConfig</code>。封裝原生 solver interop。</p>
+          </div>
+        </div>
+        <div class="arrow">▲ 依賴 ▲</div>
+        <div class="layer L-core">
+          <div class="lbl">Core Layer<small>抽象合約</small></div>
+          <div class="body">
+            <b>OptimFoundation.Core</b>
+            <p>ModelElementBase、VariableBuilder、EngineBase（Pool API / VariableSet）、求解器合約介面、Experiments、Infrastructure。solver 無關。</p>
+          </div>
+        </div>
+      </div>
+      <p class="muted" style="font-size:13px">旁掛模組：<code class="inl">Generators</code>（編譯期生成建模樣板）、<code class="inl">Csv</code> / <code class="inl">Db.Oracle</code>（資料載入）橫跨各層，作為工具不參與主依賴鏈。</p>
+    </section>
+
+    <!-- TASK LEVELS -->
+    <section id="levels">
+      <h2><span class="n">02</span> 任務層級：從應用開發到核心底層</h2>
+      <p class="muted">同一個框架，四種不同身分的開發者。愈上層門檻愈低（只寫問題），愈下層愈接近求解器與抽象合約。</p>
+      <div class="levels">
+
+        <div class="lvl l1">
+          <div class="top">
+            <span class="num">L01</span><span class="role">建模者 · Modeler</span>
+            <span class="scope">Project Layer / 應用最上層</span>
+          </div>
+          <div class="desc">把一個現實問題寫成模型：定義決策變數、參數、限制式、目標式與資料。不需碰任何 solver 細節。絕大多數開發都停在這一層。</div>
+          <div class="grid">
+            <div><b>做什麼</b>Variable / Parameter / Constraint / Objective / Dataload</div>
+            <div><b>用到的型別</b>VariableBase · ParameterBase · ConstraintBase · Pool API</div>
+            <div><b>會動的檔案</b><code>Data/</code> · <code>VariablesClass/</code> · <code>Constraints/</code></div>
+          </div>
+          <div class="badges"><span class="badge" data-go="f1">標準建模</span><span class="badge" data-go="f2">宣告式建模</span><span class="badge" data-go="f5">軟性限制式</span><span class="badge" data-go="f8">資料載入</span></div>
+        </div>
+
+        <div class="lvl l2">
+          <div class="top">
+            <span class="num">L02</span><span class="role">整合者 · Integrator</span>
+            <span class="scope">組裝管線 / 求解設定</span>
+          </div>
+          <div class="desc">把變數、限制式、目標式組裝成可執行的求解管線，調整 solver 參數，輸出結果，並做批次實驗與調參。負責「把模型跑起來、跑得好」。</div>
+          <div class="grid">
+            <div><b>做什麼</b>組裝 pipeline · 設定 Config · 輸出 · 實驗</div>
+            <div><b>用到的型別</b>OptModel · CplexConfig · Experiment / Trial</div>
+            <div><b>會動的檔案</b><code>Program.cs</code> · <code>BuildModel.cs</code> · 入口</div>
+          </div>
+          <div class="badges"><span class="badge" data-go="f3">OptModel 管線</span><span class="badge" data-go="f9">實驗與調參</span><span class="badge" data-go="f7">切換 Solver</span></div>
+        </div>
+
+        <div class="lvl l3">
+          <div class="top">
+            <span class="num">L03</span><span class="role">求解工程師 · Solver Engineer</span>
+            <span class="scope">演算法 / 進階求解</span>
+          </div>
+          <div class="desc">需要存取 dual、固定變數界限、自訂求解流程，或實作分解演算法（Benders）、跨執行緒限制式。透過繼承 OptEngine 擴充行為。</div>
+          <div class="grid">
+            <div><b>做什麼</b>繼承 OptEngine · Dual · Benders · Thread 限制式</div>
+            <div><b>用到的型別</b>Model · IRange · ReadVar · SetVarLB/UB · MergeModel</div>
+            <div><b>會動的檔案</b>自訂 <code>MyEngine : OptEngine</code></div>
+          </div>
+          <div class="badges"><span class="badge" data-go="f4">繼承 OptEngine</span><span class="badge" data-go="f6">Benders 分解</span><span class="badge" data-go="f7">多 Solver</span></div>
+        </div>
+
+        <div class="lvl l4">
+          <div class="top">
+            <span class="num">L04</span><span class="role">框架維護者 · Framework Maintainer</span>
+            <span class="scope">Core / 底層</span>
+          </div>
+          <div class="desc">維護抽象合約與共用機制，或為框架新增一個求解器後端。動的是 Core 與 Solver adapter，影響所有上層。</div>
+          <div class="grid">
+            <div><b>做什麼</b>新增 Solver · 改 EngineBase 合約 · Generators · 介面</div>
+            <div><b>用到的型別</b>EngineBase 合約（11 抽象方法）· ISolverConfig · ITunableConfig</div>
+            <div><b>會動的檔案</b><code>Core/</code> · 新 <code>OptimFoundation.&lt;Solver&gt;</code></div>
+          </div>
+          <div class="badges"><span class="badge" data-go="f10">新增 Solver</span><span class="badge" data-go="api">EngineBase 合約</span></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- FORMS -->
+    <section id="forms">
+      <h2><span class="n">03</span> 支援的開發形式</h2>
+      <p class="muted">框架不綁定單一寫法。從零樣板的宣告式建模、到無繼承的組裝管線、到分解演算法與多 solver，以下十種形式可依需求混用。每張卡片標註所屬<strong>任務層級</strong>。</p>
+      <div class="forms" id="formgrid">
+
+        <!-- F1 -->
+        <div class="form" id="f1">
+          <div class="head">
+            <div class="fno">FORM 01 · <span class="ftag t1">L01 建模</span></div>
+            <div class="ftitle">標準建模（Pool API · 命令式）</div>
+          </div>
+          <div class="fdesc">框架的基本形式：變數/參數/限制式都是「零建構子」class，限制式用 AddLHS / AddRHS 把左右兩側丟進 Pool，再 Create* 送出。</div>
+<pre><code class="cs">// 變數：只宣告 properties，不寫建構子
+public class VariableB_ShiftAssign : VariableBase {
+    public DateTime Date { get; set; }
+    public string Employee { get; set; }
+    public string Group { get; set; }
+}
+
+// 限制式：每人每天恰排一班  Σ_g X = 1
+Data.Group.ForEach(g =&gt;
+    Engine.AddLHS(1, new VariableB_ShiftAssign{ Date=d, Employee=e, Group=g }));
+Engine.AddRHS(1);
+Engine.CreateEqual($"OneGroup@{d:yyyy_MM_dd}@{e}");</code></pre>
+          <div class="api"><span>BuildBVs/IVs/CVs</span><span>AddLHS</span><span>AddRHS</span><span>CreateEqual</span></div>
+        </div>
+
+        <!-- F2 -->
+        <div class="form" id="f2">
+          <div class="head">
+            <div class="fno">FORM 02 · <span class="ftag t1">L01 建模</span></div>
+            <div class="ftitle">宣告式建模（Source Generator）</div>
+          </div>
+          <div class="fdesc">用 <code class="inl">[OptVar]</code> / <code class="inl">[OptParam]</code> 標記，AutoSetsGenerator 在編譯期把 set 屬性、QTY、建構子補齊。零樣板，宣告即模型。</div>
+<pre><code class="cs">using OptimFoundation.Modeling;
+
+// 一行宣告 → 編譯期生成完整 class
+[OptVar(VarType.Binary, "Date:DateTime", "Employee", "Group")]
+public partial class VariableB_ShiftAssign { }
+
+[OptParam("Date:DateTime", "Group")]            // 含 QTY
+public partial class Parameter_ShiftDemand { }
+
+[OptParam("Employee", "Group", HasValue = false)] // 純 key
+public partial class Parameter_BackupGroup { }</code></pre>
+          <div class="api"><span>OptimFoundation.Generators</span><span>[OptVar]</span><span>[OptParam]</span></div>
+        </div>
+
+        <!-- F3 -->
+        <div class="form" id="f3">
+          <div class="head">
+            <div class="fno">FORM 03 · <span class="ftag t2">L02 整合</span></div>
+            <div class="ftitle">OptModel 組裝管線（Composition）</div>
+          </div>
+          <div class="fdesc">fluent registry：用 delegate 註冊變數 / 模型 / 求解後處理，Execute() 在對的時機叫起來。對具體 class 零依賴、不需繼承。</div>
+<pre><code class="cs">using var m = new OptModel("Rostering")
+    .UseConfig(() =&gt; new CplexConfig{ timeLimit=100, epGap=0.03 })
+    .AddVariables(e =&gt; e.BuildBVs&lt;VariableB_ShiftAssign&gt;(d.Date,d.Emp,d.Grp))
+    .AddModel(e =&gt; new ObjectiveFunction(d,e).Build())
+    .AddModel(e =&gt; new Constraint_OneGroup(d,e).Build())
+    .OnSolved(e =&gt; d.WriteToCSV(e));
+m.Execute();</code></pre>
+          <div class="api"><span>UseConfig</span><span>AddVariables</span><span>AddModel</span><span>OnSolved</span><span>Execute</span></div>
+        </div>
+
+        <!-- F4 -->
+        <div class="form" id="f4">
+          <div class="head">
+            <div class="fno">FORM 04 · <span class="ftag t3">L03 求解</span></div>
+            <div class="ftitle">繼承 OptEngine（進階擴充）</div>
+          </div>
+          <div class="fdesc">需要 dual、固定變數、保存 IRange 供後續取值時，繼承 OptEngine 取得 protected 的 Model / ReadVar / AddGE 等。</div>
+<pre><code class="cs">public class SubProblemEngine : OptEngine {
+    public SubProblemEngine(CplexConfig c) : base(c) { }
+
+    public void Build(List&lt;string&gt; dests, Dictionary&lt;string,double&gt; demand){
+        foreach (var dst in dests){
+            var lhs = Model.LinearNumExpr();
+            foreach (var s in sources)
+                lhs.AddTerm(1.0, ReadVar(new VariableX_Flow{ Source=s, Dest=dst }));
+            var r = AddGE($"Demand@{dst}", lhs, demand[dst]); // 回傳 IRange
+        }
+    }
+    public double Dual(IRange r) =&gt; Model.GetDual(r);
+}</code></pre>
+          <div class="api"><span>Model</span><span>ReadVar</span><span>AddLE/GE/EQ</span><span>SetVarLB/UB</span></div>
+        </div>
+
+        <!-- F5 -->
+        <div class="form" id="f5">
+          <div class="head">
+            <div class="fno">FORM 05 · <span class="ftag t1">L01 建模</span></div>
+            <div class="ftitle">軟性限制式（Soft Constraints）</div>
+          </div>
+          <div class="fdesc">用懲罰取代硬約束：允許違反但加重目標式。框架依目標方向自動決定懲罰符號。須在目標式建立後呼叫。</div>
+<pre><code class="cs">// LHS ≤ rhs，違反時懲罰 penalty
+Engine.AddLHS(1, new VariableX_WeekendCount{ Employee=e });
+Engine.CreateLeSoft(rhs:4.0, penalty:0.1);
+
+// LHS = rhs，偏差量以 delta 變數進目標式
+Engine.AddLHS(1, new VariableB_ShiftAssign{ Date=d, Employee=e, Group="D" });
+Engine.CreateEqSoft(rhs:demand, penalty:5.0, name:$"Demand@{d:yyyy_MM_dd}");</code></pre>
+          <div class="api"><span>CreateLeSoft</span><span>CreateGeSoft</span><span>CreateEqSoft</span></div>
+        </div>
+
+        <!-- F6 -->
+        <div class="form" id="f6">
+          <div class="head">
+            <div class="fno">FORM 06 · <span class="ftag t3">L03 求解</span></div>
+            <div class="ftitle">Benders 分解 / Thread 限制式</div>
+          </div>
+          <div class="fdesc">主／子問題迭代：ResetConstraint 重建、CopyModel 快照、Thread 限制式可跨 model，再用 MergeModel 併入目標 CPLEX model。</div>
+<pre><code class="cs">for (int it=1; it&lt;=maxIter; it++){
+    master.Solve();                       // 主問題 → LB、Y*
+    var yFixed = master.GetYValues();
+    sub.RebuildWithY(yFixed);             // 內部 sub.ResetConstraint()
+    sub.Solve();
+    UB = Math.Min(UB, fixedCost + sub.GetObjectiveValue());
+    if (UB - LB &lt;= eps) break;
+    master.AddOptimalityCut(sub.Duals(), it);  // 取 dual 加 cut
+}</code></pre>
+          <div class="api"><span>ResetConstraint</span><span>CopyModel</span><span>MergeModel</span><span>CreateEqualThread</span></div>
+        </div>
+
+        <!-- F7 -->
+        <div class="form" id="f7">
+          <div class="head">
+            <div class="fno">FORM 07 · <span class="ftag t2">L02 / L03</span></div>
+            <div class="ftitle">多 Solver（CPLEX / Gurobi / 通用）</div>
+          </div>
+          <div class="fdesc">模型程式碼 solver 無關。換 solver 只換 OptEngine 與 Config，變數 / 限制式 / 目標式完全不動。</div>
+<pre><code class="cs">// CPLEX
+var engine = new OptimFoundation.Cplex.OptEngine(new CplexConfig{ timeLimit=300 });
+
+// Gurobi（同一份模型 code 不變）
+var engine = new OptimFoundation.Gurobi.OptEngine(new GurobiConfig{ TimeLimit=300 });
+
+engine.Build();
+new VariableCreate(data, engine).Build();
+new BuildModel(data, engine).Build();
+engine.Solve();</code></pre>
+          <div class="api"><span>EngineBase&lt;TModel,…&gt;</span><span>ISolverConfig</span><span>ITunableConfig</span></div>
+        </div>
+
+        <!-- F8 -->
+        <div class="form" id="f8">
+          <div class="head">
+            <div class="fno">FORM 08 · <span class="ftag t1">L01 / L02</span></div>
+            <div class="ftitle">資料載入（記憶體 / CSV / 資料庫）</div>
+          </div>
+          <div class="fdesc">Dataload 可硬寫、可從 CSV 讀、可走 DB。結果同樣能寫回 CSV。資料來源與模型解耦。</div>
+<pre><code class="cs">// 記憶體
+parameter_ShiftDemand.Add(new Parameter_ShiftDemand{ Date=d, Group="D", QTY=5 });
+
+// CSV 讀 / 寫
+this.Employee = CsvCtrl.ReadStrSet("Set_Employee.csv");
+this.param = CsvCtrl.BuildParameter&lt;Parameter_Cost&gt;("Cost");
+CsvCtrl.SaveSolutionToCSV&lt;VariableB_ShiftAssign&gt;(engine, "V1", "VIC");
+
+// 資料庫：繼承 DBCtrlBase / OracleDBCtrl</code></pre>
+          <div class="api"><span>CsvCtrl</span><span>DBCtrlBase</span><span>OracleDBCtrl</span><span>FolderDir</span></div>
+        </div>
+
+        <!-- F9 -->
+        <div class="form" id="f9">
+          <div class="head">
+            <div class="fno">FORM 09 · <span class="ftag t2">L02 整合</span></div>
+            <div class="ftitle">實驗與自動調參（Experiments）</div>
+          </div>
+          <div class="fdesc">把多組 Config 當 Trial 跑，統一收集 SolveMetrics（obj / gap / 時間 / node / 收斂軌跡），append 輸出 CSV + JSON。ITunableConfig 提供跨 solver 的抽象旋鈕。</div>
+<pre><code class="cs">var exp = new Experiment("emphasis-sweep", "比較 mipEmphasis");
+foreach (var emp in new[]{0,1,2,3,4}){
+    var cfg = new CplexConfig{ timeLimit=120 };
+    ((ITunableConfig)cfg).Emphasis = emp;     // 抽象旋鈕
+    var m = Run(cfg);                          // → EngineBase.LastMetrics
+    exp.AddTrial(new Trial{ Label=$"emp={emp}", Metrics = m.LastMetrics });
+}
+exp.Save();   // experiments/emphasis-sweep.csv + .json</code></pre>
+          <div class="api"><span>Experiment</span><span>Trial</span><span>SolveMetrics</span><span>ITunableConfig</span></div>
+        </div>
+
+        <!-- F10 -->
+        <div class="form" id="f10">
+          <div class="head">
+            <div class="fno">FORM 10 · <span class="ftag t4">L04 核心</span></div>
+            <div class="ftitle">新增 Solver（擴充底層）</div>
+          </div>
+          <div class="fdesc">為框架接上新求解器：實作 EngineBase 的求解器合約（建模型、加變數、線性式、加限制式、設目標、求解、取值、Dispose），並提供 ISolverConfig。</div>
+<pre><code class="cs">public class OptEngine
+    : EngineBase&lt;MyModel, MyVar, MyExpr, MyConstr&gt; {
+
+    protected override void Configuration(ISolverConfig c){ /* 建 model + 套參數 */ }
+    protected override MyVar AddVariable(string n,double lb,double ub,VarType t){ ... }
+    protected override MyExpr LinearExpr(IEnumerable&lt;(double,MyVar)&gt; terms){ ... }
+    protected override void AddConstraint(string n,MyExpr lhs,ConstraintSense s,double rhs){ ... }
+    protected override void SetObjective(MyExpr e,ObjectiveSense s){ ... }
+    public override bool Solve(){ ... }
+    // …共 11 個 abstract 方法
+}</code></pre>
+          <div class="api"><span>EngineBase</span><span>Configuration</span><span>AddVariable</span><span>Solve</span></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- CONCEPTS -->
+    <section id="concepts">
+      <h2><span class="n">04</span> 貫穿全框架的核心概念</h2>
+
+      <h3>零建構子 + 物件初始化</h3>
+      <p>Variable / Parameter / Constraint 一律只宣告 properties，不寫建構子；呼叫端用 object initializer。<code class="inl">ModelElementBase</code> 以反射（含 PropertyInfo 快取）把值依序填入。</p>
+<pre><code class="cs">new VariableB_ShiftAssign{ Date=d, Employee=e, Group=g }
+new Parameter_ShiftDemand{ Date=d, Group="D", QTY=5 }</code></pre>
+
+      <div class="two">
+        <div>
+          <h3>Variable Key 格式</h3>
+          <p>class 名 + property 值組成唯一 key；<code class="inl">DateTime</code> 固定 <code class="inl">yyyy-MM-dd</code>。<strong>property 宣告順序 = 傳入 Sets 順序</strong>，不一致就會 KeyNotFound。</p>
+<pre><code class="cs">VariableB_ShiftAssign@2026-01-01@E1@D</code></pre>
+        </div>
+        <div>
+          <h3>Pool 機制</h3>
+          <p>送出時框架計算 <code class="inl">(LHS項 − RHS項) {sense} (RHS常數 − LHS常數)</code>，所以左右兩側變數可自由混用，不必手動移項。每次 Create* 後 Pool 自動清空。</p>
+        </div>
+      </div>
+
+      <div class="note"><b>抽象旋鈕（ITunableConfig）：</b>Seed / Emphasis / FeasibilityTol / OptimalityTol / RootAlgorithm / Presolve / HeuristicEffort / MemoryLimitMb —— 各 Config 將其對映到自家欄位（CPLEX <code class="inl">mipEmphasis</code> ↔ Gurobi <code class="inl">MipFocus</code>），讓調參程式碼跨 solver 共用。</div>
+    </section>
+
+    <!-- API -->
+    <section id="api">
+      <h2><span class="n">05</span> 各層 API 速查</h2>
+
+      <h3>建立變數（EngineBase）</h3>
+      <table>
+        <thead><tr><th>方法</th><th>類型</th><th>LB / UB</th></tr></thead>
+        <tbody>
+          <tr><td><code>BuildBVs&lt;TVariable&gt;(sets)</code></td><td>Binary</td><td>0 / 1</td></tr>
+          <tr><td><code>BuildCVs&lt;TVariable&gt;(sets)</code></td><td>Continuous</td><td>0 / 1E100</td></tr>
+          <tr><td><code>BuildCVs&lt;TVariable&gt;(lb,ub,sets)</code></td><td>Continuous</td><td>自訂</td></tr>
+          <tr><td><code>BuildIVs&lt;TVariable&gt;(sets)</code></td><td>Integer</td><td>0 / 1E100</td></tr>
+          <tr><td><code>BuildIVs&lt;TVariable&gt;(lb,ub,sets)</code></td><td>Integer</td><td>自訂</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Pool API（限制式 / 目標式）</h3>
+      <table>
+        <thead><tr><th>方法</th><th>意義</th></tr></thead>
+        <tbody>
+          <tr><td><code>AddLHS(coef,var)</code> / <code>AddLHS(const)</code></td><td>左側加項 / 常數</td></tr>
+          <tr><td><code>AddRHS(coef,var)</code> / <code>AddRHS(const)</code></td><td>右側加項 / 常數</td></tr>
+          <tr><td><code>CreateEqual / CreateLessEqual / CreateGreatEqual(name)</code></td><td>= / ≤ / ≥</td></tr>
+          <tr><td><code>CreateRange(lb,ub,name)</code></td><td>lb ≤ LHS ≤ ub</td></tr>
+          <tr><td><code>CreateMinimize() / CreateMaximize()</code></td><td>目標式方向（只用 AddLHS）</td></tr>
+          <tr><td><code>CreateLeSoft / CreateGeSoft / CreateEqSoft(rhs,penalty)</code></td><td>軟性限制式</td></tr>
+        </tbody>
+      </table>
+
+      <h3>結果 API</h3>
+      <table>
+        <thead><tr><th>呼叫</th><th>回傳</th></tr></thead>
+        <tbody>
+          <tr><td><code>Status</code></td><td>SolveStatus（Optimal / Feasible / Infeasible / TimeLimit …）</td></tr>
+          <tr><td><code>GetObjectiveValue()</code></td><td>目標值 double</td></tr>
+          <tr><td><code>GetSetVarValues&lt;TVariable&gt;()</code></td><td>某型別所有解值 Dictionary</td></tr>
+          <tr><td><code>GetSolution(varTypeName?)</code></td><td>全部 / 指定型別解值</td></tr>
+          <tr><td><code>GetVariableValue(key)</code></td><td>單一變數解值</td></tr>
+          <tr><td><code>LastMetrics</code></td><td>SolveMetrics（obj / gap / 時間 / node / 收斂）</td></tr>
+        </tbody>
+      </table>
+
+      <h3>EngineBase 求解器合約（新增 solver 必 override）</h3>
+      <table>
+        <thead><tr><th>方法</th><th>職責</th></tr></thead>
+        <tbody>
+          <tr><td><code>Configuration(ISolverConfig)</code></td><td>建 Model、套用 Config</td></tr>
+          <tr><td><code>AddVariable(name,lb,ub,VarType)</code></td><td>新增單一變數</td></tr>
+          <tr><td><code>LinearExpr(terms)</code></td><td>建線性表達式</td></tr>
+          <tr><td><code>AddConstraint / AddRangeConstraint</code></td><td>新增（範圍）限制式</td></tr>
+          <tr><td><code>SetObjective(expr,sense)</code> · <code>SetVariableBounds</code></td><td>設目標 / 改界限</td></tr>
+          <tr><td><code>Build / Solve / GetObjectiveValue / GetVariableValue / Dispose</code></td><td>求解生命週期</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- PACKAGES -->
+    <section id="packages">
+      <h2><span class="n">06</span> 套件與環境</h2>
+      <table>
+        <thead><tr><th>套件</th><th>內容</th><th>層</th></tr></thead>
+        <tbody>
+          <tr><td><code>OptimFoundation.Core</code></td><td>抽象基底、EngineBase、VariableBuilder、Experiments、介面</td><td>Core</td></tr>
+          <tr><td><code>OptimFoundation.Cplex</code></td><td>CPLEX OptEngine、CplexConfig、OptModel 管線</td><td>Solver</td></tr>
+          <tr><td><code>OptimFoundation.Gurobi</code></td><td>Gurobi OptEngine、GurobiConfig</td><td>Solver</td></tr>
+          <tr><td><code>OptimFoundation.Solver</code></td><td>通用 solver 後端</td><td>Solver</td></tr>
+          <tr><td><code>OptimFoundation.Db.Oracle</code></td><td>Oracle 連接器（DBCtrlBase 實作）</td><td>資料</td></tr>
+          <tr><td><code>OptimFoundation.Generators</code></td><td>AutoSets source generator（宣告式建模）</td><td>建置期</td></tr>
+        </tbody>
+      </table>
+      <div class="note">
+        <b>環境：</b>函式庫全 target <code class="inl">net48</code>；消費端可用 net48 或 net8+（直接 reference net48 DLL）。需自備 IBM CPLEX 或 Gurobi 授權與其 DLL。<br>
+        <b>建置：</b><code class="inl">OptimFoundation.Cplex</code> 因 CPLEX HintPath 需用 Visual Studio MSBuild 建置；Core / Generators 可直接 <code class="inl">dotnet build</code>。
+      </div>
+      <p class="muted">細節請見 <code class="inl">specs/developer-guide.md</code>（開發手冊）與 <code class="inl">specs/framework-dev-spec.md</code>（開發規格書）。</p>
+    </section>
+
+    <footer>
+      OptimFoundation · 開發說明　/　依任務層級與開發形式整理　/　本頁為單檔靜態網站，可離線開啟
+    </footer>
+  </main>
+</div>
+
+<script>
+// ---------- C# highlighter (tokenizer, HTML-safe) ----------
+const KW = new Set("using namespace public private protected internal sealed abstract class interface enum struct static readonly const new return void var bool int double long string object params override virtual this base if else for foreach in while do switch case true false null get set throw try catch finally partial".split(" "));
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+function highlight(src){
+  let o="",i=0,n=src.length;
+  while(i<n){
+    const c=src[i];
+    if(c==="/"&&src[i+1]==="/"){let j=src.indexOf("\n",i);if(j<0)j=n;o+='<span class="c-com">'+esc(src.slice(i,j))+"</span>";i=j;continue;}
+    if(c==='"'||((c==="$"||c==="@")&&(src[i+1]==='"'||((src[i+1]==="@"||src[i+1]==="$")&&src[i+2]==='"')))){
+      let s=i;while(src[i]==="$"||src[i]==="@")i++;i++;
+      while(i<n){if(src[i]==="\\"){i+=2;continue;}if(src[i]==='"'){i++;break;}i++;}
+      o+='<span class="c-str">'+esc(src.slice(s,i))+"</span>";continue;
+    }
+    if(/[A-Za-z_]/.test(c)){let j=i+1;while(j<n&&/[A-Za-z0-9_]/.test(src[j]))j++;const w=src.slice(i,j);o+=KW.has(w)?'<span class="c-kw">'+w+"</span>":esc(w);i=j;continue;}
+    if(/[0-9]/.test(c)){let j=i+1;while(j<n&&/[0-9.]/.test(src[j]))j++;o+='<span class="c-num">'+src.slice(i,j)+"</span>";i=j;continue;}
+    o+=esc(c);i++;
+  }
+  return o;
+}
+document.querySelectorAll("pre code.cs").forEach(el=>{el.innerHTML=highlight(el.textContent);});
+
+// ---------- scrollspy ----------
+const links=[...document.querySelectorAll("#nav a")];
+const map=new Map(links.map(a=>[a.getAttribute("href").slice(1),a]));
+const obs=new IntersectionObserver(es=>{
+  es.forEach(e=>{if(e.isIntersecting){links.forEach(l=>l.classList.remove("active"));const a=map.get(e.target.id);if(a)a.classList.add("active");}});
+},{rootMargin:"-45% 0px -50% 0px"});
+document.querySelectorAll("section[id]").forEach(s=>obs.observe(s));
+
+// ---------- badge jump → highlight form card ----------
+document.querySelectorAll(".badge[data-go]").forEach(b=>{
+  b.addEventListener("click",()=>{
+    const t=document.getElementById(b.dataset.go);
+    if(!t)return;
+    t.scrollIntoView({behavior:"smooth",block:"center"});
+    t.style.transition="box-shadow .3s";t.style.boxShadow="0 0 0 3px var(--accent)";
+    setTimeout(()=>t.style.boxShadow="",1100);
+  });
+});
+
+// ---------- mobile nav ----------
+const aside=document.getElementById("aside"),scrim=document.getElementById("scrim"),btn=document.getElementById("navbtn");
+const toggle=o=>{aside.classList.toggle("open",o);scrim.classList.toggle("open",o);};
+btn.addEventListener("click",()=>toggle(!aside.classList.contains("open")));
+scrim.addEventListener("click",()=>toggle(false));
+aside.addEventListener("click",e=>{if(e.target.tagName==="A")toggle(false);});
+</script>
+</body>
+</html>
