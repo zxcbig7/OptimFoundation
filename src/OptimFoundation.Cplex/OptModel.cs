@@ -29,16 +29,16 @@ namespace OptimFoundation.Cplex
     public class OptModel : IDisposable
     {
         // ── 註冊清單（Execute 之前由外部填入）────────────────────────────
-        private readonly List<Action<OptEngine>> _variableSteps  = new List<Action<OptEngine>>();
-        private readonly List<Action<OptEngine>> _modelSteps     = new List<Action<OptEngine>>();
+        private readonly List<Action<OptEngine>> _variableSteps = new List<Action<OptEngine>>();
+        private readonly List<Action<OptEngine>> _modelSteps = new List<Action<OptEngine>>();
         private readonly List<Action<OptEngine>> _solvedHandlers = new List<Action<OptEngine>>();
         private Func<CplexConfig> _configFactory = () => new CplexConfig();
 
         // ── 執行期狀態 ───────────────────────────────────────────────────
         public OptEngine optEngine;
         public Stopwatch buildModelTimer = new Stopwatch();
-        public Stopwatch totalTimer      = new Stopwatch();
-        public TimeSpan  totalTimeSpan   = new TimeSpan();
+        public Stopwatch totalTimer = new Stopwatch();
+        public TimeSpan totalTimeSpan = new TimeSpan();
 
         private bool _isSuccess;
 

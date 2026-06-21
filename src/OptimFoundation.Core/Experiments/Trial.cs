@@ -38,11 +38,11 @@ namespace OptimFoundation.Core
 
             return new Trial
             {
-                Label   = label,
-                RunAt   = DateTime.Now,
-                Config  = snapshot,
+                Label = label,
+                RunAt = DateTime.Now,
+                Config = snapshot,
                 Metrics = metrics,
-                Note    = note
+                Note = note
             };
             // 不呼叫 engine.Dispose()：engine 生命週期由呼叫端持有
         }

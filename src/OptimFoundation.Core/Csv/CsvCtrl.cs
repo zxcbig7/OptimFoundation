@@ -2,14 +2,20 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 
 namespace OptimFoundation.Core
 {
     public static class CsvCtrl
     {
+        // CSV 給人 / Excel 開啟：UTF-8 with BOM，避免 zh-TW Excel 以 Big5(950) 誤判中文成亂碼
+        private static readonly Encoding _csvWrite = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
+        // CSV 讀入：固定 UTF-8（StreamReader/ReadAllLines 會自動偵測並去除 BOM），來源檔請一律存成 UTF-8
+        private static readonly Encoding _csvRead = Encoding.UTF8;
+
         public static void ClearData(string fileName)
         {
-            using var sw = new StreamWriter(FolderDir.Data.GetFilePath(fileName));
+            using var sw = new StreamWriter(FolderDir.Data.GetFilePath(fileName), append: false, _csvWrite);
             sw.WriteLine("");
         }
 
@@ -17,20 +23,20 @@ namespace OptimFoundation.Core
         {
             string name = typeof(TParameter).Name;
             FolderDir.Data.TryCreateFile($"{name}.csv");
-            using var sw = new StreamWriter(FolderDir.Data.GetFilePath($"{name}.csv"));
+            using var sw = new StreamWriter(FolderDir.Data.GetFilePath($"{name}.csv"), append: false, _csvWrite);
             string cols = "DATA_ID," + string.Join(",", ReflectionHelper.GetMemberNames(typeof(TParameter)).Select(s => s.ToUpper()));
             sw.WriteLine(cols);
         }
 
-        public static List<int>      ReadIntSet(string fileName)    => ReadLines(FolderDir.Data.GetFilePath(fileName), int.Parse);
-        public static List<double>   ReadDoubleSet(string fileName)  => ReadLines(FolderDir.Data.GetFilePath(fileName), double.Parse);
-        public static List<string>   ReadStrSet(string fileName)     => ReadLines(FolderDir.Data.GetFilePath(fileName), s => s);
-        public static List<DateTime> ReadDateSet(string fileName)    => ReadLines(FolderDir.Data.GetFilePath(fileName), DateTime.Parse);
+        public static List<int> ReadIntSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(fileName), int.Parse);
+        public static List<double> ReadDoubleSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(fileName), double.Parse);
+        public static List<string> ReadStrSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(fileName), s => s);
+        public static List<DateTime> ReadDateSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(fileName), DateTime.Parse);
 
         private static List<TValue> ReadLines<TValue>(string path, Func<string, TValue> parser)
         {
             var list = new List<TValue>();
-            using var sr = new StreamReader(path);
+            using var sr = new StreamReader(path, _csvRead);
             string line;
             while ((line = sr.ReadLine()) != null)
                 list.Add(parser(line.Replace("\"", "")));
@@ -41,7 +47,7 @@ namespace OptimFoundation.Core
         {
             string path = FolderDir.Data.GetFilePath($"{fileName}.csv");
             var data = new Dictionary<string, double>();
-            using var sr = new StreamReader(path);
+            using var sr = new StreamReader(path, _csvRead);
             string line;
             while ((line = sr.ReadLine()) != null)
             {
@@ -79,7 +85,7 @@ namespace OptimFoundation.Core
         public static double[,] ReadMatrixCsv(string fileName)
         {
             string path = FolderDir.Data.GetFilePath(fileName);
-            var lines = File.ReadAllLines(path);
+            var lines = File.ReadAllLines(path, _csvRead);
             int rows = lines.Length;
             int cols = lines[0].Split(',').Length;
             var matrix = new double[rows, cols];
@@ -99,7 +105,7 @@ namespace OptimFoundation.Core
             string file = FolderDir.Solution.GetFilePath($"{classInfo.TypeName}.csv");
             var sol = engine.GetSolution(classInfo.TypeName);
 
-            using var sw = new StreamWriter(file);
+            using var sw = new StreamWriter(file, append: false, _csvWrite);
             string cols = "DATA_ID,VAR_TYPE," + string.Join(",", classInfo.SetNames.Select(s => s.ToUpper())) + ",QTY,USER";
             sw.WriteLine(cols);
 

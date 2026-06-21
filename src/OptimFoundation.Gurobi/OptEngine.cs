@@ -81,7 +81,7 @@ namespace OptimFoundation.Gurobi
                 if (cfg.SoftMemLimit.HasValue)
                     Model.Set(GRB.DoubleParam.SoftMemLimit, cfg.SoftMemLimit.Value);
 
-                _exportLp  = cfg.ExportLp;
+                _exportLp = cfg.ExportLp;
                 _exportMps = cfg.ExportMps;
                 _exportSol = cfg.ExportSol;
 
@@ -113,24 +113,24 @@ namespace OptimFoundation.Gurobi
         protected override void AddVariables(IReadOnlyList<string> names, double lb, double ub, VarType type)
         {
             int n = names.Count;
-            var lbs     = new double[n];
-            var ubs     = new double[n];
-            var objs    = new double[n];
-            var types   = new char[n];
+            var lbs = new double[n];
+            var ubs = new double[n];
+            var objs = new double[n];
+            var types = new char[n];
             var nameArr = new string[n];
 
             char grbType = type switch
             {
                 VarType.Integer => GRB.INTEGER,
-                VarType.Binary  => GRB.BINARY,
-                _               => GRB.CONTINUOUS
+                VarType.Binary => GRB.BINARY,
+                _ => GRB.CONTINUOUS
             };
 
             for (int i = 0; i < n; i++)
             {
-                lbs[i]     = lb;
-                ubs[i]     = ub;
-                types[i]   = grbType;
+                lbs[i] = lb;
+                ubs[i] = ub;
+                types[i] = grbType;
                 nameArr[i] = names[i];
             }
 
@@ -208,18 +208,18 @@ namespace OptimFoundation.Gurobi
             if (ok)
             {
                 BestObjValue = isMip ? Model.ObjBound : Model.ObjVal;
-                MIPGap       = isMip ? Model.MIPGap   : 0.0;
+                MIPGap = isMip ? Model.MIPGap : 0.0;
             }
             LastMetrics = new SolveMetrics
             {
-                Status          = Status,
-                ObjectiveValue  = ok ? Model.ObjVal : double.NaN,
-                BestBound       = ok ? BestObjValue : double.NaN,
-                MipGap          = ok ? MIPGap : double.NaN,
-                WallTimeMs      = solveTimer.Elapsed.TotalMilliseconds,
-                NodeCount       = (ok && isMip) ? (long?)Model.NodeCount : null,
-                IterationCount  = ok ? (long?)Model.IterCount : null,
-                VarCount        = varCount,
+                Status = Status,
+                ObjectiveValue = ok ? Model.ObjVal : double.NaN,
+                BestBound = ok ? BestObjValue : double.NaN,
+                MipGap = ok ? MIPGap : double.NaN,
+                WallTimeMs = solveTimer.Elapsed.TotalMilliseconds,
+                NodeCount = (ok && isMip) ? (long?)Model.NodeCount : null,
+                IterationCount = ok ? (long?)Model.IterCount : null,
+                VarCount = varCount,
                 ConstraintCount = _constraints.Count
             };
 

@@ -59,7 +59,8 @@ namespace OptimFoundation.Core
                 sb.AppendLine(string.Join(",", cells));
             }
 
-            File.WriteAllText(path, sb.ToString(), new UTF8Encoding(false));
+            // UTF-8 with BOM：讓 zh-TW Excel 正確辨識中文（Label/Note），避免以 Big5(950) 解讀成亂碼
+            File.WriteAllText(path, sb.ToString(), new UTF8Encoding(true));
         }
 
         // CSV 以 JSON 為權威來源做累積，此處不回讀。

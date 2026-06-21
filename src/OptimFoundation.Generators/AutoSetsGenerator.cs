@@ -16,10 +16,10 @@ namespace OptimFoundation.Generators
     ///   → : VariableBase + 依序 set 屬性
     ///
     /// 參數：
-    ///     [OptParam("Date:DateTime", "Group")]                       // 含 QTY
-    ///     [OptParam("Date:DateTime", "Employee", "Group", HasValue = false)]  // 純 key，不含 QTY
+    ///     [OptParam("Date:DateTime", "Group")]
     ///     public partial class Parameter_ShiftDemand { }
-    ///   → : ParameterBase + set 屬性 + （選擇性）QTY + InitClassBySets 兩個建構子
+    ///   → : ParameterBase + set 屬性 + QTY + InitClassBySets 兩個建構子
+    ///   參數一律含 QTY 值欄位，且 QTY 必為最後一個資料屬性。
     ///
     /// attribute / enum 由本 generator 於編譯期注入 OptimFoundation.Modeling namespace，
     /// 使用端只需 <c>using OptimFoundation.Modeling;</c>，不需任何額外組件參考。
@@ -59,8 +59,6 @@ namespace OptimFoundation.Modeling
     public sealed class OptParamAttribute : Attribute
     {
         public string[] Sets { get; }
-        /// <summary>true（預設）會生成 QTY 值欄位；純 key 參數設 false。</summary>
-        public bool HasValue { get; set; } = true;
         public OptParamAttribute(params string[] sets)
         {
             Sets = sets;
@@ -127,12 +125,9 @@ namespace OptimFoundation.Modeling
 
             string setsCsv = JoinSets(attr.ConstructorArguments[0]);
 
-            bool hasValue = true;
-            foreach (var na in attr.NamedArguments)
-                if (na.Key == "HasValue" && na.Value.Value is bool b) hasValue = b;
-
+            // 參數一律生成 QTY 值欄位（永遠是最後一個資料屬性）。
             return new EmitModel(NamespaceOf(symbol), symbol.Name, ParameterBaseFqn, setsCsv,
-                AddQty: hasValue, AddCtors: true, Meta: string.Empty);
+                AddQty: true, AddCtors: true, Meta: string.Empty);
         }
 
         /// <summary>

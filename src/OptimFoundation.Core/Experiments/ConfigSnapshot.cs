@@ -10,7 +10,7 @@ namespace OptimFoundation.Core
     public sealed class ConfigSnapshot
     {
         public string Solver { get; set; }
-        public Dictionary<string, object> Tunable        { get; set; } = new Dictionary<string, object>();
+        public Dictionary<string, object> Tunable { get; set; } = new Dictionary<string, object>();
         public Dictionary<string, object> SolverSpecific { get; set; } = new Dictionary<string, object>();
 
         /// <summary>
@@ -28,20 +28,20 @@ namespace OptimFoundation.Core
 
             // 共用旋鈕
             snapshot.Tunable["TimeLimit"] = config.TimeLimit;
-            snapshot.Tunable["MipGap"]    = config.MipGap;
-            snapshot.Tunable["Threads"]   = config.Threads;
+            snapshot.Tunable["MipGap"] = config.MipGap;
+            snapshot.Tunable["Threads"] = config.Threads;
 
             // 跨引擎抽象旋鈕
             if (config is ITunableConfig t)
             {
-                snapshot.Tunable["Seed"]            = t.Seed;
-                snapshot.Tunable["Emphasis"]        = t.Emphasis;
-                snapshot.Tunable["FeasibilityTol"]  = t.FeasibilityTol;
-                snapshot.Tunable["OptimalityTol"]   = t.OptimalityTol;
-                snapshot.Tunable["RootAlgorithm"]   = t.RootAlgorithm;
-                snapshot.Tunable["Presolve"]        = t.Presolve;
+                snapshot.Tunable["Seed"] = t.Seed;
+                snapshot.Tunable["Emphasis"] = t.Emphasis;
+                snapshot.Tunable["FeasibilityTol"] = t.FeasibilityTol;
+                snapshot.Tunable["OptimalityTol"] = t.OptimalityTol;
+                snapshot.Tunable["RootAlgorithm"] = t.RootAlgorithm;
+                snapshot.Tunable["Presolve"] = t.Presolve;
                 snapshot.Tunable["HeuristicEffort"] = t.HeuristicEffort;
-                snapshot.Tunable["MemoryLimitMb"]   = t.MemoryLimitMb;
+                snapshot.Tunable["MemoryLimitMb"] = t.MemoryLimitMb;
             }
 
             // Solver 專屬：reflection 列舉 public field + 可讀 property（補抓抽象面沒涵蓋的設定）

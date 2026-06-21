@@ -146,6 +146,7 @@
       <a href="#levels">任務層級（應用 → 底層）</a>
       <h5>開發形式</h5>
       <a href="#forms">支援的開發形式</a>
+      <a href="#declarative">宣告式 Var / Param 詳解</a>
       <a href="#concepts">核心概念</a>
       <h5>參考</h5>
       <a href="#api">API 速查</a>
@@ -307,11 +308,9 @@ Engine.CreateEqual($"OneGroup@{d:yyyy_MM_dd}@{e}");</code></pre>
 [OptVar(VarType.Binary, "Date:DateTime", "Employee", "Group")]
 public partial class VariableB_ShiftAssign { }
 
-[OptParam("Date:DateTime", "Group")]            // 含 QTY
-public partial class Parameter_ShiftDemand { }
-
-[OptParam("Employee", "Group", HasValue = false)] // 純 key
-public partial class Parameter_BackupGroup { }</code></pre>
+// 參數一律生成 QTY 值欄位，且 QTY 必為最後一個資料屬性
+[OptParam("Date:DateTime", "Group")]
+public partial class Parameter_ShiftDemand { }</code></pre>
           <div class="api"><span>OptimFoundation.Generators</span><span>[OptVar]</span><span>[OptParam]</span></div>
         </div>
 
@@ -472,9 +471,79 @@ exp.Save();   // experiments/emphasis-sweep.csv + .json</code></pre>
       </div>
     </section>
 
+    <!-- DECLARATIVE VAR / PARAM -->
+    <section id="declarative">
+      <h2><span class="n">04</span> 宣告式 Variable / Parameter 詳解</h2>
+      <p class="muted">FORM 02 的展開版。把 <code class="inl">[OptVar]</code> / <code class="inl">[OptParam]</code> 加在 <code class="inl">partial class</code> 上，<code class="inl">AutoSetsGenerator</code> 在編譯期補出 set 屬性、（參數的）QTY 與建構子。你寫一行宣告，編譯後就是一個正常的 <code class="inl">VariableBase</code> / <code class="inl">ParameterBase</code> 子類別 —— 跟 FORM 01 手寫的完全等價。</p>
+
+      <div class="note"><b>前置：</b>使用端只需 <code class="inl">using OptimFoundation.Modeling;</code>。attribute 與 <code class="inl">VarType</code> enum 由 generator 注入，<strong>不需</strong>任何額外組件參考；生成的 class 以 <code class="inl">global::OptimFoundation.Core</code> 全名指向基底型別。</div>
+
+      <h3>[OptVar] — 決策變數</h3>
+      <p>第一個參數是 <code class="inl">VarType</code>，其餘是 index set，<strong>順序即 key 順序</strong>。變數<strong>不含 QTY</strong>、也<strong>不生成建構子</strong>（沿用 object initializer 寫法）。</p>
+<pre><code class="cs">using OptimFoundation.Modeling;
+
+[OptVar(VarType.Binary, "Date:DateTime", "Employee", "Group")]
+public partial class VariableB_ShiftAssign { }</code></pre>
+      <p class="muted">↓ 編譯期生成 <code class="inl">VariableB_ShiftAssign.AutoSets.g.cs</code></p>
+<pre><code class="cs">// &lt;auto-generated/&gt;
+// [VarType=Binary] —— 由 AutoSetsGenerator 生成
+public partial class VariableB_ShiftAssign : global::OptimFoundation.Core.VariableBase
+{
+    public global::System.DateTime Date { get; set; }
+    public string Employee { get; set; } = string.Empty;
+    public string Group { get; set; } = string.Empty;
+}</code></pre>
+      <div class="note"><b>命名對應：</b>class 前綴需與 <code class="inl">VarType</code> 一致 —— <code class="inl">VariableB_</code> ↔ Binary、<code class="inl">VariableI_</code> ↔ Integer、<code class="inl">VariableX_</code> ↔ Continuous。前綴是慣例（對應 <code class="inl">BuildBVs / IVs / CVs</code>），真正決定型別的是 attribute 裡的 <code class="inl">VarType</code>。</div>
+
+      <h3>[OptParam] — 模型參數</h3>
+      <p>參數沒有 <code class="inl">VarType</code>，全部引數都是 index set。<strong>一律生成 <code class="inl">double QTY</code> 值欄位，且 QTY 永遠是最後一個資料屬性</strong>；同時生成兩個建構子（<code class="inl">params object[]</code> 與無參）。</p>
+<pre><code class="cs">using OptimFoundation.Modeling;
+
+[OptParam("Date:DateTime", "Group")]
+public partial class Parameter_ShiftDemand { }</code></pre>
+      <p class="muted">↓ 編譯期生成 <code class="inl">Parameter_ShiftDemand.AutoSets.g.cs</code></p>
+<pre><code class="cs">// &lt;auto-generated/&gt;
+public partial class Parameter_ShiftDemand : global::OptimFoundation.Core.ParameterBase
+{
+    public global::System.DateTime Date { get; set; }
+    public string Group { get; set; } = string.Empty;
+    public double QTY { get; set; }          // 一律生成，永遠最後
+
+    public Parameter_ShiftDemand(params object[] sets) =&gt; InitClassBySets(sets);
+    public Parameter_ShiftDemand() { }
+}</code></pre>
+      <div class="note"><b>QTY 規則（強制）：</b>每個 <code class="inl">[OptParam]</code> 一定有 <code class="inl">double QTY</code>，且排在所有 set 屬性之後。框架已移除「純 key、無 QTY」的選項 —— 一個參數代表「在某組 key 下的一個數值」，QTY 就是那個數值。</div>
+
+      <h3>Set 型別標註</h3>
+      <p>set 字串格式為 <code class="inl">"名稱"</code> 或 <code class="inl">"名稱:型別"</code>；未標註型別預設 <code class="inl">string</code>。屬性名即 set 名稱（原樣保留大小寫）。</p>
+      <table>
+        <thead><tr><th>標註</th><th>生成屬性型別</th><th>範例</th></tr></thead>
+        <tbody>
+          <tr><td>（省略）</td><td><code>string</code>（預設 <code>= string.Empty</code>）</td><td><code>"Employee"</code> → <code>string Employee</code></td></tr>
+          <tr><td><code>:DateTime</code> / <code>:date</code></td><td><code>System.DateTime</code></td><td><code>"Date:DateTime"</code> → <code>DateTime Date</code></td></tr>
+          <tr><td><code>:int</code></td><td><code>int</code></td><td><code>"MachineId:int"</code> → <code>int MachineId</code></td></tr>
+          <tr><td><code>:double</code></td><td><code>double</code></td><td><code>"Ratio:double"</code> → <code>double Ratio</code></td></tr>
+        </tbody>
+      </table>
+      <div class="note"><b>順序鐵則：</b>set 引數的宣告順序 = 生成屬性順序 = 建立變數 / 傳建構參數時必須傳入的順序。順序不一致會導致 key 對不上（<code class="inl">KeyNotFound</code>）。參見下節「Variable Key 格式」。</div>
+
+      <h3>手動繼承 vs 宣告式</h3>
+      <table>
+        <thead><tr><th>面向</th><th>手動繼承（FORM 01）</th><th>宣告式（FORM 02）</th></tr></thead>
+        <tbody>
+          <tr><td>變數宣告</td><td><code>class V_X : VariableBase { …props… }</code></td><td><code>[OptVar(…)] partial class V_X { }</code></td></tr>
+          <tr><td>參數 QTY</td><td>手寫，需自律放最後</td><td>一律補、強制最後</td></tr>
+          <tr><td>參數建構子</td><td>手寫 <code>params</code> + 無參</td><td>自動生成兩個</td></tr>
+          <tr><td>基底 using</td><td>需 <code>using …Core;</code></td><td><code>global::</code> 全名，免 using</td></tr>
+          <tr><td>適用時機</td><td>需自訂額外成員 / 方法時</td><td>純資料 schema、零樣板</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">兩者可混用：宣告式產出的是 <code class="inl">partial class</code>，需要時在另一個同名 <code class="inl">partial</code> 補方法或額外屬性即可（但別重複宣告已生成的 set 屬性與 QTY）。</p>
+    </section>
+
     <!-- CONCEPTS -->
     <section id="concepts">
-      <h2><span class="n">04</span> 貫穿全框架的核心概念</h2>
+      <h2><span class="n">05</span> 貫穿全框架的核心概念</h2>
 
       <h3>零建構子 + 物件初始化</h3>
       <p>Variable / Parameter / Constraint 一律只宣告 properties，不寫建構子；呼叫端用 object initializer。<code class="inl">ModelElementBase</code> 以反射（含 PropertyInfo 快取）把值依序填入。</p>
@@ -498,7 +567,7 @@ new Parameter_ShiftDemand{ Date=d, Group="D", QTY=5 }</code></pre>
 
     <!-- API -->
     <section id="api">
-      <h2><span class="n">05</span> 各層 API 速查</h2>
+      <h2><span class="n">06</span> 各層 API 速查</h2>
 
       <h3>建立變數（EngineBase）</h3>
       <table>
@@ -554,7 +623,7 @@ new Parameter_ShiftDemand{ Date=d, Group="D", QTY=5 }</code></pre>
 
     <!-- PACKAGES -->
     <section id="packages">
-      <h2><span class="n">06</span> 套件與環境</h2>
+      <h2><span class="n">07</span> 套件與環境</h2>
       <table>
         <thead><tr><th>套件</th><th>內容</th><th>層</th></tr></thead>
         <tbody>

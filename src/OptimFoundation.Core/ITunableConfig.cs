@@ -6,13 +6,13 @@ namespace OptimFoundation.Core
     /// </summary>
     public interface ITunableConfig
     {
-        int?    Seed            { get; set; }  // CPLEX randomSeed / Gurobi Seed
-        int?    Emphasis        { get; set; }  // CPLEX mipEmphasis / Gurobi MipFocus（只記原始整數值，不做語意正規化）
-        double? FeasibilityTol  { get; set; }  // CPLEX epRHS / Gurobi FeasibilityTol / Solver Epsilon
-        double? OptimalityTol   { get; set; }  // CPLEX epOpt / Gurobi OptimalityTol
-        int?    RootAlgorithm   { get; set; }  // CPLEX algorithm / Gurobi Method
-        int?    Presolve        { get; set; }  // CPLEX PreInd / Gurobi Presolve
+        int? Seed { get; set; }  // CPLEX randomSeed / Gurobi Seed
+        int? Emphasis { get; set; }  // CPLEX mipEmphasis / Gurobi MipFocus（只記原始整數值，不做語意正規化）
+        double? FeasibilityTol { get; set; }  // CPLEX epRHS / Gurobi FeasibilityTol / Solver Epsilon
+        double? OptimalityTol { get; set; }  // CPLEX epOpt / Gurobi OptimalityTol
+        int? RootAlgorithm { get; set; }  // CPLEX algorithm / Gurobi Method
+        int? Presolve { get; set; }  // CPLEX PreInd / Gurobi Presolve
         double? HeuristicEffort { get; set; }  // Gurobi Heuristics(0~1) / CPLEX 對映
-        double? MemoryLimitMb   { get; set; }  // CPLEX workMemory / Gurobi SoftMemLimit
+        double? MemoryLimitMb { get; set; }  // CPLEX workMemory / Gurobi SoftMemLimit
     }
 }
