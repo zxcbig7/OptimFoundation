@@ -69,6 +69,10 @@ namespace OptimFoundation.Modeling
 }
 ";
 
+        /// <summary>
+        /// Generator 入口。先注入 attribute 定義，再尋找標記類別並生成對應 partial class。
+        /// </summary>
+        /// <param name="context"></param>
         public void Initialize(IncrementalGeneratorInitializationContext context)
         {
             context.RegisterPostInitializationOutput(ctx =>
@@ -90,6 +94,11 @@ namespace OptimFoundation.Modeling
             context.RegisterSourceOutput(prms, static (spc, m) => Emit(spc, m!));
         }
 
+        /// <summary>
+        /// 從標記 Class 的 attribute 參數提取資訊，組成 EmitModel 以供後續生成 code。
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <returns></returns>
         private static EmitModel? ExtractVar(GeneratorAttributeSyntaxContext ctx)
         {
             if (ctx.TargetSymbol is not INamedTypeSymbol symbol || ctx.Attributes.Length == 0) return null;
@@ -104,6 +113,11 @@ namespace OptimFoundation.Modeling
                 AddQty: false, AddCtors: false, Meta: $"VarType={varType}");
         }
 
+        /// <summary>
+        /// 從標記 Class 的 attribute 參數提取資訊，組成 EmitModel 以供後續生成 code。
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <returns></returns>
         private static EmitModel? ExtractParam(GeneratorAttributeSyntaxContext ctx)
         {
             if (ctx.TargetSymbol is not INamedTypeSymbol symbol || ctx.Attributes.Length == 0) return null;
@@ -121,6 +135,11 @@ namespace OptimFoundation.Modeling
                 AddQty: hasValue, AddCtors: true, Meta: string.Empty);
         }
 
+        /// <summary>
+        /// 將 TypedConstant 中的集合參數連接成 CSV 字串。
+        /// </summary>
+        /// <param name="arg"></param>
+        /// <returns></returns>
         private static string JoinSets(TypedConstant arg)
         {
             if (arg.Kind != TypedConstantKind.Array) return string.Empty;
@@ -128,9 +147,20 @@ namespace OptimFoundation.Modeling
             return string.Join("|", sets);
         }
 
+        /// <summary>
+        /// 獲取類型符號的命名空間。
+        /// </summary>
+        /// <param name="s"></param>
+        /// <returns></returns>
         private static string NamespaceOf(INamedTypeSymbol s)
             => s.ContainingNamespace.IsGlobalNamespace ? string.Empty : s.ContainingNamespace.ToDisplayString();
 
+
+        /// <summary>
+        /// 根據 EmitModel 生成對應的 partial class 代碼，並添加到編譯輸出中。
+        /// </summary>
+        /// <param name="spc"></param>
+        /// <param name="m"></param>
         private static void Emit(SourceProductionContext spc, EmitModel m)
         {
             string[] sets = m.SetsCsv.Length == 0 ? System.Array.Empty<string>() : m.SetsCsv.Split('|');
@@ -178,6 +208,13 @@ namespace OptimFoundation.Modeling
         }
 
         // "Name" → string；"Name:DateTime|date|int|double" → 對應型別
+        /// <summary>
+        /// 解析 set 定義字串，提取 set 名稱與型別資訊。預設型別為 string，支援 DateTime、int、double。
+        /// </summary>
+        /// <param name="name"></param>
+        /// <param name="type"></param>
+        /// <param name="raw"></param>
+        /// <returns></returns>
         private static (string name, string type, bool isString) ParseSet(string raw)
         {
             var parts = raw.Split(':');
@@ -194,6 +231,17 @@ namespace OptimFoundation.Modeling
             }
         }
 
+        /// <summary>
+        /// 根據 EmitModel 生成對應的 partial class 代碼，並添加到編譯輸出中。
+        /// </summary>
+        /// <param name="Namespace"></param>
+        /// <param name="ClassName"></param>
+        /// <param name="BaseFqn"></param>
+        /// <param name="SetsCsv"></param>
+        /// <param name="AddQty"></param>
+        /// <param name="AddCtors"></param>
+        /// <param name="Meta"></param>
+        /// <returns></returns>
         private sealed record EmitModel(
             string Namespace, string ClassName, string BaseFqn, string SetsCsv,
             bool AddQty, bool AddCtors, string Meta);
