@@ -59,6 +59,8 @@ namespace OptimFoundation.Modeling
     public sealed class OptParamAttribute : Attribute
     {
         public string[] Sets { get; }
+        /// <summary>true（預設）會生成 QTY 值欄位；純 key 參數設 false。</summary>
+        public bool HasValue { get; set; } = true;
         public OptParamAttribute(params string[] sets)
         {
             Sets = sets;
@@ -125,9 +127,13 @@ namespace OptimFoundation.Modeling
 
             string setsCsv = JoinSets(attr.ConstructorArguments[0]);
 
-            // 參數一律生成 QTY 值欄位（永遠是最後一個資料屬性）。
+            // 預設生成 QTY 值欄位（最後一個資料屬性）；OptParam(..., HasValue = false) 則為純 key、不生 QTY。
+            bool hasValue = true;
+            foreach (var na in attr.NamedArguments)
+                if (na.Key == "HasValue" && na.Value.Value is bool b) hasValue = b;
+
             return new EmitModel(NamespaceOf(symbol), symbol.Name, ParameterBaseFqn, setsCsv,
-                AddQty: true, AddCtors: true, Meta: string.Empty);
+                AddQty: hasValue, AddCtors: true, Meta: string.Empty);
         }
 
         /// <summary>
