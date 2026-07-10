@@ -36,7 +36,15 @@ namespace OptimFoundation.Cplex
 
         // ── 執行期狀態 ───────────────────────────────────────────────────
         public OptEngine optEngine;
+        /// <summary>
+        /// 記錄建構模型的時間，包含變數、目標式、限制式的建構。可用於 log 或除錯。
+        /// </summary>
+        /// <returns></returns>
         public Stopwatch buildModelTimer = new Stopwatch();
+        /// <summary>
+        /// 記錄整體運作時間，包含建構模型、求解、後處理。可用於 log 或除錯。
+        /// </summary>
+        /// <returns></returns>
         public Stopwatch totalTimer = new Stopwatch();
         public TimeSpan totalTimeSpan = new TimeSpan();
 

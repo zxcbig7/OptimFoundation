@@ -4,7 +4,7 @@ using System.Reflection;
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 求解設定快照。雙軌：抽象旋鈕（<see cref="ITunableConfig"/> + 共用 ISolverConfig）+
+    /// 求解設定快照。雙軌：抽象控制項目（<see cref="ITunableConfig"/> + 共用 ISolverConfig）+
     /// reflection 抓 concrete 專屬欄位，確保不漏任何設定，供之後重現與 LLM tuning 參考。
     /// </summary>
     public sealed class ConfigSnapshot
@@ -14,7 +14,7 @@ namespace OptimFoundation.Core
         public Dictionary<string, object> SolverSpecific { get; set; } = new Dictionary<string, object>();
 
         /// <summary>
-        /// 從 ISolverConfig 建立快照：抽象旋鈕讀 ITunableConfig，專屬欄位用 reflection 列舉 public field/property。
+        /// 從 ISolverConfig 建立快照：抽象控制項目讀 ITunableConfig，專屬欄位用 reflection 列舉 public field/property。
         /// </summary>
         public static ConfigSnapshot From(ISolverConfig config)
         {
@@ -26,12 +26,12 @@ namespace OptimFoundation.Core
             int dot = ns.LastIndexOf('.');
             snapshot.Solver = dot >= 0 ? ns.Substring(dot + 1) : ns;
 
-            // 共用旋鈕
+            // 共用控制項目
             snapshot.Tunable["TimeLimit"] = config.TimeLimit;
             snapshot.Tunable["MipGap"] = config.MipGap;
             snapshot.Tunable["Threads"] = config.Threads;
 
-            // 跨引擎抽象旋鈕
+            // 跨引擎抽象控制項目
             if (config is ITunableConfig t)
             {
                 snapshot.Tunable["Seed"] = t.Seed;

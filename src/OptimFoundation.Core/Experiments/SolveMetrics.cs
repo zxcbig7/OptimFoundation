@@ -3,8 +3,8 @@ using System.Collections.Generic;
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 單次求解的統一 telemetry。由各 engine 的 Solve() 回填到 EngineBase.LastMetrics。
-    /// 取不到的指標（如某 engine 無 node 數）填 null / NaN，不丟例外。
+    /// 單次求解的統一 telemetry。
+    /// 由各 engine 的 Solve() 回填到 EngineBase.LastMetrics。
     /// </summary>
     public sealed class SolveMetrics
     {

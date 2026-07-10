@@ -3,6 +3,17 @@ using System.Collections.Generic;
 
 namespace OptimFoundation.Core
 {
+
+    public interface ISolverConfig
+    {
+        double? TimeLimit { get; set; }
+        double? MipGap { get; set; }
+        int? Threads { get; set; }
+        bool LogToConsole { get; set; }
+        string LogFilePath { get; set; }
+    }
+
+
     public interface ISolverEngine : IDisposable
     {
         ISolverConfig Config { get; }
@@ -20,6 +31,14 @@ namespace OptimFoundation.Core
         IReadOnlyDictionary<string, double> GetSolution(string varTypeName = null);
     }
 
+    public interface ISpecialConstraints<TVar, TExpr>
+    {
+        void AddSOS1(IEnumerable<TVar> vars);
+        void AddSOS2(IEnumerable<TVar> vars);
+        void AddIndicator(TVar binary, TExpr expr, ConstraintSense sense, double rhs);
+        void AddLazyConstraint(TExpr expr, ConstraintSense sense, double rhs);
+    }
+
     public enum SolveStatus
     {
         NotSolved,
@@ -30,4 +49,7 @@ namespace OptimFoundation.Core
         TimeLimit,
         Error
     }
+
+
+
 }

@@ -6,11 +6,9 @@ A .NET framework for building mixed-integer programming (MIP) optimization model
 
 | Package | Description |
 | --- | --- |
-| `OptimFoundation.Core` | Abstract base classes, engine contract, variable builder |
+| `OptimFoundation.Core` | Abstract base classes, engine contract, variable builder, Oracle DB utilities |
 | `OptimFoundation.Cplex` | IBM CPLEX solver implementation |
 | `OptimFoundation.Gurobi` | Gurobi solver implementation |
-| `OptimFoundation.Db` | Database utilities |
-| `OptimFoundation.Db.Oracle` | Oracle connector |
 
 ## Quick Example
 

@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 
-namespace OptimFoundation.Core
+namespace OptimFoundation.Core.IO
 {
     public static class CsvCtrl
     {

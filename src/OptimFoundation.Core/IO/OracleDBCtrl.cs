@@ -4,7 +4,7 @@ using System.Data;
 using System.Linq;
 using Oracle.ManagedDataAccess.Client;
 using OptimFoundation.Core;
-using OptimFoundation.Core.Db;
+using OptimFoundation.Core.IO;
 
 namespace OptimFoundation.Db.Oracle
 {

@@ -1,7 +1,7 @@
 using System;
 using System.Data;
 
-namespace OptimFoundation.Core.Db
+namespace OptimFoundation.Core.IO
 {
     public abstract class DBCtrlBase : IDbCtrl
     {
@@ -17,6 +17,9 @@ namespace OptimFoundation.Core.Db
         public abstract DataTable Query(string sql, params (string name, object value)[] parameters);
         public abstract int Execute(string sql, params (string name, object value)[] parameters);
         public abstract TResult QueryScalar<TResult>(string sql, params (string name, object value)[] parameters);
+
+        public virtual void NonQuery(string sql, params (string name, object value)[] parameters)
+            => Execute(sql, parameters);
 
         public virtual void Dispose()
         {

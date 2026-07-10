@@ -24,17 +24,27 @@ namespace OptimFoundation.Core
                 _folderName = folderName;
             }
 
+
+            /// <summary>
+            /// 取得資料夾完整路徑。ProjectPath + folderName
+            /// </summary>
+            /// <returns></returns>
+            public string GetPath() => Path.Combine(ProjectPath, _folderName);
+
             /// <summary>
             /// 建立資料夾。Directory.CreateDirectory 是 idempotent，目錄已存在時不 throw。
             /// </summary>
-            public void CreateFolder() => Directory.CreateDirectory(GetPath());
+            public void CreateFolder()
+            {
+                Directory.CreateDirectory(GetPath());
+            }
 
-            public string GetPath() => Path.Combine(ProjectPath, _folderName);
-
+            /// <summary>
+            /// 建立資料夾，若已存在則不 throw。
+            /// </summary>
+            /// <param name="fileName"></param>
+            /// <returns></returns>
             public string GetFilePath(string fileName) => Path.Combine(GetPath(), fileName);
-
-            public static string PathCombine(string folder, string fileName) => Path.Combine(folder, fileName);
-            public static string PathCombine(params string[] paths) => Path.Combine(paths);
 
             public bool TryCreateFile(string fileName)
             {
@@ -43,11 +53,6 @@ namespace OptimFoundation.Core
                 File.CreateText(path).Close();
                 return true;
             }
-        }
-
-        public static void TryCreateFolder(string path)
-        {
-            Directory.CreateDirectory(path);
         }
     }
 }

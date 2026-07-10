@@ -5,7 +5,7 @@ using System.Text;
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 每個 Trial 一列的扁平 CSV：label + 抽象旋鈕 + 指標。給人做 tuning 對照 / Excel / pandas。
+    /// 每個 Trial 一列的扁平 CSV：label + 抽象控制項目 + 指標。給人做 tuning 對照 / Excel / pandas。
     /// 軌跡不進 CSV（只進 JSON）。
     /// </summary>
     public sealed class CsvExperimentWriter : IExperimentWriter
@@ -19,6 +19,13 @@ namespace OptimFoundation.Core
 
         public ExpWriterType Extension => ExpWriterType.CSV;
 
+
+
+        /// <summary>
+        /// 將 Experiment 寫入 CSV，給人做 tuning 對照 / Excel / pandas。
+        /// </summary>
+        /// <param name="experiment"></param>
+        /// <param name="path"></param>
         public void Write(Experiment experiment, string path)
         {
             var sb = new StringBuilder();
@@ -67,11 +74,27 @@ namespace OptimFoundation.Core
         public Experiment Read(string path) => null;
 
         private static string Tunable(ConfigSnapshot c, string key)
-            => c != null && c.Tunable.TryGetValue(key, out var v) ? Cell(v) : "";
+        {
+            return c != null && c.Tunable.TryGetValue(key, out var v) ? Cell(v) : "";
 
+        }
+
+        /// <summary>
+        /// 將數值轉換為 CSV 格式。
+        /// </summary>
+        /// <param name="d"></param>
+        /// <returns></returns>
         private static string Num(double d)
-            => double.IsNaN(d) ? "" : d.ToString("R", CultureInfo.InvariantCulture);
+        {
+            return double.IsNaN(d) ? "" : d.ToString("R", CultureInfo.InvariantCulture);
 
+        }
+
+        /// <summary>
+        /// 用於 CSV 的欄位值，若有逗號、雙引號、換行符號則加上雙引號，並將雙引號轉成兩個雙引號。
+        /// </summary>
+        /// <param name="v"></param>
+        /// <returns></returns>
         private static string Cell(object v)
         {
             if (v == null) return "";

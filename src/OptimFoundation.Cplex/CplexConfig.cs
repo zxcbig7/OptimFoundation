@@ -28,7 +28,7 @@ namespace OptimFoundation.Cplex
         public int? algorithm = null;
         public int? nodeFileInd = null;
 
-        // ── 高影響 tuning 旋鈕（camelCase，CPLEX 專屬；null = 用 CPLEX 預設） ──────────
+        // ── 高影響 tuning 控制項目（camelCase，CPLEX 專屬；null = 用 CPLEX 預設） ──────────
         // General / 決定論 / 計時
         public int? parallelMode = null;  // IntParam.Parallel：-1 機會式, 0 自動, 1 決定論
         public double? detTimeLimit = null;  // DoubleParam.DetTiLim：決定論時間上限（ticks），實驗可重現
@@ -76,7 +76,7 @@ namespace OptimFoundation.Cplex
         public int? NodeAlgorithm { get; set; }
         public bool? PreIndicator { get; set; }
 
-        // ── ITunableConfig — 抽象旋鈕 delegate 到既有 CPLEX 欄位（RootAlgorithm 由上方滿足） ──
+        // ── ITunableConfig — 抽象控制項目 delegate 到既有 CPLEX 欄位（RootAlgorithm 由上方滿足） ──
         public int? Seed { get => randomSeed; set => randomSeed = value; }
         public int? Emphasis { get => mipEmphasis; set => mipEmphasis = value; }
         public double? FeasibilityTol { get => epRHS; set => epRHS = value; }
@@ -90,7 +90,7 @@ namespace OptimFoundation.Cplex
             set => PreIndicator = value.HasValue ? value.Value != 0 : (bool?)null;
         }
 
-        // CPLEX 無直接對應欄位，保留為獨立旋鈕（Configuration 不套用，僅供快照記錄）
+        // CPLEX 無直接對應欄位，保留為獨立控制項目（Configuration 不套用，僅供快照記錄）
         public double? HeuristicEffort { get; set; }
     }
 }

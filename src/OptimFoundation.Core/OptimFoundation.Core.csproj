@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
     <AssemblyName>OptimFoundation.Core</AssemblyName>
@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="NLog" Version="5.3.4" />
+    <PackageReference Include="Oracle.ManagedDataAccess" Version="21.11.0" />
     <PackageReference Include="System.Text.Json" Version="8.0.0" />
   </ItemGroup>
 </Project>
