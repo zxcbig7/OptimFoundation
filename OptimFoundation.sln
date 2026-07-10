@@ -11,9 +11,15 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OptimFoundation.Gurobi", "s
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OptimFoundation.Generators", "src\OptimFoundation.Generators\OptimFoundation.Generators.csproj", "{E5E5E5E5-5555-5555-5555-555555555555}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Template_ThreadTest", "..\Templates\Template_ThreadTest\Template_ThreadTest.csproj", "{69405C35-7641-4E25-914B-FFCD803A4BEB}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Template_ThreadTest", "Templates\Template_ThreadTest\Template_ThreadTest.csproj", "{69405C35-7641-4E25-914B-FFCD803A4BEB}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RosteringProblem", "..\Templates\Template_CPLEX\RosteringProblem.csproj", "{A13F6D8C-CDD1-4DA2-A04E-38E355A7BDF5}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Template_CPLEX", "Templates\Template_CPLEX\RosteringProblem.csproj", "{A13F6D8C-CDD1-4DA2-A04E-38E355A7BDF5}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Template_Gurobi", "Templates\Template_Gurobi\RosteringProblem.csproj", "{F6F6F6F6-6666-6666-6666-666666666666}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FeatureTest", "Templates\FeatureTest\FeatureTest.csproj", "{07070707-7777-7777-7777-777777777777}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OptimFoundation.Cplex.Tests", "tests\OptimFoundation.Cplex.Tests\OptimFoundation.Cplex.Tests.csproj", "{18181818-8888-8888-8888-888888888888}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -45,6 +51,18 @@ Global
 		{A13F6D8C-CDD1-4DA2-A04E-38E355A7BDF5}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A13F6D8C-CDD1-4DA2-A04E-38E355A7BDF5}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A13F6D8C-CDD1-4DA2-A04E-38E355A7BDF5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F6F6F6F6-6666-6666-6666-666666666666}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F6F6F6F6-6666-6666-6666-666666666666}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F6F6F6F6-6666-6666-6666-666666666666}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F6F6F6F6-6666-6666-6666-666666666666}.Release|Any CPU.Build.0 = Release|Any CPU
+		{07070707-7777-7777-7777-777777777777}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{07070707-7777-7777-7777-777777777777}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{07070707-7777-7777-7777-777777777777}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{07070707-7777-7777-7777-777777777777}.Release|Any CPU.Build.0 = Release|Any CPU
+		{18181818-8888-8888-8888-888888888888}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{18181818-8888-8888-8888-888888888888}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{18181818-8888-8888-8888-888888888888}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{18181818-8888-8888-8888-888888888888}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

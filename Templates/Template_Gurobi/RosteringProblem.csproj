@@ -5,7 +5,6 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <CplexDir Condition="'$(CplexDir)' == ''">C:\IBM\ILOG\CPLEX_Studio2211</CplexDir>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,15 +13,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\OptimFoundation.Core\OptimFoundation.Core.csproj" />
-    <ProjectReference Include="..\..\src\OptimFoundation.Cplex\OptimFoundation.Cplex.csproj" />
+    <ProjectReference Include="..\..\src\OptimFoundation.Gurobi\OptimFoundation.Gurobi.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <Reference Include="ILOG.Concert">
-      <HintPath>$(CplexDir)\cplex\bin\x64_win64\ILOG.Concert.dll</HintPath>
-    </Reference>
-    <Reference Include="ILOG.CPLEX">
-      <HintPath>$(CplexDir)\cplex\bin\x64_win64\ILOG.CPLEX.dll</HintPath>
+    <Reference Include="Gurobi110.NET"
+               Condition="Exists('$(GUROBI_HOME)\bin\Gurobi110.NET.dll')">
+      <HintPath>$(GUROBI_HOME)\bin\Gurobi110.NET.dll</HintPath>
+      <Private>true</Private>
     </Reference>
   </ItemGroup>
 

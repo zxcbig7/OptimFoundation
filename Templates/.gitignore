@@ -1,0 +1,30 @@
+# Build output
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# NuGet
+*.nupkg
+*.snupkg
+*.p7s
+packages/
+!**/packages/build/
+
+# Debug symbols
+*.pdb
+
+# CPLEX / solver output
+*.lp
+*.mps
+*.sol
+
+# Logs & temp
+*.log
+*.tmp
+*.cache
