@@ -174,6 +174,14 @@ namespace OptimFoundation.Cplex.Tests.Integration
             if (!CplexAvailable) return;
 
             const string expName = "solver-param-coverage";
+
+            // Experiment.Save 對同名實驗是 append 語意，先清前次殘留才能 assert 精確筆數
+            foreach (var ext in new[] { ".json", ".csv" })
+            {
+                string stale = FolderDir.Experiment.GetFilePath(expName + ext);
+                if (File.Exists(stale)) File.Delete(stale);
+            }
+
             var exp = new Experiment(expName, "逐一套用每個 CplexConfig solver 旋鈕並記錄一次求解");
 
             var failures = new List<string>();
