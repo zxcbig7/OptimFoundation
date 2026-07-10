@@ -2,15 +2,12 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <CplexDir Condition="'$(CplexDir)' == ''">C:\IBM\ILOG\CPLEX_Studio2211</CplexDir>
   </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Oracle.ManagedDataAccess.Core" Version="23.6.1" />
-  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\OptimFoundation.Cplex\OptimFoundation.Cplex.csproj" />

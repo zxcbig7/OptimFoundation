@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection.PortableExecutable;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -11,7 +10,6 @@ using OptimFoundation.Core;
 using OptimFoundation.Gurobi;
 using SandBox.Data;
 using SandBox.VariableClass;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace SandBox.Constraints
 {
