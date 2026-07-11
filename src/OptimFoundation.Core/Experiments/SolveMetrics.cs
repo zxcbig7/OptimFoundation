@@ -8,15 +8,15 @@ namespace OptimFoundation.Core
     /// </summary>
     public sealed class SolveMetrics
     {
-        public SolveStatus Status { get; set; }
-        public double ObjectiveValue { get; set; }
-        public double BestBound { get; set; }
-        public double MipGap { get; set; }
-        public double WallTimeMs { get; set; }
-        public long? NodeCount { get; set; }
-        public long? IterationCount { get; set; }
-        public int VarCount { get; set; }
-        public int ConstraintCount { get; set; }
+        public SolveStatus Status { get; set; } // 求解結果狀態（Optimal / Feasible / Infeasible / TimeLimit …）
+        public double ObjectiveValue { get; set; } // 目標式值（若有 soft constraint 則已含 penalty）
+        public double BestBound { get; set; } // 最佳界（MIP 的 best bound）
+        public double MipGap { get; set; } // 相對 MIP gap
+        public double WallTimeMs { get; set; } // 求解牆鐘時間（毫秒）
+        public long? NodeCount { get; set; } // B&B 探索節點數（null = solver 未提供）
+        public long? IterationCount { get; set; } // simplex / barrier 迭代數（null = 未提供）
+        public int VarCount { get; set; } // 變數總數
+        public int ConstraintCount { get; set; } // 限制式總數
 
         /// <summary>選用的逐點收斂軌跡；未啟用 captureTrajectory 時為空清單。</summary>
         public List<ConvergencePoint> Convergence { get; set; } = new List<ConvergencePoint>();
@@ -25,9 +25,9 @@ namespace OptimFoundation.Core
     /// <summary>收斂軌跡的單一取樣點。</summary>
     public sealed class ConvergencePoint
     {
-        public double TimeMs { get; set; }
-        public double Objective { get; set; }
-        public double Bound { get; set; }
-        public double Gap { get; set; }
+        public double TimeMs { get; set; } // 取樣時刻（求解開始起算的毫秒）
+        public double Objective { get; set; } // 該時刻的 incumbent 目標值
+        public double Bound { get; set; } // 該時刻的最佳界
+        public double Gap { get; set; } // 該時刻的相對 gap
     }
 }

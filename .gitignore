@@ -106,6 +106,9 @@ runtime/
 output/
 result/
 
+# Source generator 落地檔（EmitCompilerGeneratedFiles，供本地檢視，build 會重生）
+Generated/
+
 ############################################
 # Misc
 ############################################

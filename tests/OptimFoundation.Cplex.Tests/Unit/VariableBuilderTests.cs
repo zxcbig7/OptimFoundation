@@ -66,5 +66,42 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Throws<ArgumentException>(() =>
                 VariableBuilder.ConvertSetsToStringLists(new List<bool> { true }));
         }
+
+        // ── Array 支援（含 string[] 共變誤 bind 還原）──────────────────────
+
+        [Fact]
+        public void ConvertSets_BareStringArray_TreatedAsSingleSet()
+        {
+            // string[] 共變成 object[] 本身，元素散成裸 string → 應還原成單一 set
+            var lists = VariableBuilder.ConvertSetsToStringLists(new[] { "A", "B", "C" });
+            Assert.Single(lists);
+            Assert.Equal(new List<string> { "A", "B", "C" }, lists[0]);
+        }
+
+        [Fact]
+        public void ConvertSets_ValueTypeArrays_Work()
+        {
+            var lists = VariableBuilder.ConvertSetsToStringLists(
+                new[] { 1, 2 },
+                new[] { new DateTime(2026, 3, 5) });
+            Assert.Equal(new List<string> { "1", "2" }, lists[0]);
+            Assert.Equal("2026-03-05", lists[1][0]);
+        }
+
+        [Fact]
+        public void ConvertSets_MixedSetAndBareString_Throws()
+        {
+            Assert.Throws<ArgumentException>(() =>
+                VariableBuilder.ConvertSetsToStringLists(new List<string> { "A" }, "B"));
+        }
+
+        [Fact]
+        public void GetVarNames_1D_StringArray_GeneratesCorrectKeys()
+        {
+            var names = VariableBuilder.GetVarNames<VarS>(new[] { "A", "B" }).ToList();
+            Assert.Equal(2, names.Count);
+            Assert.Equal("VarS@A", names[0]);
+            Assert.Equal("VarS@B", names[1]);
+        }
     }
 }

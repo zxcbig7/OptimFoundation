@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 
 namespace OptimFoundation.Core
@@ -11,6 +12,18 @@ namespace OptimFoundation.Core
         public static ProjFolder IIS = new ProjFolder("IISs");
         public static ProjFolder Sol = new ProjFolder("Sols");
         public static ProjFolder Experiment = new ProjFolder("Experiments");
+
+        /// <summary>框架產生的輸出資料夾（不含輸入用的 Data），供保留期清理逐一掃描。</summary>
+        private static readonly ProjFolder[] _outputs = { Log, Model, Sol, IIS, Experiment, Solution };
+
+        /// <summary>清除所有輸出資料夾中 LastWriteTime 超過 retentionDays 天的舊檔，回傳總刪除數。retentionDays &lt;= 0 時視為關閉、不清理。</summary>
+        public static int PurgeOutputs(int retentionDays)
+        {
+            if (retentionDays <= 0) return 0;
+            int total = 0;
+            foreach (var folder in _outputs) total += folder.PurgeOlderThan(retentionDays);
+            return total;
+        }
 
         public class ProjFolder
         {
@@ -52,6 +65,30 @@ namespace OptimFoundation.Core
                 if (File.Exists(path)) return false;
                 File.CreateText(path).Close();
                 return true;
+            }
+
+            /// <summary>刪除此資料夾中 LastWriteTime 早於 retentionDays 天前的檔案，回傳刪除數。資料夾不存在回 0；使用中或無權限的檔案跳過。</summary>
+            public int PurgeOlderThan(int retentionDays)
+            {
+                string dir = GetPath();
+                if (!Directory.Exists(dir)) return 0;
+
+                DateTime cutoff = DateTime.Now.AddDays(-retentionDays);
+                int deleted = 0;
+                foreach (var file in Directory.GetFiles(dir))
+                {
+                    try
+                    {
+                        if (File.GetLastWriteTime(file) < cutoff)
+                        {
+                            File.Delete(file);
+                            deleted++;
+                        }
+                    }
+                    catch (IOException) { }                 // 檔案使用中，跳過
+                    catch (UnauthorizedAccessException) { } // 無權限，跳過
+                }
+                return deleted;
             }
         }
     }

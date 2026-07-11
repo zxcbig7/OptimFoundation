@@ -24,6 +24,33 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         [Fact]
+        public void BuildBVs_1D_BareStringArray_CreatesCorrectCount()
+        {
+            // 單獨傳 string[]：共變誤 bind 成 params 陣列本身，framework 應還原成單一 set
+            var engine = NewEngine();
+            engine.BuildBVs<VarS>(new[] { "E1", "E2", "E3" });
+            Assert.Equal(3, engine.varCount);
+        }
+
+        [Fact]
+        public void BuildCVs_WithBounds_BareStringArray_CreatesCorrectCount()
+        {
+            var engine = NewEngine();
+            engine.BuildCVs<VarS>(0, 100, new[] { "E1", "E2" });
+            Assert.Equal(2, engine.varCount);
+        }
+
+        [Fact]
+        public void BuildBVs_2D_ArraySets_CreatesCartesianProduct()
+        {
+            var engine = NewEngine();
+            engine.BuildBVs<VarDG>(
+                new[] { new DateTime(2026, 1, 1), new DateTime(2026, 1, 2) },
+                new[] { "D", "N" });
+            Assert.Equal(4, engine.varCount);  // 2 × 2
+        }
+
+        [Fact]
         public void BuildBVs_2D_CreatesCartesianProduct()
         {
             var engine = NewEngine();

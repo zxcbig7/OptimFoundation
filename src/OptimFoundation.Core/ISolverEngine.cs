@@ -4,6 +4,7 @@ using System.Collections.Generic;
 namespace OptimFoundation.Core
 {
 
+    /// <summary>跨引擎共通的基本求解設定（時間上限 / gap / 執行緒 / log）；各 solver 的 config 實作此介面。</summary>
     public interface ISolverConfig
     {
         double? TimeLimit { get; set; }
@@ -14,6 +15,7 @@ namespace OptimFoundation.Core
     }
 
 
+    /// <summary>求解引擎的統一介面：建模型 → 求解 → 取解/telemetry。EngineBase 提供泛型實作。</summary>
     public interface ISolverEngine : IDisposable
     {
         ISolverConfig Config { get; }
@@ -31,6 +33,7 @@ namespace OptimFoundation.Core
         IReadOnlyDictionary<string, double> GetSolution(string varTypeName = null);
     }
 
+    /// <summary>特殊限制式的選用介面（SOS1/2、indicator、lazy）；只有支援的 solver 實作。</summary>
     public interface ISpecialConstraints<TVar, TExpr>
     {
         void AddSOS1(IEnumerable<TVar> vars);
@@ -39,15 +42,16 @@ namespace OptimFoundation.Core
         void AddLazyConstraint(TExpr expr, ConstraintSense sense, double rhs);
     }
 
+    /// <summary>求解結果狀態。</summary>
     public enum SolveStatus
     {
-        NotSolved,
-        Optimal,
-        Feasible,
-        Infeasible,
-        Unbounded,
-        TimeLimit,
-        Error
+        NotSolved, // 尚未求解
+        Optimal, // 找到並證明最佳解
+        Feasible, // 有可行解但未證明最佳（如 timeout）
+        Infeasible, // 無可行解
+        Unbounded, // 無界
+        TimeLimit, // 時間到且無可用結果
+        Error // 求解發生錯誤
     }
 
 

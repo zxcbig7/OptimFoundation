@@ -649,16 +649,9 @@ namespace OptimFoundation.Cplex
         /// </summary>
         public override void Build() => Configuration(Config);
 
-        protected void SetProjectName(string name)
-        {
-            if (string.IsNullOrWhiteSpace(name))
-                throw new ArgumentException("Project name cannot be null or whitespace.", nameof(name));
-            _modelName = name;
-        }
-
         public override bool Solve()
         {
-            string proj = _modelName ?? "Project";
+            string proj = _modelName ?? "Model";
 
             if (_exportLp)
                 Model.ExportModel(FolderDir.Model.GetFilePath($"{proj}_LP_{_startTime}.lp"));
@@ -984,7 +977,7 @@ namespace OptimFoundation.Cplex
             if (_conflictConstraints != null) return _conflictConstraints; // Solve() 已執行過則直接回傳，RefineConflict 很耗時不重跑
             if (Status != SolveStatus.Infeasible || _constraints.Count == 0)
                 return new List<string>();
-            _conflictConstraints = RunConflictAnalysis(_modelName ?? "Project");
+            _conflictConstraints = RunConflictAnalysis(_modelName ?? "Model");
             return _conflictConstraints;
         }
 

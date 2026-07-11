@@ -4,12 +4,19 @@ using System.Linq;
 
 namespace OptimFoundation.Core
 {
+    /// <summary>
+    /// 所有 solver 引擎的泛型基底：把「建模」與「呼叫 solver」分離。
+    /// 泛型參數 TModel/TVar/TExpr/TConstr 是各 solver 的原生型別；子類別只需實作 Solver Contract 那組 abstract。
+    /// 提供三大共用機制：① 變數管理（Build*Vs 批次建立 + VariableSets/Variables 索引）；
+    /// ② Pool API（AddLHS/AddRHS 累積左右兩側 → Create* 送出，框架自動算 LHS−RHS，免手動移項）；
+    /// ③ 軟性限制式（penalty 法通用實作）。
+    /// </summary>
     public abstract class EngineBase<TModel, TVar, TExpr, TConstr> : ISolverEngine, ITrajectorySource
     {
-        protected TModel Model;
-        protected readonly Dictionary<string, TVar> Variables = new Dictionary<string, TVar>();
-        protected readonly Dictionary<string, Dictionary<string, TVar>> VariableSets = new Dictionary<string, Dictionary<string, TVar>>();
-        public int varCount => Variables.Count;
+        protected TModel Model; // 各 solver 的原生模型物件（CPLEX Cplex / Gurobi GRBModel …）
+        protected readonly Dictionary<string, TVar> Variables = new Dictionary<string, TVar>(); // 全變數：key=變數名，value=原生變數
+        protected readonly Dictionary<string, Dictionary<string, TVar>> VariableSets = new Dictionary<string, Dictionary<string, TVar>>(); // 依變數型別分組：型別名 → (變數名 → 原生變數)
+        public int varCount => Variables.Count; // 已建立的變數總數
         public int TotalVarCount => VariableSets.Values.Sum(s => s.Count);
         public ISolverConfig Config { get; protected set; }
         public SolveStatus Status { get; protected set; } = SolveStatus.NotSolved;
@@ -117,18 +124,24 @@ namespace OptimFoundation.Core
         protected virtual void AddVariables(IReadOnlyList<string> names, double lb, double ub, VarType type)
         {
             foreach (var name in names)
+            {
                 AddVariable(name, lb, ub, type);
+            }
         }
 
+        // 批次建立某型別的所有變數：組出全部變數名 → 建到 solver → 登記進 VariableSets[型別名] 供之後查詢
         private void BatchBuild<TVariable>(double lb, double ub, VarType type, object[] sets)
         {
             string setName = typeof(TVariable).Name;
             if (!VariableSets.ContainsKey(setName))
                 VariableSets[setName] = new Dictionary<string, TVar>();
 
+            // 1) 由 sets 笛卡兒積組出所有變數名（TypeName@s1@s2@…）
             var names = VariableBuilder.GetVarNames<TVariable>(sets).ToList();
+            // 2) 實際在 solver 建立這些變數（子類別可用原生 batch API 加速）
             AddVariables(names, lb, ub, type);
 
+            // 3) 登記到該型別的 VariableSet，供 ReadVar / GetSetVarValues 依型別查詢
             var varSet = VariableSets[setName];
             foreach (var name in names)
                 varSet[name] = Variables[name];
@@ -183,6 +196,7 @@ namespace OptimFoundation.Core
                 : Array.Empty<string>();
         }
 
+        /// <summary>取某變數型別的全部解值，key = 完整變數名（TypeName@…）。求解後呼叫；型別不存在回空字典。</summary>
         public Dictionary<string, double> GetSetVarValues<TVariable>()
         {
             string setName = typeof(TVariable).Name;
@@ -191,6 +205,7 @@ namespace OptimFoundation.Core
             return set.ToDictionary(kvp => kvp.Key, kvp => GetVariableValue(kvp.Key));
         }
 
+        /// <summary>取解值字典；varTypeName=null 回全部變數，否則只回該型別（前綴 "TypeName@"）。</summary>
         public virtual IReadOnlyDictionary<string, double> GetSolution(string varTypeName = null)
         {
             if (varTypeName != null && VariableSets.TryGetValue(varTypeName, out var set))
@@ -352,6 +367,7 @@ namespace OptimFoundation.Core
             return CreateEqual(name);
         }
 
+        /// <summary>送出範圍限制式 lb ≤ LHS ≤ ub（只用 AddLHS 累積的左側；LHS 常數移到界上抵銷）。</summary>
         public bool CreateRange(double lb, double ub, string name)
         {
             if (_lhsTerms.Count == 0) return false;
@@ -364,8 +380,10 @@ namespace OptimFoundation.Core
 
         #region Pool — 建立目標式
 
+        /// <summary>以 pool 累積的 LHS 為目標式，設為最小化。</summary>
         public void CreateMinimize() => SetObjectiveFromPool(ObjectiveSense.Minimize);
 
+        /// <summary>以 pool 累積的 LHS 為目標式，設為最大化。</summary>
         public void CreateMaximize() => SetObjectiveFromPool(ObjectiveSense.Maximize);
 
         private void SetObjectiveFromPool(ObjectiveSense sense)

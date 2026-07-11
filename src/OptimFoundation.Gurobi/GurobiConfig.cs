@@ -25,7 +25,7 @@ namespace OptimFoundation.Gurobi
         public bool ExportLp { get; set; }
         public bool ExportMps { get; set; }
         public bool ExportSol { get; set; }
-        public string ProjectName { get; set; } = "Project";
+        public string ProjectName { get; set; } = "Model";
 
         // Gurobi WLS License
         public int? LicenseId { get; set; }

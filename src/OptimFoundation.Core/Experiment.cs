@@ -5,11 +5,20 @@ using System.Threading.Tasks;
 
 namespace OptimFoundation.Core
 {
+    /// <summary>
+    /// 一組實驗：同一個問題掃不同設定/模型，每次求解記成一個 <see cref="Trial"/>。
+    /// 收集完呼叫 <see cref="Save"/> 輸出 experiments/&lt;Name&gt;.csv + .json（有軌跡時再多一個 -trajectory.csv）。
+    /// 同名實驗為累積（append），不覆寫歷史。
+    /// </summary>
     public class Experiment
     {
+        /// <summary>實驗名稱，決定輸出檔名 experiments/&lt;Name&gt;.*。</summary>
         public string Name { get; set; }
+        /// <summary>實驗目的描述（自由文字，寫進 JSON 供日後辨識）。</summary>
         public string Description { get; set; }
+        /// <summary>實驗建立時間。</summary>
         public DateTime CreatedAt { get; set; }
+        /// <summary>本實驗累積的所有 Trial（每次求解一筆）。</summary>
         public List<Trial> Trials { get; set; }
 
         public Experiment(string name, string description)
@@ -23,6 +32,7 @@ namespace OptimFoundation.Core
         /// <summary>JSON 反序列化用。</summary>
         public Experiment() { Trials = new List<Trial>(); }
 
+        /// <summary>把一次求解的紀錄（Trial）加入本實驗。</summary>
         public void AddTrial(Trial trial)
         {
             Trials.Add(trial);
@@ -36,18 +46,25 @@ namespace OptimFoundation.Core
         {
             FolderDir.Experiment.CreateFolder();
 
+            // 1) 讀回同名實驗磁碟上既有的 trials（以 JSON 為權威來源；不存在則空清單）
             var current = Trials ?? new List<Trial>();
             string jsonPath = FolderDir.Experiment.GetFilePath($"{Name}.json");
             var onDisk = new JsonExperimentWriter().Read(jsonPath)?.Trials ?? new List<Trial>();
 
+            // 2) 合併：保留磁碟上「本次記憶體沒有」的舊 trials（RunAt+Label 去重），本次的接在後面
             var merged = onDisk
                 .Where(d => !current.Any(c => c.RunAt == d.RunAt && c.Label == d.Label))
                 .ToList();
             merged.AddRange(current);
             Trials = merged;
 
+            // 3) 輸出 csv（1 列/trial 摘要）與 json（巢狀含軌跡，權威來源）
             new CsvExperimentWriter().Write(this, FolderDir.Experiment.GetFilePath($"{Name}.csv"));
             new JsonExperimentWriter().Write(this, jsonPath);
+
+            // 4) 只有實際抓到收斂軌跡時才多出 trajectory.csv，避免留下只有表頭的空殼（與 csv/json 永遠有料一致）
+            if (Trials.Any(t => (t.Metrics?.Convergence?.Count ?? 0) > 0))
+                new TrajectoryCsvWriter().Write(this, FolderDir.Experiment.GetFilePath($"{Name}-trajectory.csv"));
 
             Logging.Info($"[Experiment] Saved '{Name}' ({Trials.Count} trials) → {FolderDir.Experiment.GetPath()}");
         }

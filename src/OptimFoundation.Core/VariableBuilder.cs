@@ -7,8 +7,13 @@ using System.Linq.Expressions;
 
 namespace OptimFoundation.Core
 {
+    /// <summary>
+    /// 變數名稱工具：把多個 Set 做笛卡兒積，組出變數 key（TypeName@v1@v2@…），與 ModelElementBase.ToString() 格式一致。
+    /// 直接組字串、不建 element 實例（比反射快 10x+）；建構子以編譯後 lambda 快取（compiled ctor cache）。
+    /// </summary>
     public static class VariableBuilder
     {
+        // 型別 → 編譯後建構委派 的快取（無參 / object[] / string[] 三種建構子擇一），避免每次反射
         private static readonly ConcurrentDictionary<Type, Func<string[], object>> _ctorCache
             = new ConcurrentDictionary<Type, Func<string[], object>>();
 
@@ -73,6 +78,11 @@ namespace OptimFoundation.Core
         /// </summary>
         public static List<string>[] ConvertSetsToStringLists(params object[] lists)
         {
+            // 單獨傳一個 string[] 時，C# 陣列共變會把它直接 bind 成 params object[] 本身，
+            // 元素散成一條條 string；裸 string 不是合法 set，全為 string 必為此誤 bind，還原成單一 set
+            if (lists.Length > 0 && lists.All(x => x is string))
+                lists = [lists.Cast<string>().ToList()];
+
             var result = new List<string>[lists.Length];
             for (int i = 0; i < lists.Length; i++)
             {
@@ -84,6 +94,8 @@ namespace OptimFoundation.Core
                     IEnumerable<double> seq => seq.Select(n => n.ToString(CultureInfo.InvariantCulture)).ToList(),
                     IEnumerable<decimal> seq => seq.Select(n => n.ToString(CultureInfo.InvariantCulture)).ToList(),
                     IEnumerable<string> seq => seq.ToList(),
+                    string s => throw new ArgumentException(
+                        $"Set 不可為單一 string '{s}'——集合與裸 string 混傳，請確認每個參數都是一個 Set（IEnumerable）。"),
                     // enum 為 value type，無法靠 IEnumerable<Enum> 共變比對，改用非泛型 IEnumerable + 元素型別偵測
                     System.Collections.IEnumerable seq when GetEnumElementType(lists[i]) != null
                         => seq.Cast<object>().Select(e => e.ToString()).ToList(),

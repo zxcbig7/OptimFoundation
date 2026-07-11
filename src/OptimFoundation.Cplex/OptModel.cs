@@ -49,12 +49,23 @@ namespace OptimFoundation.Cplex
         public TimeSpan totalTimeSpan = new TimeSpan();
 
         private bool _isSuccess;
+        private readonly string _projectName;
 
-        /// <param name="projectName">用於 log 檔命名，辨識本次求解。</param>
-        public OptModel(string projectName)
+
+        /// <summary>
+        /// 一個數學問題
+        /// </summary>
+        /// <param name="projectName">用於 log 與模型匯出檔（LP/MPS/Sol/IIS）命名，辨識本次求解。空白時預設 "Model"。</param>
+        /// <param name="retentionDays">建構時自動清除各輸出資料夾中超過此天數的舊檔（Logs/Models/Sols/IISs/Experiments/Solution）。預設 30；&lt;= 0 關閉清理。</param>
+        public OptModel(string projectName = "Model", int retentionDays = 30)
         {
             _isSuccess = false;
-            Logging.SetLogFileName(projectName);
+            _projectName = string.IsNullOrWhiteSpace(projectName) ? "Model" : projectName;
+            Logging.SetLogFileName(_projectName);
+
+            int purged = FolderDir.PurgeOutputs(retentionDays);
+            if (purged > 0)
+                Logging.Info($"[Housekeeping] 已清除 {purged} 個超過 {retentionDays} 天的舊輸出檔");
         }
 
         // ── 註冊 API（皆回傳 this，可鏈式呼叫）──────────────────────────
@@ -94,6 +105,7 @@ namespace OptimFoundation.Cplex
 
             // 求解器：組態由註冊的 factory 提供
             optEngine = new OptEngine(_configFactory());
+            optEngine.SetModelName(_projectName);
             optEngine.Build();
 
             // 建構模型

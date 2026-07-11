@@ -21,13 +21,20 @@ namespace OptimFoundation.Core
             Console.OutputEncoding = _utf8;
             _consoleWriter = new StreamWriter(Console.OpenStandardOutput(), _utf8) { AutoFlush = true };
             Console.SetOut(_consoleWriter);
-            _fileWriter = CreateFileWriter();
         }
 
-        private static StreamWriter CreateFileWriter()
+        /// <summary>延遲開檔：首次寫入才建 log 檔，避免 SetLogFileName 換檔前留下空的孤兒 Log_*.txt。呼叫端須持有 _lock。</summary>
+        private static StreamWriter FileWriter
         {
-            Directory.CreateDirectory(_logDir);
-            return new StreamWriter(_logFile, append: true, _utf8Bom) { AutoFlush = true };
+            get
+            {
+                if (_fileWriter == null)
+                {
+                    Directory.CreateDirectory(_logDir);
+                    _fileWriter = new StreamWriter(_logFile, append: true, _utf8Bom) { AutoFlush = true };
+                }
+                return _fileWriter;
+            }
         }
 
         private static void Write(string level, string message)
@@ -38,7 +45,7 @@ namespace OptimFoundation.Core
             lock (_lock)
             {
                 _consoleWriter.WriteLine(line);
-                _fileWriter.WriteLine(line);
+                FileWriter.WriteLine(line);
             }
         }
 
@@ -56,11 +63,13 @@ namespace OptimFoundation.Core
 
         public static void SetLogFileName(string name)
         {
+            foreach (var c in Path.GetInvalidFileNameChars())
+                name = name.Replace(c, '-');
             lock (_lock)
             {
                 _logFile = FolderDir.Log.GetFilePath($"{name}_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.txt");
                 _fileWriter?.Dispose();
-                _fileWriter = CreateFileWriter();
+                _fileWriter = null;
             }
         }
 
@@ -68,13 +77,18 @@ namespace OptimFoundation.Core
         public static void WriteToFile(string message)
         {
             lock (_lock)
-                _fileWriter.WriteLine(message);
+                FileWriter.WriteLine(message);
         }
 
         public static void ClearLogs()
         {
             lock (_lock)
+            {
+                if (!Directory.Exists(_logDir)) return;
+                _fileWriter?.Dispose();   // 放掉目前 log 檔的 handle，否則刪到自己會 IOException
+                _fileWriter = null;
                 foreach (var f in Directory.GetFiles(_logDir)) File.Delete(f);
+            }
         }
     }
 }

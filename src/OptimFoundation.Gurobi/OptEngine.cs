@@ -182,7 +182,7 @@ namespace OptimFoundation.Gurobi
 
         public override bool Solve()
         {
-            string proj = (Config as GurobiConfig)?.ProjectName ?? "Project";
+            string proj = (Config as GurobiConfig)?.ProjectName ?? "Model";
 
             if (_exportLp)
                 Model.Write(FolderDir.Model.GetFilePath($"{proj}_LP_{_startTime}.lp"));

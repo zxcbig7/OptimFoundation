@@ -60,7 +60,8 @@ new Constraint_OneGroup { Engine = engine, Data = data }
 - `GetVarNames<TVariable>(object[] sets)` — 主要對外方法，回傳所有變數名稱
 
 **支援的 Set 型別：**  
-`List<DateTime>`、`List<int>`、`List<double>`、`List<string>`
+任何 `IEnumerable<T>`（`List<T>`、`T[]` 皆可），T = `DateTime` / `int` / `long` / `double` / `decimal` / `string` / enum。
+單獨傳一個 `string[]` 會被 C# 陣列共變誤 bind 成 `params object[]` 本身——`ConvertSetsToStringLists` 偵測「元素全為裸 string」時自動還原成單一 set。
 
 ---
 
