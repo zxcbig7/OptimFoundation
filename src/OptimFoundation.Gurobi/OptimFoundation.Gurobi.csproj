@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net48</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <AssemblyName>OptimFoundation.Gurobi</AssemblyName>
     <RootNamespace>OptimFoundation.Gurobi</RootNamespace>
     <Nullable>disable</Nullable>
