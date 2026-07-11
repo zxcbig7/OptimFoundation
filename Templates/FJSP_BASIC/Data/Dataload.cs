@@ -1,6 +1,7 @@
 using FJSP_BASIC.ParameterClass;
 using FJSP_BASIC.VariableClass;
 using OptimFoundation.Core;
+using OptimFoundation.Core.IO;
 using OptimFoundation.Cplex;
 
 namespace FJSP_BASIC.Data
@@ -26,26 +27,29 @@ namespace FJSP_BASIC.Data
         public double SoftMakespanTarget = 10; // Soft 目標（放大後很可能被違反 → penalty 現形）
         public double MakespanPenalty = 2; // Soft 每單位違反的懲罰（進目標式）
 
-        public Dataload()
+        // 資料來源抽象：換來源（記憶體 / CSV / DB）只換傳入的 IDataSource，模型與驗證 code 全不動
+        public Dataload(IDataSource source)
         {
-            // 放大版 FJSP 實例（seeded，決定論）：讓 solve 夠久、收斂軌跡有多個點可畫
-            GenerateInstance(lots: 6, operations: 3, eqps: 4, seed: 42);
+            parameter_ProcessTime = source.ReadParameters<Parameter_ProcessTime>();
         }
 
-        // 生成 N lots × M ops × K machines 的 FJSP 實例；加工時間 seeded 隨機（可重現）
-        private void GenerateInstance(int lots, int operations, int eqps, int seed)
+        // 生成 N lots × M ops × K machines 的放大版 FJSP 實例（seeded 決定論，讓 solve 夠久、收斂軌跡有多點）
+        // 用法：new Dataload(new InMemoryDataSource().AddParameters(Dataload.GenerateInstance(6, 3, 4, 42)))
+        public static List<Parameter_ProcessTime> GenerateInstance(int lots, int operations, int eqps, int seed)
         {
             var rng = new Random(seed);
+            var rows = new List<Parameter_ProcessTime>();
             for (int l = 1; l <= lots; l++)
                 for (int o = 1; o <= operations; o++)
                     for (int e = 1; e <= eqps; e++)
-                        parameter_ProcessTime.Add(new Parameter_ProcessTime
+                        rows.Add(new Parameter_ProcessTime
                         {
                             Lot = $"LOT{l}",
                             Operation = $"OP{o}",
                             Eqp = $"EQP{e}",
                             QTY = rng.Next(2, 10)   // 2..9 小時
                         });
+            return rows;
         }
 
         /// <summary>解出後印出排程 + 依解驗證協定把解代回每條 constraint 檢查。</summary>

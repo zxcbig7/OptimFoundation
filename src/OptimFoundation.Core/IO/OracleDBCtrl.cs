@@ -235,4 +235,23 @@ namespace OptimFoundation.Db.Oracle
 
         #endregion
     }
+
+    /// <summary>
+    /// Oracle 解輸出：包 OracleDBCtrl.SaveToDB（array-bind 批次寫入指定結果表）。
+    /// 與 CsvSolutionSink 同介面，換輸出目的地不動求解端 code。
+    /// </summary>
+    public sealed class OracleSolutionSink : ISolutionSink
+    {
+        private readonly OracleDBCtrl _db;
+        private readonly string _tableName;
+
+        public OracleSolutionSink(OracleDBCtrl db, string tableName)
+        {
+            _db = db ?? throw new ArgumentNullException(nameof(db));
+            _tableName = tableName ?? throw new ArgumentNullException(nameof(tableName));
+        }
+
+        public void WriteSolution<TVariableClass>(ISolverEngine engine, string dataId = null, string userId = null)
+            => _db.SaveToDB<TVariableClass>(engine, dataId ?? "", _tableName, userId ?? "");
+    }
 }

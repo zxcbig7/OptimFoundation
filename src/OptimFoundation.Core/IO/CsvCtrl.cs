@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -13,9 +14,16 @@ namespace OptimFoundation.Core.IO
         // CSV 讀入：固定 UTF-8（StreamReader/ReadAllLines 會自動偵測並去除 BOM），來源檔請一律存成 UTF-8
         private static readonly Encoding _csvRead = Encoding.UTF8;
 
+        // 檔名慣例統一：帶不帶 .csv 皆可（統一在入口補齊，呼叫端不必記哪個 API 要帶副檔名）
+        private static string EnsureCsv(string fileName)
+            => fileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) ? fileName : fileName + ".csv";
+
+        // 統一的行切割：去引號後以逗號切（框架資料值不含逗號；不做完整 CSV 引號跳脫）
+        private static string[] SplitLine(string line) => line.Replace("\"", "").Split(',');
+
         public static void ClearData(string fileName)
         {
-            using var sw = new StreamWriter(FolderDir.Data.GetFilePath(fileName), append: false, _csvWrite);
+            using var sw = new StreamWriter(FolderDir.Data.GetFilePath(EnsureCsv(fileName)), append: false, _csvWrite);
             sw.WriteLine("");
         }
 
@@ -28,10 +36,10 @@ namespace OptimFoundation.Core.IO
             sw.WriteLine(cols);
         }
 
-        public static List<int> ReadIntSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(fileName), int.Parse);
-        public static List<double> ReadDoubleSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(fileName), double.Parse);
-        public static List<string> ReadStrSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(fileName), s => s);
-        public static List<DateTime> ReadDateSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(fileName), DateTime.Parse);
+        public static List<int> ReadIntSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(EnsureCsv(fileName)), int.Parse);
+        public static List<double> ReadDoubleSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(EnsureCsv(fileName)), double.Parse);
+        public static List<string> ReadStrSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(EnsureCsv(fileName)), s => s);
+        public static List<DateTime> ReadDateSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(EnsureCsv(fileName)), DateTime.Parse);
 
         private static List<TValue> ReadLines<TValue>(string path, Func<string, TValue> parser)
         {
@@ -43,48 +51,90 @@ namespace OptimFoundation.Core.IO
             return list;
         }
 
+        /// <summary>
+        /// 讀「key 欄在前、值在最後一欄」的參數檔為字典：key = "@k1@k2@…"、value = 最後一欄。
+        /// 最後一欄 parse 不成數字的行（如表頭）自動跳過；無法忽略多餘欄，欄位對名請改用 BuildParameter。
+        /// </summary>
         public static Dictionary<string, double> ReadParameter(string fileName)
         {
-            string path = FolderDir.Data.GetFilePath($"{fileName}.csv");
+            string path = FolderDir.Data.GetFilePath(EnsureCsv(fileName));
             var data = new Dictionary<string, double>();
             using var sr = new StreamReader(path, _csvRead);
             string line;
             while ((line = sr.ReadLine()) != null)
             {
-                var parts = line.Split(',');
-                if (parts.Length >= 2 && double.TryParse(parts.Last(), out double val))
+                var parts = SplitLine(line);
+                if (parts.Length >= 2 && double.TryParse(parts.Last(), NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
                     data["@" + string.Join("@", parts.Take(parts.Length - 1))] = val;
             }
             return data;
         }
 
         /// <summary>
-        /// 從 CSV 讀取 Parameter 列表。
+        /// 從 CSV 讀取 Parameter 列表（canonical schema：set 欄 + QTY，建議帶表頭）。
+        /// 有表頭 → 依「欄名 = property 名」（大小寫不敏感）對位，多餘欄（DATA_ID / VAR_TYPE / USER …）自動忽略，
+        /// 表頭缺任何 property 欄即丟例外——按名對位徹底解掉欄序錯位問題，框架自己輸出的檔（CreateParamTable /
+        /// SaveSolutionToCSV）皆可直接讀回（round-trip）。
+        /// 無表頭 → legacy 按 property 宣告順序對位（set 欄在前、QTY 最後）。
+        /// fileName 帶不帶 .csv 皆可；省略時用 {型別名}.csv。
         /// TParameter 必須繼承 ModelElementBase 並有無參建構子（properties-only 類別符合此要求）。
         /// </summary>
         public static List<TParameter> BuildParameter<TParameter>(string fileName = null) where TParameter : ModelElementBase, new()
         {
             Type type = typeof(TParameter);
-            string path = fileName == null
-                ? FolderDir.Data.GetFilePath($"{type.Name}.csv")
-                : FolderDir.Data.GetFilePath(fileName);
+            string path = FolderDir.Data.GetFilePath(EnsureCsv(fileName ?? type.Name));
 
+            // 與 InitClassBySets 相同的順序來源（property 宣告順序）
+            var props = type.GetProperties();
             var data = new List<TParameter>();
-            foreach (var kv in ReadParameter(path))
+
+            var lines = File.ReadAllLines(path, _csvRead).Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
+            if (lines.Length == 0) return data;
+
+            // 表頭偵測：第一行最後一欄 parse 不成數字 → 視為表頭（參數/解檔最後的資料欄必為數值或 USER 字串欄）
+            var firstParts = SplitLine(lines[0]);
+            bool hasHeader = !double.TryParse(firstParts.Last(), NumberStyles.Any, CultureInfo.InvariantCulture, out _);
+
+            // colMap[i] = props[i] 的值在哪一欄
+            int[] colMap;
+            if (hasHeader)
             {
-                string combined = kv.Key + "@" + kv.Value;
-                string[] parts = combined.Split('@').Skip(1).ToArray();
+                var header = firstParts.Select(h => h.Trim().ToUpperInvariant()).ToArray();
+                colMap = props.Select(p =>
+                {
+                    int idx = Array.IndexOf(header, p.Name.ToUpperInvariant());
+                    if (idx < 0)
+                        throw new InvalidDataException(
+                            $"[CsvCtrl] {Path.GetFileName(path)} 表頭缺少欄位 '{p.Name}'。{type.Name} 需要：{string.Join(", ", props.Select(x => x.Name))}；檔內表頭：{string.Join(", ", header)}");
+                    return idx;
+                }).ToArray();
+            }
+            else
+            {
+                colMap = Enumerable.Range(0, props.Length).ToArray();
+            }
+
+            foreach (var line in lines.Skip(hasHeader ? 1 : 0))
+            {
+                var parts = SplitLine(line);
+                var values = new object[props.Length];
+                for (int i = 0; i < props.Length; i++)
+                {
+                    if (colMap[i] >= parts.Length)
+                        throw new InvalidDataException($"[CsvCtrl] {Path.GetFileName(path)} 資料列欄數不足（需要至少 {colMap[i] + 1} 欄）：'{line}'");
+                    values[i] = parts[colMap[i]].Trim();
+                }
                 var instance = new TParameter();
-                instance.InitClassBySets(parts);   // string[] 透過 params object[] 傳入，InitClassBySets 負責型別轉換
+                instance.InitClassBySets(values);   // string 值由 InitClassBySets 依 property 型別轉換
                 data.Add(instance);
             }
             return data;
         }
 
-        /// <summary>讀取矩陣格式 CSV</summary>
+        /// <summary>讀取矩陣格式 CSV（整份皆數字、無表頭、每列欄數一致）</summary>
         public static double[,] ReadMatrixCsv(string fileName)
         {
-            string path = FolderDir.Data.GetFilePath(fileName);
+            string path = FolderDir.Data.GetFilePath(EnsureCsv(fileName));
             var lines = File.ReadAllLines(path, _csvRead);
             int rows = lines.Length;
             int cols = lines[0].Split(',').Length;
@@ -98,6 +148,10 @@ namespace OptimFoundation.Core.IO
             return matrix;
         }
 
+        /// <summary>
+        /// 把某變數型別的解值匯出到 Solution/{型別名}.csv（表頭：DATA_ID,VAR_TYPE,set…,QTY,USER）。
+        /// 表頭欄名 = property 名，故此檔可直接被 BuildParameter 讀回（按名對位、多餘欄自動忽略）。
+        /// </summary>
         public static void SaveSolutionToCSV<TVariable>(ISolverEngine engine, string dataId, string userId)
         {
             var classInfo = new ClassInfo(typeof(TVariable));
@@ -112,7 +166,8 @@ namespace OptimFoundation.Core.IO
             foreach (var kv in sol)
             {
                 string[] parts = kv.Key.Split('@');
-                string row = dataId + "," + parts[0] + "," + string.Join(",", parts.Skip(1)) + "," + kv.Value + "," + userId;
+                // 數值用 InvariantCulture round-trip 格式，讀回不失真
+                string row = dataId + "," + parts[0] + "," + string.Join(",", parts.Skip(1)) + "," + kv.Value.ToString("R", CultureInfo.InvariantCulture) + "," + userId;
                 sw.WriteLine(row);
             }
 

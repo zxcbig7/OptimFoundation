@@ -1,0 +1,44 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace OptimFoundation.Core.IO
+{
+    /// <summary>
+    /// 記憶體資料來源：demo / 單元測試 / 程式生成實例用。
+    /// 以 AddParameters / AddSet 流暢註冊，Dataload 端與 CSV / DB 來源同一介面讀取。
+    /// </summary>
+    public sealed class InMemoryDataSource : IDataSource
+    {
+        private readonly Dictionary<Type, object> _parameters = new Dictionary<Type, object>();
+        private readonly Dictionary<string, List<string>> _sets = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>註冊某參數型別的資料列（重複註冊同型別 = 覆蓋）。回傳 this 供鏈式呼叫。</summary>
+        public InMemoryDataSource AddParameters<TParamClass>(IEnumerable<TParamClass> rows) where TParamClass : ModelElementBase, new()
+        {
+            _parameters[typeof(TParamClass)] = rows.ToList();
+            return this;
+        }
+
+        /// <summary>註冊一維 set（重複註冊同名 = 覆蓋）。回傳 this 供鏈式呼叫。</summary>
+        public InMemoryDataSource AddSet(string name, IEnumerable<string> members)
+        {
+            _sets[name] = members.ToList();
+            return this;
+        }
+
+        public List<TParamClass> ReadParameters<TParamClass>() where TParamClass : ModelElementBase, new()
+        {
+            if (_parameters.TryGetValue(typeof(TParamClass), out var rows))
+                return (List<TParamClass>)rows;
+            throw new KeyNotFoundException($"[InMemoryDataSource] 未註冊參數型別 {typeof(TParamClass).Name}，請先 AddParameters。");
+        }
+
+        public List<string> ReadSet(string name)
+        {
+            if (_sets.TryGetValue(name, out var members))
+                return members;
+            throw new KeyNotFoundException($"[InMemoryDataSource] 未註冊 set '{name}'，請先 AddSet。");
+        }
+    }
+}

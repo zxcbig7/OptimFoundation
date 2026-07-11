@@ -1,7 +1,10 @@
+using System.Globalization;
+using System.Text;
 using FJSP_BASIC.Constraint;
 using FJSP_BASIC.Data;
 using FJSP_BASIC.VariableClass;
 using OptimFoundation.Core;
+using OptimFoundation.Core.IO;
 using OptimFoundation.Cplex;
 
 namespace FJSP_BASIC
@@ -10,7 +13,13 @@ namespace FJSP_BASIC
     {
         static void Main(string[] args)
         {
-            var dataload = new Dataload();
+            // 資料來源抽象：demo 用記憶體生成實例；換 CSV / DB 只換這裡的 IDataSource，模型 code 全不動
+            var source = new InMemoryDataSource()
+                .AddParameters(Dataload.GenerateInstance(lots: 6, operations: 3, eqps: 4, seed: 42));
+            var dataload = new Dataload(source);
+
+            // IO 換源示範：同一份資料落成 CSV → CsvDataSource 讀回 → 驗證一致
+            DemoCsvRoundTrip(dataload);
 
             // 同一個 FJSP 模型、兩種組裝寫法，各自求解並代回驗證解。
             SolveAndVerify("FJSP_Aggregated", dataload, BuildModelA);
@@ -18,6 +27,22 @@ namespace FJSP_BASIC
 
             // 交叉實驗：兩個模型 × 兩組 solver 設定。
             RunCrossExperiment(dataload);
+        }
+
+        // 換源示範：把記憶體實例寫成 canonical schema CSV（set 欄+QTY、帶表頭），
+        // 再用 CsvDataSource 建第二份 Dataload，驗證兩個來源讀出的資料一致。
+        static void DemoCsvRoundTrip(Dataload memory)
+        {
+            FolderDir.Data.CreateFolder();
+            var sb = new StringBuilder("Lot,Operation,Eqp,QTY\n");
+            foreach (var p in memory.parameter_ProcessTime)
+                sb.AppendLine($"{p.Lot},{p.Operation},{p.Eqp},{p.QTY.ToString("R", CultureInfo.InvariantCulture)}");
+            File.WriteAllText(FolderDir.Data.GetFilePath("Parameter_ProcessTime.csv"), sb.ToString(), new UTF8Encoding(true));
+
+            var fromCsv = new Dataload(new CsvDataSource());
+            bool same = fromCsv.parameter_ProcessTime.Count == memory.parameter_ProcessTime.Count
+                && fromCsv.BigM == memory.BigM;
+            Logging.Info($"[IO] CSV 換源 round-trip：{fromCsv.parameter_ProcessTime.Count} 筆、BigM 一致={same}");
         }
 
         // ── 模型組裝：每個模型只在這裡建一次，Solve 與實驗共用同一份 ──────────
@@ -66,9 +91,9 @@ namespace FJSP_BASIC
             var exp = new Experiment("fjsp-cross", "兩個模型 × 三組 solver 設定的交叉實驗");
 
             // 三組設定：對 CplexConfig 的調參委派
-            Action<CplexConfig> balanced = c => c.Emphasis = 0;
-            Action<CplexConfig> feasible = c => c.Emphasis = 1;
-            Action<CplexConfig> optimal = c => c.Emphasis = 2;
+            Action<CplexConfig> balanced = c => { c.Emphasis = 0; c.timeLimit = 180; };
+            Action<CplexConfig> feasible = c => { c.Emphasis = 1; c.timeLimit = 180; };
+            Action<CplexConfig> optimal = c => { c.Emphasis = 2; c.timeLimit = 180; };
 
             // 模型A 跑三種實驗
             exp.AddTrial(RunTrial(data, "A-Aggregated | balanced", BuildModelA, balanced));
