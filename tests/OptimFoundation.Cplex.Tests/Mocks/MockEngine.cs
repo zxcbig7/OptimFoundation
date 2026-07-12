@@ -9,6 +9,7 @@ namespace OptimFoundation.Cplex.Tests.Mocks
     internal class MockEngine : EngineBase<object, string, object, string>
     {
         public readonly List<string> BuiltConstraints = new();
+        public readonly List<(string Name, double Lb, double Ub, VarType Type)> BuiltVars = new();
         public ObjectiveSense? ObjectiveSenseResult { get; private set; }
 
         private static readonly MockConfig _cfg = new();
@@ -16,9 +17,10 @@ namespace OptimFoundation.Cplex.Tests.Mocks
 
         public override void Configuration(ISolverConfig config) { }
 
-        // 變數用自身名稱作為 TVar，寫入 Variables dict
+        // 變數用自身名稱作為 TVar，寫入 Variables dict；bounds/type 一併記錄供 BuildVars 前綴解析測試斷言
         protected override string AddVariable(string name, double lb, double ub, VarType type)
         {
+            BuiltVars.Add((name, lb, ub, type));
             Variables[name] = name;
             return name;
         }

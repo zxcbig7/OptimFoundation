@@ -32,8 +32,10 @@
 | Set | 語意 | 成員 | → 程式 |
 | --- | --- | --- | --- |
 | Lot | 批次 | LOT1..LOT{N}（預設 6） | `List<string>` / `string[]` |
-| Operation | 作業道次（字典序 = 加工順序） | OP1..OP{M}（預設 3；M≤9 保證字典序=數字序） | `List<string>` / `string[]` |
+| Operation | 作業道次（Set_Operation.csv 行序 = 加工順序） | OP1..OP{M}（預設 3） | `List<string>` / `string[]` |
 | Eqp | 機台 | EQP1..EQP{K}（預設 4） | `List<string>` / `string[]` |
+
+Set 由 `IDataSource.ReadSet` 讀入（CSV = `Data/Set_{Name}.csv`，一行一成員、無表頭）；`Dataload` 載入時檢查 parameter 出現的值 ⊆ 對應 set，失同步即 fail fast。
 
 ## PARAM
 
@@ -114,6 +116,12 @@ $$MakespanFloor \le Makespan \le MakespanDeadline$$
 $$Makespan \le SoftMakespanTarget \quad (\text{soft})$$
 
 期望 makespan ≤ SoftMakespanTarget，允許違反。線性化：加彈性變數 $Overage \ge 0$，建 $Makespan - Overage \le SoftMakespanTarget$，並把 $MakespanPenalty \cdot Overage$ 併入目標式（框架 `CreateLeSoft` 自動處理）。demo：target = 5 < 最佳 6 → 被違反 $Overage = 1$ 小時。
+
+### MakespanInfeasibleCap `[1. UB]`（模型 C 專用，保證 infeasible 的 IIS 示範）
+
+$$Makespan \le InfeasibleMakespanCap$$
+
+其中 $InfeasibleMakespanCap = \max_{lot} \sum_{op} \min_{eqp} ProcessTime_{lot,op,eqp} - 1$（任一 lot 的 makespan 理論下界取最大再減 1）。上限嚴格低於任何可行 makespan → 模型必定 Infeasible，用來觸發 CPLEX conflict 分析並輸出 IIS（`IISs/*.ilp`）。非業務限制，只掛在模型 C（= 模型 A + 本條）。
 
 ## OBJ
 

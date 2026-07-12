@@ -63,6 +63,7 @@ namespace OptimFoundation.Core
             {
                 string path = GetFilePath(fileName);
                 if (File.Exists(path)) return false;
+                Directory.CreateDirectory(GetPath());   // 確保資料夾存在（idempotent），否則 File.CreateText 丟 DirectoryNotFound
                 File.CreateText(path).Close();
                 return true;
             }

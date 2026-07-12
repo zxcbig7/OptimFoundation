@@ -32,7 +32,7 @@ namespace FJSP_BASIC.Constraint
                 foreach (var op in _operations)
                 {
                     _engine.AddLHS(1.0, new VariableX_Complete { Lot = lot, Operation = op });
-
+                   
                     _engine.AddRHS(1.0, new VariableX_Start { Lot = lot, Operation = op });
 
                     foreach (var eqp in _eqps)

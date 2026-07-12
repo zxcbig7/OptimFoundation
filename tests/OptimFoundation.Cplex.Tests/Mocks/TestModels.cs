@@ -19,6 +19,22 @@ namespace OptimFoundation.Cplex.Tests.Mocks
         public int N { get; set; }
     }
 
+    // 用於 BuildVars 前綴解析測試（命名天條：VariableB_/X_/I_ → Binary/Continuous/Integer）
+    internal class VariableB_Pick : VariableBase
+    {
+        public string S { get; set; } = "";
+    }
+
+    internal class VariableX_Amt : VariableBase
+    {
+        public string S { get; set; } = "";
+    }
+
+    internal class VariableI_Cnt : VariableBase
+    {
+        public string S { get; set; } = "";
+    }
+
     // 用於 Parameter 測試
     internal class ParamX : ParameterBase
     {

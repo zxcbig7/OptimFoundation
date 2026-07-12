@@ -18,19 +18,26 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\OptimFoundation.Core\OptimFoundation.Core.csproj" />
-    <ProjectReference Include="..\..\src\OptimFoundation.Cplex\OptimFoundation.Cplex.csproj" />
-    <!-- AutoSetsGenerator：以 analyzer 身分掛入，[OptVar]/[OptParam] 在編譯期生成 class body -->
-    <ProjectReference Include="..\..\src\OptimFoundation.Generators\OptimFoundation.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <Reference Include="ILOG.Concert">
+      <HintPath>..\dlls\ILOG.Concert.dll</HintPath>
+    </Reference>
+    <Reference Include="ILOG.CPLEX">
+      <HintPath>..\dlls\ILOG.CPLEX.dll</HintPath>
+    </Reference>
+    <Reference Include="OptimFoundation.Core">
+      <HintPath>..\dlls\OptimFoundation.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="OptimFoundation.Cplex">
+      <HintPath>..\dlls\OptimFoundation.Cplex.dll</HintPath>
+    </Reference>
+    
+    <Analyzer Include="..\dlls\OptimFoundation.Generators.dll" />
   </ItemGroup>
 
   <ItemGroup>
-    <Reference Include="ILOG.Concert">
-      <HintPath>$(CplexDir)\cplex\bin\x64_win64\ILOG.Concert.dll</HintPath>
-    </Reference>
-    <Reference Include="ILOG.CPLEX">
-      <HintPath>$(CplexDir)\cplex\bin\x64_win64\ILOG.CPLEX.dll</HintPath>
-    </Reference>
+    <!-- 輸入 CSV 隨 build 複製到輸出的 Data/，供 CsvDataSource 讀取（FolderDir.Data = 執行檔目錄/Data）。
+         用 Update 而非 Include：SDK 預設已把 Data\*.csv 收為 None，Include 會重複而報 NETSDK1022。 -->
+    <None Update="Data\*.csv" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

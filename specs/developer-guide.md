@@ -88,10 +88,12 @@ public class VariableI_WorkCount : VariableBase
 
 | 前綴 | 變數類型 | 對應建立方法 |
 | --- | --- | --- |
-| `VariableB_` | Binary（0/1） | `BuildBVs<TVariable>()` |
-| `VariableX_` | Continuous（連續） | `BuildCVs<TVariable>()` |
-| `VariableI_` | Integer（整數） | `BuildIVs<TVariable>()` |
+| `VariableB_` | Binary（0/1） | `BuildBVs<TVariable>()` 或 `BuildVars<TVariable>()` |
+| `VariableX_` | Continuous（連續） | `BuildCVs<TVariable>()` 或 `BuildVars<TVariable>()` |
+| `VariableI_` | Integer（整數） | `BuildIVs<TVariable>()` 或 `BuildVars<TVariable>()` |
 
+> **前綴 load-bearing**：前綴不只是命名慣例，還決定型別。`[OptVar]` 已不帶 `VarType` 參數，generator 依前綴判型並產碼，前綴非法直接 compile error（`OPTF001`，訊息教正確取名）；`BuildVars<T>` 亦由前綴推型，免記 B/C/I。需自訂 bounds 時才用 `BuildCVs/BuildIVs(lb, ub, ...)`。
+>
 > **重要**：Properties 的**宣告順序**決定 key 格式。建立變數時傳入的 Sets 順序必須與 properties 順序一致。
 
 ---
@@ -193,6 +195,7 @@ public void Build()
 
 | 方法 | 類型 | LB | UB |
 | --- | --- | --- | --- |
+| `BuildVars<TVariable>(sets)` | 由類別名前綴決定 | 前綴預設 | 前綴預設 |
 | `BuildBVs<TVariable>(sets)` | Binary | 0 | 1 |
 | `BuildCVs<TVariable>(sets)` | Continuous | 0 | 1E100 |
 | `BuildCVs<TVariable>(lb, ub, sets)` | Continuous | 自訂 | 自訂 |

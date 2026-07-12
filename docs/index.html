@@ -306,8 +306,8 @@ Engine.CreateEqual($"OneGroup@{d:yyyy_MM_dd}@{e}");</code></pre>
           <div class="fdesc">用 <code class="inl">[OptVar]</code> / <code class="inl">[OptParam]</code> 標記，AutoSetsGenerator 在編譯期把 set 屬性、QTY、建構子補齊。零樣板，宣告即模型。</div>
 <pre><code class="cs">using OptimFoundation.Modeling;
 
-// 一行宣告 → 編譯期生成完整 class
-[OptVar(VarType.Binary, "Date:DateTime", "Employee", "Group")]
+// 一行宣告 → 編譯期生成完整 class；型別由類別名前綴 VariableB_ 決定
+[OptVar("Date:DateTime", "Employee", "Group")]
 public partial class VariableB_ShiftAssign { }
 
 // 參數一律生成 QTY 值欄位，且 QTY 必為最後一個資料屬性
@@ -478,17 +478,17 @@ exp.Save();   // experiments/emphasis-sweep.csv + .json</code></pre>
       <h2><span class="n">04</span> 宣告式 Variable / Parameter 詳解</h2>
       <p class="muted">FORM 02 的展開版。把 <code class="inl">[OptVar]</code> / <code class="inl">[OptParam]</code> 加在 <code class="inl">partial class</code> 上，<code class="inl">AutoSetsGenerator</code> 在編譯期補出 set 屬性、（參數的）QTY 與建構子。你寫一行宣告，編譯後就是一個正常的 <code class="inl">VariableBase</code> / <code class="inl">ParameterBase</code> 子類別 —— 跟 FORM 01 手寫的完全等價。</p>
 
-      <div class="note"><b>前置：</b>使用端只需 <code class="inl">using OptimFoundation.Modeling;</code>。attribute 與 <code class="inl">VarType</code> enum 由 generator 注入，<strong>不需</strong>任何額外組件參考；生成的 class 以 <code class="inl">global::OptimFoundation.Core</code> 全名指向基底型別。</div>
+      <div class="note"><b>前置：</b>使用端只需 <code class="inl">using OptimFoundation.Modeling;</code>。attribute 由 generator 注入，<strong>不需</strong>任何額外組件參考；生成的 class 以 <code class="inl">global::OptimFoundation.Core</code> 全名指向基底型別。</div>
 
       <h3>[OptVar] — 決策變數</h3>
-      <p>第一個參數是 <code class="inl">VarType</code>，其餘是 index set，<strong>順序即 key 順序</strong>。變數<strong>不含 QTY</strong>、也<strong>不生成建構子</strong>（沿用 object initializer 寫法）。</p>
+      <p>參數全是 index set，<strong>順序即 key 順序</strong>；變數<strong>型別由類別名前綴決定</strong>（<code class="inl">VariableB_</code>→Binary / <code class="inl">VariableX_</code>→Continuous / <code class="inl">VariableI_</code>→Integer，前綴非法 → compile error <code class="inl">OPTF001</code>）。變數<strong>不含 QTY</strong>、也<strong>不生成建構子</strong>（沿用 object initializer 寫法）。</p>
 <pre><code class="cs">using OptimFoundation.Modeling;
 
-[OptVar(VarType.Binary, "Date:DateTime", "Employee", "Group")]
+[OptVar("Date:DateTime", "Employee", "Group")]
 public partial class VariableB_ShiftAssign { }</code></pre>
       <p class="muted">↓ 編譯期生成 <code class="inl">VariableB_ShiftAssign.AutoSets.g.cs</code></p>
 <pre><code class="cs">// &lt;auto-generated/&gt;
-// [VarType=Binary] —— 由 AutoSetsGenerator 生成
+// [VarType=Binary（由類別名前綴決定）] —— 由 AutoSetsGenerator 生成
 public partial class VariableB_ShiftAssign : global::OptimFoundation.Core.VariableBase
 {
     public global::System.DateTime Date { get; set; }

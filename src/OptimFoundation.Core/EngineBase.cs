@@ -163,6 +163,29 @@ namespace OptimFoundation.Core
         public virtual void BuildBVs<TVariable>(params object[] sets)
             => BatchBuild<TVariable>(0, 1, VarType.Binary, sets);
 
+        /// <summary>
+        /// 命名天條路徑：變數型別由類別名前綴決定——VariableB_（Binary, [0,1]）/ VariableX_（Continuous）/ VariableI_（Integer）。
+        /// 自訂 bounds 或不依天條命名的類別 → 改用 BuildCVs / BuildIVs / BuildBVs 顯式指定。
+        /// </summary>
+        public virtual void BuildVars<TVariable>(params object[] sets)
+        {
+            string name = typeof(TVariable).Name;
+            if (name.StartsWith("VariableB_", StringComparison.Ordinal))
+                BatchBuild<TVariable>(0, 1, VarType.Binary, sets);
+            else if (name.StartsWith("VariableX_", StringComparison.Ordinal))
+                BatchBuild<TVariable>(0, 1E100, VarType.Continuous, sets);
+            else if (name.StartsWith("VariableI_", StringComparison.Ordinal))
+                BatchBuild<TVariable>(0, 1E100, VarType.Integer, sets);
+            else
+            {
+                string msg = $"BuildVars<{name}> 無法從類別名前綴判定變數型別。" +
+                    "命名天條：VariableB_<語意>（Binary）/ VariableX_<語意>（Continuous）/ VariableI_<語意>（Integer），例：VariableX_Start；" +
+                    "不依天條命名請改用 BuildCVs / BuildIVs / BuildBVs。";
+                Logging.Error(msg);
+                throw new ArgumentException(msg);
+            }
+        }
+
         #endregion
 
         #region VariableManager — 查詢

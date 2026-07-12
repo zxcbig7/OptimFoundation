@@ -17,11 +17,12 @@ namespace FJSP_BASIC.VariableClass
 
         public void Build()
         {
-            _engine.BuildBVs<VariableB_Assign>(_dataload.Lot, _dataload.Operation, _dataload.Eqp);
-            _engine.BuildCVs<VariableX_Start>(_dataload.Lot, _dataload.Operation);
-            _engine.BuildCVs<VariableX_Complete>(_dataload.Lot, _dataload.Operation);
-            _engine.BuildBVs<VariableB_Precede>(_dataload.Lot, _dataload.Operation, _dataload.Lot, _dataload.Operation);
-            _engine.BuildCVs<VariableX_Makespan>(_dataload.Scope);
+            // BuildVars：變數型別由類別名前綴決定（命名天條 B_/X_/I_）；顯式指定型別的寫法見 Program.BuildModelB
+            _engine.BuildVars<VariableB_Assign>(_dataload.LotSet, _dataload.OperationSet, _dataload.EqpSet);
+            _engine.BuildVars<VariableX_Start>(_dataload.LotSet, _dataload.OperationSet);
+            _engine.BuildVars<VariableX_Complete>(_dataload.LotSet, _dataload.OperationSet);
+            _engine.BuildVars<VariableB_Precede>(_dataload.LotSet, _dataload.OperationSet, _dataload.LotSet, _dataload.OperationSet);
+            _engine.BuildVars<VariableX_Makespan>(_dataload.Scope);
 
             Logging.Info($"Variables created: {_engine.varCount}");
         }

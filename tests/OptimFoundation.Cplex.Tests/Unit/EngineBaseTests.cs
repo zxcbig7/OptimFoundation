@@ -40,6 +40,50 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Equal(2, engine.varCount);
         }
 
+        // ── BuildVars：型別由類別名前綴決定（命名天條 B_/X_/I_）────────────
+
+        [Fact]
+        public void BuildVars_PrefixB_CreatesBinaryWithUnitBounds()
+        {
+            var engine = NewEngine();
+            engine.BuildVars<VariableB_Pick>(new List<string> { "A", "B" });
+            Assert.Equal(2, engine.varCount);
+            Assert.All(engine.BuiltVars, v =>
+            {
+                Assert.Equal(VarType.Binary, v.Type);
+                Assert.Equal(0, v.Lb);
+                Assert.Equal(1, v.Ub);
+            });
+        }
+
+        [Fact]
+        public void BuildVars_PrefixX_CreatesContinuous()
+        {
+            var engine = NewEngine();
+            engine.BuildVars<VariableX_Amt>(new List<string> { "A" });
+            Assert.Equal(VarType.Continuous, Assert.Single(engine.BuiltVars).Type);
+        }
+
+        [Fact]
+        public void BuildVars_PrefixI_CreatesInteger()
+        {
+            var engine = NewEngine();
+            engine.BuildVars<VariableI_Cnt>(new List<string> { "A" });
+            Assert.Equal(VarType.Integer, Assert.Single(engine.BuiltVars).Type);
+        }
+
+        [Fact]
+        public void BuildVars_InvalidPrefix_ThrowsWithNamingGuide()
+        {
+            var engine = NewEngine();
+            var ex = Assert.Throws<ArgumentException>(() => engine.BuildVars<VarS>(new List<string> { "A" }));
+            // 錯誤訊息必須教正確取名（三種前綴都要出現）
+            Assert.Contains("VariableB_", ex.Message);
+            Assert.Contains("VariableX_", ex.Message);
+            Assert.Contains("VariableI_", ex.Message);
+            Assert.Equal(0, engine.varCount);
+        }
+
         [Fact]
         public void BuildBVs_2D_ArraySets_CreatesCartesianProduct()
         {
