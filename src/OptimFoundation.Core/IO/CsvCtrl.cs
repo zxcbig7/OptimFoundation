@@ -74,7 +74,7 @@ namespace OptimFoundation.Core.IO
         /// 從 CSV 讀取 Parameter 列表（canonical schema：set 欄 + QTY，建議帶表頭）。
         /// 有表頭 → 依「欄名 = property 名」（大小寫不敏感）對位，多餘欄（DATA_ID / VAR_TYPE / USER …）自動忽略，
         /// 表頭缺任何 property 欄即丟例外——按名對位徹底解掉欄序錯位問題，框架自己輸出的檔（CreateParamTable /
-        /// SaveSolutionToCSV）皆可直接讀回（round-trip）。
+        /// WriteSolution）皆可直接讀回（round-trip）。
         /// 無表頭 → legacy 按 property 宣告順序對位（set 欄在前、QTY 最後）。
         /// fileName 帶不帶 .csv 皆可；省略時用 {型別名}.csv。
         /// TParameter 必須繼承 ModelElementBase 並有無參建構子（properties-only 類別符合此要求）。
@@ -149,10 +149,11 @@ namespace OptimFoundation.Core.IO
         }
 
         /// <summary>
-        /// 把某變數型別的解值匯出到 Solution/{型別名}.csv（表頭：DATA_ID,VAR_TYPE,set…,QTY,USER）。
+        /// 把某變數型別的解值匯出到 Solution/{型別名}.csv（表頭：VAR_TYPE,set…,QTY）。
         /// 表頭欄名 = property 名，故此檔可直接被 BuildParameter 讀回（按名對位、多餘欄自動忽略）。
+        /// dataId / userId 僅供 DB sink 用；CSV 不輸出這兩欄。
         /// </summary>
-        public static void SaveSolutionToCSV<TVariable>(ISolverEngine engine, string dataId, string userId)
+        public static void WriteSolution<TVariable>(ISolverEngine engine, string dataId, string userId)
         {
             var classInfo = new ClassInfo(typeof(TVariable));
             FolderDir.Solution.TryCreateFile($"{classInfo.TypeName}.csv");
@@ -160,14 +161,14 @@ namespace OptimFoundation.Core.IO
             var sol = engine.GetSolution(classInfo.TypeName);
 
             using var sw = new StreamWriter(file, append: false, _csvWrite);
-            string cols = "DATA_ID,VAR_TYPE," + string.Join(",", classInfo.SetNames.Select(s => s.ToUpper())) + ",QTY,USER";
+            string cols = "VAR_TYPE," + string.Join(",", classInfo.SetNames.Select(s => s.ToUpper())) + ",QTY";
             sw.WriteLine(cols);
 
             foreach (var kv in sol)
             {
                 string[] parts = kv.Key.Split('@');
                 // 數值用 InvariantCulture round-trip 格式，讀回不失真
-                string row = dataId + "," + parts[0] + "," + string.Join(",", parts.Skip(1)) + "," + kv.Value.ToString("R", CultureInfo.InvariantCulture) + "," + userId;
+                string row = parts[0] + "," + string.Join(",", parts.Skip(1)) + "," + kv.Value.ToString("R", CultureInfo.InvariantCulture);
                 sw.WriteLine(row);
             }
 

@@ -18,14 +18,6 @@ namespace SandBox.VariablesClass
             this.dataload = dataload;
         }
 
-        #region
-        /* 
-        ex: 
-            
-
-        */
-        #endregion
-
         public void Build()
         {
             try

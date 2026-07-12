@@ -1,10 +1,7 @@
-using OptimFoundation.Core;
+using OptimFoundation.Modeling;
 
 namespace SandBox.Data
 {
-    public class Parameter_BackupGroup : ParameterBase
-    {
-        public string Employee { get; set; }
-        public string Group { get; set; }
-    }
+    [OptParam("Employee", "Group")]
+    public partial class Parameter_BackupGroup;
 }

@@ -31,7 +31,7 @@ namespace OptimFoundation.Core
             var sb = new StringBuilder();
             sb.Append("RunAt,Label,Solver,");
             sb.Append(string.Join(",", TunableCols));
-            sb.AppendLine(",Status,ObjectiveValue,BestBound,ResultGap,WallTimeMs,NodeCount,IterationCount,VarCount,ConstraintCount,Note");
+            sb.AppendLine(",Status,ObjectiveValue,BestBound,ResultGap,RunTimeMs,NodeCount,IterationCount,VarCount,ConstraintCount,Note");
 
             foreach (var t in experiment.Trials)
             {
@@ -52,7 +52,7 @@ namespace OptimFoundation.Core
                     cells.Add(Num(m.ObjectiveValue));
                     cells.Add(Num(m.BestBound));
                     cells.Add(Num(m.MipGap));
-                    cells.Add(Num(m.WallTimeMs));
+                    cells.Add(Num(m.RunTimeMs));
                     cells.Add(m.NodeCount?.ToString(CultureInfo.InvariantCulture) ?? "");
                     cells.Add(m.IterationCount?.ToString(CultureInfo.InvariantCulture) ?? "");
                     cells.Add(m.VarCount.ToString(CultureInfo.InvariantCulture));

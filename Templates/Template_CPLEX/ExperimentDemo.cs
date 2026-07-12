@@ -59,7 +59,7 @@ namespace SandBox
                 var m = trial.Metrics;
                 Logging.Info(
                     $"[ExperimentDemo] {label}: Status={m.Status} Obj={m.ObjectiveValue:G6} " +
-                    $"Gap={m.MipGap:P2} Time={m.WallTimeMs:F0}ms Nodes={m.NodeCount} " +
+                    $"Gap={m.MipGap:P2} Time={m.RunTimeMs:F0}ms Nodes={m.NodeCount} " +
                     $"TrajPoints={m.Convergence.Count}");
             }
 

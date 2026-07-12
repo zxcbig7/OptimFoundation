@@ -1,11 +1,8 @@
-using OptimFoundation.Core;
+using OptimFoundation.Modeling;
 
 namespace SandBox.Data
 {
-    public class Parameter_ShiftDemand : ParameterBase
-    {
-        public DateTime Date { get; set; }
-        public string Group { get; set; }
-        public double QTY { get; set; }
-    }
+    [OptParam("Date:date", "Group")]
+    public partial class Parameter_ShiftDemand;
+    
 }

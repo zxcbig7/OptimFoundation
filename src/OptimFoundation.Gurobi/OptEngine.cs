@@ -216,7 +216,7 @@ namespace OptimFoundation.Gurobi
                 ObjectiveValue = ok ? Model.ObjVal : double.NaN,
                 BestBound = ok ? BestObjValue : double.NaN,
                 MipGap = ok ? MIPGap : double.NaN,
-                WallTimeMs = solveTimer.Elapsed.TotalMilliseconds,
+                RunTimeMs = solveTimer.Elapsed.TotalMilliseconds,
                 NodeCount = (ok && isMip) ? (long?)Model.NodeCount : null,
                 IterationCount = ok ? (long?)Model.IterCount : null,
                 VarCount = varCount,

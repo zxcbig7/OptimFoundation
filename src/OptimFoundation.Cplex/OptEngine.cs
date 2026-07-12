@@ -697,7 +697,7 @@ namespace OptimFoundation.Cplex
                 ObjectiveValue = ok ? Model.GetObjValue() : double.NaN,
                 BestBound = ok ? BestObjValue : double.NaN,
                 MipGap = ok ? MIPGap : double.NaN,
-                WallTimeMs = solveTimer.Elapsed.TotalMilliseconds,
+                RunTimeMs = solveTimer.Elapsed.TotalMilliseconds,
                 NodeCount = TryInvokeLong(Model, "GetNnodes64", "GetNnodes", "Getnnodes"),
                 IterationCount = TryInvokeLong(Model, "GetNiterations64", "GetNiterations", "Getniterations"),
                 VarCount = varCount,

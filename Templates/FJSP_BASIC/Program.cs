@@ -174,7 +174,7 @@ namespace FJSP_BASIC
 
             var trial = Trial.Capture(engine, label, () => engine.Solve());
             var m = trial.Metrics;
-            Logging.Info($"[Cross] {label}: status={m.Status} obj={m.ObjectiveValue:G6} time={m.WallTimeMs:F0}ms traj={m.Convergence?.Count ?? 0}pts");
+            Logging.Info($"[Cross] {label}: status={m.Status} obj={m.ObjectiveValue:G6} time={m.RunTimeMs:F0}ms traj={m.Convergence?.Count ?? 0}pts");
             return trial;
         }
     }

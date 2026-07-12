@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -21,6 +21,10 @@
     <Reference Include="ILOG.CPLEX">
       <HintPath>$(CplexDir)\cplex\bin\x64_win64\ILOG.CPLEX.dll</HintPath>
     </Reference>
+    <Reference Include="OptimFoundation.Generators">
+      <HintPath>..\..\..\..\AI-Modeling\dlls\OptimFoundation.Generators.dll</HintPath>
+    </Reference>
+    <Analyzer Include="..\dlls\OptimFoundation.Generators.dll" />
   </ItemGroup>
 
 </Project>

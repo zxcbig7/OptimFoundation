@@ -2,6 +2,7 @@
 using OptimFoundation.Cplex;
 
 using OptimFoundation.Core;
+using OptimFoundation.Core.IO;
 
 
 namespace SandBox.Data
@@ -88,6 +89,8 @@ namespace SandBox.Data
             parameter_NightToDay.Add(new Parameter_NightToDay { PreGroup = "C", Group = "N", QTY = Penalty_PreGroup }); // 行->晚
 
 
+            parameter_ShiftDemand = CsvCtrl.BuildParameter<Parameter_ShiftDemand>("Parameter_ShiftDemand");
+
 
             //  排程月份
             int year = 2026;
@@ -108,10 +111,12 @@ namespace SandBox.Data
             }
 
 
+
             // 預排班 (需特別設定)
             parameter_PreAssign.Add(new Parameter_PreAssign { Date = new DateTime(2026, 1, 1), Employee = "E1", Group = "E" });
             parameter_PreAssign.Add(new Parameter_PreAssign { Date = new DateTime(2026, 1, 1), Employee = "E3", Group = "O" });
             parameter_PreAssign.Add(new Parameter_PreAssign { Date = new DateTime(2026, 1, 2), Employee = "E2", Group = "D" });
+            parameter_PreAssign.Add(new Parameter_PreAssign { Date = new DateTime(2026, 1, 2), Employee = "E3", Group = "E" });
             parameter_PreAssign.Add(new Parameter_PreAssign { Date = new DateTime(2026, 1, 2), Employee = "E3", Group = "E" });
 
 

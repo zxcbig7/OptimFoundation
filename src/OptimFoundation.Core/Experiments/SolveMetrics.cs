@@ -12,7 +12,7 @@ namespace OptimFoundation.Core
         public double ObjectiveValue { get; set; } // 目標式值（若有 soft constraint 則已含 penalty）
         public double BestBound { get; set; } // 最佳界（MIP 的 best bound）
         public double MipGap { get; set; } // 相對 MIP gap
-        public double WallTimeMs { get; set; } // 求解牆鐘時間（毫秒）
+        public double RunTimeMs { get; set; } // 求解時間（毫秒）
         public long? NodeCount { get; set; } // B&B 探索節點數（null = solver 未提供）
         public long? IterationCount { get; set; } // simplex / barrier 迭代數（null = 未提供）
         public int VarCount { get; set; } // 變數總數

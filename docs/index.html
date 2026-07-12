@@ -425,7 +425,7 @@ parameter_ShiftDemand.Add(new Parameter_ShiftDemand{ Date=d, Group="D", QTY=5 })
 // CSV 讀 / 寫
 this.Employee = CsvCtrl.ReadStrSet("Set_Employee.csv");
 this.param = CsvCtrl.BuildParameter&lt;Parameter_Cost&gt;("Cost");
-CsvCtrl.SaveSolutionToCSV&lt;VariableB_ShiftAssign&gt;(engine, "V1", "VIC");
+CsvCtrl.WriteSolution&lt;VariableB_ShiftAssign&gt;(engine, "V1", "VIC");
 
 // 資料庫：繼承 DBCtrlBase / OracleDBCtrl</code></pre>
           <div class="api"><span>CsvCtrl</span><span>DBCtrlBase</span><span>OracleDBCtrl</span><span>FolderDir</span></div>

@@ -16,12 +16,12 @@ namespace OptimFoundation.Core.IO
     }
 
     /// <summary>
-    /// CSV 解輸出：包 CsvCtrl.SaveSolutionToCSV，寫到 Solution/{變數型別名}.csv。
+    /// CSV 解輸出：包 CsvCtrl.WriteSolution，寫到 Solution/{變數型別名}.csv。
     /// 輸出帶表頭，可直接被 CsvCtrl.BuildParameter 讀回（round-trip）。
     /// </summary>
     public sealed class CsvSolutionSink : ISolutionSink
     {
         public void WriteSolution<TVariableClass>(ISolverEngine engine, string dataId = null, string userId = null)
-            => CsvCtrl.SaveSolutionToCSV<TVariableClass>(engine, dataId ?? "", userId ?? "");
+            => CsvCtrl.WriteSolution<TVariableClass>(engine, dataId ?? "", userId ?? "");
     }
 }

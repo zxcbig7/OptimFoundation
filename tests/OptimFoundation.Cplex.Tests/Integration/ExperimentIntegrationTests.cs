@@ -40,7 +40,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             // 指標回填
             Assert.Equal(SolveStatus.Optimal, trial.Metrics.Status);
             Assert.Equal(3.0, trial.Metrics.ObjectiveValue, precision: 4);
-            Assert.True(trial.Metrics.WallTimeMs >= 0);
+            Assert.True(trial.Metrics.RunTimeMs >= 0);
             Assert.Equal(1, trial.Metrics.VarCount);
 
             // 設定快照（含抽象旋鈕 + solver 名）
