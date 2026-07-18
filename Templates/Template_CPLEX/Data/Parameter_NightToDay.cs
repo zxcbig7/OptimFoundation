@@ -1,11 +1,9 @@
-using OptimFoundation.Core;
+using OptimFoundation.Modeling;
 
 namespace SandBox.Data
 {
-    public class Parameter_NightToDay : ParameterBase
-    {
-        public string PreGroup { get; set; }
-        public string Group { get; set; }
-        public double QTY { get; set; }
-    }
+    [OptParam]
+    [OptDim<Set_Group>("PreGroup")]
+    [OptDim<Set_Group>("Group")]
+    public partial class Parameter_NightToDay;
 }

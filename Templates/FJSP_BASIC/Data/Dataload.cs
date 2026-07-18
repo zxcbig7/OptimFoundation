@@ -8,7 +8,7 @@ namespace FJSP_BASIC.Data
 {
     public class Dataload
     {
-        // Sets 由 IDataSource.ReadSet 讀入（CSV 慣例 = Data/Set_{Name}.csv，一行一成員、無表頭）
+        // Sets 由 IDataSource.LoadSet 讀入（CSV 慣例 = Data/Set_{Name}.csv，一行一成員、無表頭）
         public List<string> LotSet;
         public List<string> OperationSet; // 檔案行序 = 加工順序（RoutePrecedence 依此索引，不靠字典序）
         public List<string> EqpSet;
@@ -42,10 +42,10 @@ namespace FJSP_BASIC.Data
         // 資料來源抽象：換來源（記憶體 / CSV / DB）只換傳入的 IDataSource，模型與驗證 code 全不動
         public Dataload(IDataSource source)
         {
-            parameter_ProcessTime = source.ReadParameters<Parameter_ProcessTime>();
-            LotSet = source.ReadSet("Lot");
-            OperationSet = source.ReadSet("Operation");
-            EqpSet = source.ReadSet("Eqp");
+            parameter_ProcessTime = source.LoadParam<Parameter_ProcessTime>();
+            LotSet = source.LoadSet("Lot");
+            OperationSet = source.LoadSet("Operation");
+            EqpSet = source.LoadSet("Eqp");
             ValidateSetsCoverParameters();
         }
 

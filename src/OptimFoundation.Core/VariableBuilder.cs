@@ -66,8 +66,9 @@ namespace OptimFoundation.Core
         /// <summary>從多個 Set 組合出所有變數名稱（格式：TypeName@set1@set2@...）</summary>
         public static IEnumerable<string> GenVarCombinations(params List<string>[] lists)
         {
+            // 0 維（scalar 變數）：無 index，回空字串（呼叫端組出 TypeName，與 ModelElementBase.ToString 一致，不留 trailing @）
             foreach (var parts in GenVarParts(lists))
-                yield return "@" + string.Join("@", parts);
+                yield return parts.Length == 0 ? string.Empty : "@" + string.Join("@", parts);
         }
 
         /// <summary>
@@ -125,8 +126,9 @@ namespace OptimFoundation.Core
         {
             string typeName = typeof(TVariable).Name;
             var stringLists = ConvertSetsToStringLists(sets);
+            // 0 維（scalar）→ 純 TypeName（與 ModelElementBase.ToString 一致）；≥1 維 → TypeName@v1@v2...
             foreach (var parts in GenVarParts(stringLists))
-                yield return typeName + "@" + string.Join("@", parts);
+                yield return parts.Length == 0 ? typeName : typeName + "@" + string.Join("@", parts);
         }
 
         /// <summary>建立變數（保留給需要逐筆回呼的舊有用法）</summary>

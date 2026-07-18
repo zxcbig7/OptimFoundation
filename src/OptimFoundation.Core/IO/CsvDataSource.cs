@@ -1,18 +1,34 @@
+using System;
 using System.Collections.Generic;
+using System.Data;
 
 namespace OptimFoundation.Core.IO
 {
     /// <summary>
     /// CSV 資料來源：包 CsvCtrl，檔案放 Data/ 資料夾。
-    /// 慣例：參數檔 = {型別名}.csv（canonical schema，建議帶表頭按名對位）；set 檔 = Set_{name}.csv。
+    /// 參數檔名自由（省略則 = 型別名），契約是欄位對得上 class（BuildParameter 表頭缺欄即丟例外）；set 檔 = Set_{name}.csv。
     /// </summary>
     public sealed class CsvDataSource : IDataSource
     {
-        public List<TParamClass> ReadParameters<TParamClass>() where TParamClass : ModelElementBase, new()
-            => CsvCtrl.BuildParameter<TParamClass>();
+        /// <summary>
+        /// 建構即備好輸入資料夾 Data/（即使空的）：引用 CSV 來源就把資料夾建好，使用者一眼知道往哪放檔；
+        /// 缺檔的錯誤也從 DirectoryNotFound 降為明確的 FileNotFound（少了哪個檔一目了然）。
+        /// 與輸出端對稱——Solution/ 等輸出資料夾寫入時本就自動建立（CsvCtrl.WriteSolution → TryCreateFile）。
+        /// </summary>
+        public CsvDataSource() => FolderDir.Data.CreateFolder();
 
-        public List<string> ReadSet(string name)
-            => CsvCtrl.ReadStrSet(name.StartsWith("Set_") ? name : $"Set_{name}");
+        // file 自由；表頭按名對位（大小寫不敏感、多餘欄忽略），缺 property 對應欄即 InvalidDataException
+        public List<TParamClass> LoadParam<TParamClass>(string file = null) where TParamClass : ModelElementBase, new()
+            => CsvCtrl.BuildParameter<TParamClass>(file);
+
+        // set 名統一為檔名形式（見 SetNaming）：Set_{名}.csv；元素轉型交給 SetBase.ParseElement
+        public List<string> LoadSet(string name)
+            => CsvCtrl.ReadStrSet(SetNaming.File(name));
+
+        // 整張表 raw DataTable（set/param 以外的通用用途）：第一列=欄名、全欄 string。
+        // 與 DbDataSource.LoadTable 同名，第一引數是檔名（DB 那邊是 SQL）。非 IDataSource 契約。
+        public DataTable LoadTable(string file)
+            => CsvCtrl.ReadTable(file);
     }
 
     /// <summary>

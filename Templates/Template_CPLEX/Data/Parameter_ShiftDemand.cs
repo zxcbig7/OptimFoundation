@@ -1,8 +1,12 @@
 using OptimFoundation.Modeling;
+using SandBox.SetClass;
+
 
 namespace SandBox.Data
 {
-    [OptParam("Date:date", "Group")]
+    [OptParam]
+    [OptDim<Set_Date>("Date")]
+    [OptDim<Set_Group>("Group")]
     public partial class Parameter_ShiftDemand;
-    
+
 }

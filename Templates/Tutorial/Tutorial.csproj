@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <CplexDir Condition="'$(CplexDir)' == ''">C:\IBM\ILOG\CPLEX_Studio2211</CplexDir>
+    <!-- generator 生成的 class body 落地到 Generated/ 供檢視（成員一目了然） -->
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>Generated</CompilerGeneratedFilesOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Generated/ 只是 generator 落地供檢視，不可當一般原始碼編譯（否則與 in-memory 輸出撞名） -->
+    <Compile Remove="Generated/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="ILOG.Concert">
+      <HintPath>..\dlls\ILOG.Concert.dll</HintPath>
+    </Reference>
+    <Reference Include="ILOG.CPLEX">
+      <HintPath>..\dlls\ILOG.CPLEX.dll</HintPath>
+    </Reference>
+    <Reference Include="OptimFoundation.Core">
+      <HintPath>..\dlls\OptimFoundation.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="OptimFoundation.Cplex">
+      <HintPath>..\dlls\OptimFoundation.Cplex.dll</HintPath>
+    </Reference>
+
+    <Analyzer Include="..\dlls\OptimFoundation.Generators.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 輸入 CSV 隨 build 複製到輸出的 Data/，供 CsvDataSource 讀取（FolderDir.Data = 執行檔目錄/Data）。
+         用 Update 而非 Include：SDK 預設已把 Data\*.csv 收為 None，Include 會重複而報 NETSDK1022。 -->
+    <None Update="Data\*.csv" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

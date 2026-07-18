@@ -1,0 +1,9 @@
+Machine,Date,Shift,QTY
+Cutting,2026-08-01,1,40
+Cutting,2026-08-01,2,30
+Cutting,2026-08-02,1,40
+Cutting,2026-08-02,2,30
+Assembly,2026-08-01,1,60
+Assembly,2026-08-01,2,45
+Assembly,2026-08-02,1,60
+Assembly,2026-08-02,2,45

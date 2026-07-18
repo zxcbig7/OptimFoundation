@@ -9,8 +9,10 @@
 1. [架構概覽](#1-架構概覽)
 2. [Variable — 定義決策變數](#2-variable--定義決策變數)
 3. [Parameter — 定義模型參數](#3-parameter--定義模型參數)
+3.5. [Set 積木與OptDim逐維宣告（paved path）](#35-set-積木與optdim逐維宣告paved-path)
 4. [Dataload — 資料初始化](#4-dataload--資料初始化)
-5. [VariableCreate — 建立變數](#5-variablecreate--建立變數)
+4.5. [IDataSource — 資料來源抽象](#45-idatasource--資料來源抽象)
+5. [VariableCreate — 建立變數（BuildVars 泛型建立）](#5-variablecreate--建立變數buildvars-泛型建立)
 6. [Pool API — 建立限制式](#6-pool-api--建立限制式)
 7. [Objective Function — 目標式](#7-objective-function--目標式)
 8. [BuildModel — 組裝模型](#8-buildmodel--組裝模型)
@@ -20,7 +22,8 @@
 12. [變數界限動態修改](#12-變數界限動態修改)
 13. [進階：繼承 OptEngine](#13-進階繼承-optengine)
 14. [進階：Benders Decomposition](#14-進階benders-decomposition)
-15. [常見錯誤 FAQ](#15-常見錯誤-faq)
+15. [Experiment — Tuning 實驗記錄](#15-experiment--tuning-實驗記錄)
+16. [常見錯誤 FAQ](#16-常見錯誤-faq)
 
 ---
 
@@ -129,6 +132,129 @@ new Parameter_ShiftDemand { Date = new DateTime(2026, 1, 1), Group = "D", QTY = 
 
 ---
 
+## 3.5 Set 積木與OptDim逐維宣告（paved path）
+
+> 2026-07 新增，**2026-07-15 定版**：逐維具名宣告 `[OptDim<TSet>("Name")]` + 光桿 `[OptVar]`/`[OptParam]` 是**唯一 paved path**（權威範例 = `Templates/FJSP_BASIC_BRICK`）。
+> 舊多參數泛型 `[OptVar<T1..T6>]`/`[OptParam<T1..T6>]` 與字串式 `[OptVar("Date:DateTime")]` 皆降級為**逃生口**（遷移期保留，新 code 不用，見本節末段）。完整設計見 `specs/2026-07-13-optset-basic-objects.md`。
+
+### 概念
+
+Set 從 Dataload 的裸 `List<string>` 欄位，升級成標準積木：一個 Set 一顆積木、一檔兩行，`(名字, 型別)` 全系統只宣告一次；Variable / Parameter 用**光桿 attribute + 逐維 `[OptDim<TSet>("Name")]`** 宣告每一維，attribute 順序 = key 順序，property 名與元素型別由 generator 自動抓。
+
+### 三步宣告（Set 積木 → Parameter → Variable）
+
+```csharp
+// 1. Set 積木：一個 Set 一顆，[OptSet] 無參數 = 預設 string
+[OptSet<string>] public partial class Set_Lot { }
+[OptSet<string>] public partial class Set_Operation { }
+[OptSet<string>] public partial class Set_Eqp { }
+[OptSet<DateTime>] public partial class Set_Date { }
+
+// 2. Parameter：光桿 [OptParam] + 逐維 [OptDim<TSet>("Name")]，QTY 自動補在最後
+[OptParam]
+[OptDim<Set_Lot>("Lot")]
+[OptDim<Set_Operation>("Operation")]
+[OptDim<Set_Eqp>("Eqp")]
+public partial class Parameter_ProcessTime { }
+
+// 3. Variable：光桿 [OptVar] + 逐維 [OptDim<TSet>("Name")]，型別由前綴 B_/X_/I_ 決定
+[OptDim<Set_Lot>("Lot")]
+[OptDim<Set_Operation>("Operation")]
+[OptDim<Set_Eqp>("Eqp")]
+[OptVar]
+public partial class VariableB_Assign { }
+```
+
+generator 生成（自動抓名稱 + 型別，順序 = `[OptDim]` 排列順序）：
+
+```csharp
+public partial class Parameter_ProcessTime : global::OptimFoundation.Core.ParameterBase
+{
+    public string Lot { get; set; } = string.Empty;
+    public string Operation { get; set; } = string.Empty;
+    public string Eqp { get; set; } = string.Empty;
+    public double QTY { get; set; }
+    public Parameter_ProcessTime(params object[] sets) => InitClassBySets(sets);
+    public Parameter_ProcessTime() { }
+}
+```
+
+### 同 set 多維度（角色名區分）
+
+同一個 Set 積木可以在同一個 Variable 引用多次，各自取不同維度角色名——泛型參數是**來源 set**（直接綁、不 alias），字串是**維度角色名**，兩者不必同名：
+
+```csharp
+// 同機台先後序：(LotA,OperationA) 先於 (LotB,OperationB)
+// LotA/LotB 都 ∈ Set_Lot、OperationA/OperationB 都 ∈ Set_Operation
+[OptVar]
+[OptDim<Set_Lot>("LotA")]
+[OptDim<Set_Operation>("OperationA")]
+[OptDim<Set_Lot>("LotB")]
+[OptDim<Set_Operation>("OperationB")]
+public partial class VariableB_Precede;
+```
+
+### Scalar（零維）變數
+
+不需要任何 set 時，光桿 `[OptVar]` 不加 `[OptDim]` 即為 0 維純量，key 直接是類名、無 `@` 索引：
+
+```csharp
+[OptVar]
+public partial class VariableX_Makespan { }
+// key = "VariableX_Makespan"（純量，無索引）
+```
+
+### 命名推導（全機械）
+
+| 位置 | 規則 |
+| --- | --- |
+| 積木類名 | `Set_<PascalName>`，違反 → OPTF003 |
+| `[OptDim<TSet>("Name")]` 維度名 | 字串參數直接就是 property 名（可與積木類名不同，供同 set 多角色） |
+| attribute 順序 | = property 順序 = `InitClassBySets` 的 key 組成順序（調換 = 不同變數） |
+| 合法元素型別 | `string / DateTime / int / long / double / decimal`，其餘 → OPTF004 |
+
+### 編譯期診斷
+
+| 情境 | 結果 |
+| --- | --- |
+| 泛型參數塞非積木 class | CS0311（`where T : ISetBrick`，C# 原生） |
+| `[OptSet<T>]` 元素型別非法 | OPTF004 |
+| 引用的型別無 `[OptSet]` | OPTF005 |
+
+### `SetBase<T>` 契約
+
+`SetBase<T> : ISetBrick, IReadOnlyList<T>`（支援 `[i]`/`Count`/foreach/LINQ/`Contains`，免另存 List 視圖），可直接餵進 `BuildVars<T>`/`BuildBVs/BuildIVs/BuildCVs(params object[])`（經 `VariableBuilder.ConvertSetsToStringLists`），DateTime key 沿用 `yyyy-MM-dd`。四道防呆（全丟明確例外）：
+
+1. 未載入就列舉 → `InvalidOperationException`（NEVER 空集合靜默解出退化解）
+2. 載入後為空 → `InvalidOperationException`
+3. 二次載入 → `InvalidOperationException`（載入即封存；v1 無 Reload）
+4. 重複成員 → `ArgumentException`
+
+### 資料載入（paved path = Load(IDataSource)，來源回 string 由 ParseElement 依 T 轉型）
+
+```csharp
+// paved path：set 名用「檔名形式」Set_{X}（三來源統一，見 §4.5 SetNaming）；name 省略 = 類名慣例
+// 換 CSV↔DB↔記憶體只換傳入的 IDataSource（Dataload ctor 每行一句，見 §4.5）
+LOT.Load(source);                  // 慣例（= Set_Lot）
+LOT.Load(source, "Set_OldLots");   // 就地指定要吃哪個檔
+
+// inline / 程式生成（測試 / 小題目 / enum）
+DATE.LoadInline(new DateTime(2026, 8, 1), new DateTime(2026, 8, 2));
+DATE.LoadFrom(someSequence);
+
+// CSV 便利別名：LoadCsv(檔名)（= Load 的 CSV 特化）。DB set 用 LoadFrom(db.LoadSet("SELECT ..."))
+LOT.LoadCsv("Set_Lot");
+```
+
+### 逃生口（遷移用，新 code NEVER 用）
+
+- **多參數泛型**：`[OptParam<Set_Date, Set_Employee>]` / `[OptVar<Set_Date, Set_Employee>]`——維度名固定 = 積木類名去 `Set_` 前綴，無法像 `[OptDim]` 一樣同 set 取多個角色名（如 `LotA`/`LotB`）
+- **字串式**：`[OptVar("Date:DateTime")]` / `[OptParam("Item", "Date:DateTime")]`——generator 舊語法，早期專案殘留
+
+兩者行為仍受支援（generator 繼續產碼），但治理文件與新專案一律教 `[OptDim<TSet>("Name")]`。
+
+---
+
 ## 4. Dataload — 資料初始化
 
 在 `Data/Dataload.cs` 定義所有 Sets 和 Parameters，並在建構子中填入資料。
@@ -166,9 +292,142 @@ public class Dataload
 }
 ```
 
+上面是最基礎的手動初始化寫法（測試 / 小題目）。paved path 用 Set 積木 + `IDataSource` 抽象，見下節。
+
 ---
 
-## 5. VariableCreate — 建立變數
+## 4.5 IDataSource — 資料來源抽象
+
+**檔案**：`OptimFoundation.Core/IO/IDataSource.cs`、`CsvDataSource.cs`、`DbDataSource.cs`
+
+Dataload 只依賴 `IDataSource` 介面，換資料來源（CSV / DB / 記憶體）**只換傳入的 IDataSource 物件，模型與驗證 code 全不動**——與「換 solver 只換 OptEngine」同一哲學。
+
+```csharp
+public interface IDataSource
+{
+    // 讀某參數型別的全部列；name 就地覆寫資料位址（CSV = 檔名、DB = 表名），null 走慣例 = 型別名
+    List<TParamClass> LoadParam<TParamClass>(string name = null) where TParamClass : ModelElementBase, new();
+
+    // 讀無法由 Parameter 衍生的一維 set（獨立名單檔/表）；name 為邏輯名稱，各實作自行解析
+    List<string> LoadSet(string name);
+}
+```
+
+### 兩個實作
+
+| 實作 | 用途 | 讀法 |
+| --- | --- | --- |
+| `CsvDataSource` | 讀 `Data/` 資料夾 CSV | 參數 = `LoadParam<T>("檔名")`（`{型別名}.csv`，帶表頭按名對位）；set 檔 = `Set_{name}.csv` |
+| `InMemoryDataSource` | demo / 測試 / 程式生成 | `AddParameters` / `AddSet` 鏈式註冊；`LoadParam` 以型別為 key |
+| `DbDataSource`（不實作 IDataSource） | 讀資料庫（透過 `IDbCtrl`，如 Oracle） | **只走明寫 SQL**：參數 `LoadParam<T>(sql)`、set `LoadSet(sql)`。欄名對位、多餘欄忽略、可用 `AS` 別名。**無「猜表名」慣例** |
+
+> DB 為何只給 SQL：`SELECT * FROM 表` 對真實 DB 太受限——join、條件、投影、`WHERE data_id` 都做不到，「猜表名」的預先處理既不直觀又限制實用。故 `DbDataSource` 是 query-only、**不實作 `IDataSource`**（第一引數是 SQL 而非名稱，語意不同），但與 CSV/InMemory 共用 `LoadParam`/`LoadSet` 命名。
+
+### Dataload ctor = 「寫讀檔的家」（paved path）
+
+Dataload ctor **每行一句、顯式**——一眼看得出每個 set / parameter 的資料從哪來。慣例走預設，特例就地指定：
+
+```csharp
+public class Dataload
+{
+    public Set_Lot LOT = new();
+    public Set_Operation OPERATION = new();
+    public Set_Eqp EQP = new();
+    public List<Parameter_ProcessTime> parameter_ProcessTime = new();
+
+    public Dataload() : this(new CsvDataSource()) { }   // 預設來源 = CSV
+
+    public Dataload(IDataSource source)
+    {
+        // Set：慣例（Set_{名}.csv）。特例：LOT.Load(source, "Set_OldLots") 就地指定檔 / 邏輯名
+        LOT.Load(source);
+        OPERATION.Load(source);
+        EQP.Load(source);
+
+        // Parameter：慣例（型別名）。特例見下方「就地覆寫」
+        parameter_ProcessTime = source.LoadParam<Parameter_ProcessTime>();
+
+        ValidateSetsCoverParameters();   // 失同步驗證，明明白白寫在這裡
+    }
+}
+
+// 換來源（CSV↔InMemory）：new Dataload(new InMemoryDataSource()...)
+// DB 來源：DB 參數只能明寫 SQL，故用專屬 ctor（見下方「混合 / DB 來源」），非套進本 IDataSource ctor
+```
+
+### 就地覆寫「吃哪個檔 / Query 哪段 SQL」
+
+| 需求 | 寫法 |
+| --- | --- |
+| set 檔 / 邏輯名 ≠ 類名慣例 | `LOT.Load(source, "Set_OldLots")` |
+| CSV 參數檔 ≠ 型別名 | `source.LoadParam<Parameter_X>("Parameter_Legacy")` |
+| **DB 參數（唯一途徑）** | `db.LoadParam<Parameter_X>("SELECT ... WHERE data_id=:id", (":id","V1"))` |
+| DB set | `SET.LoadFrom(db.LoadSet("SELECT DISTINCT eqp FROM t"))` |
+
+`LoadParam` / `LoadSet` 是 `DbDataSource` 專屬（型別化 `DbDataSource db`，非 `IDataSource`）——SQL 本就綁 DB。欄名對 property 名（大小寫不敏感、多餘欄忽略），欄名不符用 `AS` 別名對過去（`unit_profit AS qty`）。
+
+### 混合 / DB 來源（顯式 ctor 的回報）
+
+`IDataSource` 逐次呼叫，混用零成本；DB 因只給 SQL，用型別化 `DbDataSource` 的專屬 ctor：
+
+```csharp
+public Dataload(CsvDataSource csv, DbDataSource db)
+{
+    LOT.Load(csv, "Set_Lot");                                    // 維度小表放 CSV
+    parameter_ProcessTime = db.LoadParam<Parameter_ProcessTime>(  // 主檔放 DB，明寫 Query
+        "SELECT lot, operation, eqp, proc_time AS qty FROM route WHERE data_id = :id", (":id", "V1"));
+    ValidateSetsCoverParameters();
+}
+```
+
+**set 名統一（`Core/IO/SetNaming.cs`）**：使用端一律用檔名形式 `Set_{X}`（= 磁碟 `Set_X.csv`、Set 積木類名），各來源在邊界自動轉位址——CSV 讀 `Set_X.csv`、DB 交 resolver 邏輯名 `X`、InMemory 當 key。`"Product"` 與 `"Set_Product"` 經此一律等價，三來源不再各行其是。
+
+### 失同步驗證（自己寫、看得見）
+
+set 若改由檔案 / 資料表定義，可能與 parameter 失同步；ctor 尾端 MUST 立即驗證，parameter 出現的值必須 ⊆ 對應 set：
+
+```csharp
+private void ValidateSetsCoverParameters()
+{
+    var missing = parameter_ProcessTime.Select(p => p.Lot).Distinct()
+        .Where(v => !LOT.Contains(v)).Select(v => $"Lot '{v}'").ToList();
+    if (missing.Count > 0)
+        throw new InvalidDataException($"[Dataload] parameter 出現不在 set 的值：{string.Join("、", missing)}");
+}
+```
+
+### BigM 由數據推導，NEVER 寫死
+
+BigM 一律從已載入的 Parameter 算出（如「最壞情況全序列排程長度」），不得寫死常數：
+
+```csharp
+public double BigM => parameter_ProcessTime
+    .GroupBy(p => new { p.Lot, p.Operation })
+    .Sum(g => g.Max(p => p.QTY));
+```
+
+### 解回讀：GetSetVarValues 批量取解
+
+求解後用 `engine.GetSetVarValues<TVariable>()` 一次抓整個變數型別的解值字典（key = 完整變數名稱），取代逐 key 呼叫 `GetVariableValue`：
+
+```csharp
+var assign = engine.GetSetVarValues<VariableB_Assign>();
+var makespanVar = engine.GetSetVarValues<VariableX_Makespan>();
+double makespan = makespanVar["VariableX_Makespan"];   // scalar：key 無 @ 索引
+
+string assignedEqp = EqpSet.FirstOrDefault(e => assign[$"VariableB_Assign@{lot}@{op}@{e}"] > 0.5) ?? "?";
+```
+
+輸出解用 `CsvSolutionSink.WriteSolution<T>(engine)`（`ISolutionSink` 抽象，另有 `OracleSolutionSink`）：
+
+```csharp
+var sink = new CsvSolutionSink();
+sink.WriteSolution<VariableB_Assign>(engine);   // → Solution/VariableB_Assign.csv
+```
+
+---
+
+## 5. VariableCreate — 建立變數（BuildVars 泛型建立）
 
 在 `VariablesClass/VariableCreate.cs` 的 `Build()` 中呼叫建立方法。
 

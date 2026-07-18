@@ -23,12 +23,12 @@ namespace OptimFoundation.Cplex.Tests.Unit
     public class InMemoryDataSourceTests
     {
         [Fact]
-        public void ReadParameters_ReturnsRegisteredRows()
+        public void LoadParam_ReturnsRegisteredRows()
         {
             var src = new InMemoryDataSource()
                 .AddParameters(new[] { new DsParam { Lot = "L1", Eqp = "E1", QTY = 3 } });
 
-            var rows = src.ReadParameters<DsParam>();
+            var rows = src.LoadParam<DsParam>();
 
             Assert.Single(rows);
             Assert.Equal("L1", rows[0].Lot);
@@ -36,19 +36,19 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         [Fact]
-        public void ReadParameters_Unregistered_ThrowsWithTypeName()
+        public void LoadParam_Unregistered_ThrowsWithTypeName()
         {
             var src = new InMemoryDataSource();
-            var ex = Assert.Throws<KeyNotFoundException>(() => src.ReadParameters<DsParam>());
+            var ex = Assert.Throws<KeyNotFoundException>(() => src.LoadParam<DsParam>());
             Assert.Contains("DsParam", ex.Message);
         }
 
         [Fact]
-        public void ReadSet_RegisteredAndCaseInsensitive()
+        public void LoadSet_RegisteredAndCaseInsensitive()
         {
             var src = new InMemoryDataSource().AddSet("Employee", new[] { "A", "B" });
 
-            Assert.Equal(new[] { "A", "B" }, src.ReadSet("employee"));
+            Assert.Equal(new[] { "A", "B" }, src.LoadSet("employee"));
         }
     }
 
@@ -72,11 +72,19 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         [Fact]
-        public void ReadParameters_UsesTypeNameFile_HeaderAware()
+        public void Ctor_EnsuresDataFolderExists()
+        {
+            // 引用 CSV 來源即備好 Data/（即使空的）——輸入側與輸出側對稱
+            new CsvDataSource();
+            Assert.True(Directory.Exists(FolderDir.Data.GetPath()));
+        }
+
+        [Fact]
+        public void LoadParam_UsesTypeNameFile_HeaderAware()
         {
             WriteDataFile("DsParam.csv", "QTY,EQP,LOT\n5,E2,L2\n");
 
-            var rows = new CsvDataSource().ReadParameters<DsParam>();
+            var rows = new CsvDataSource().LoadParam<DsParam>();
 
             Assert.Single(rows);
             Assert.Equal("L2", rows[0].Lot);
@@ -85,13 +93,13 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         [Fact]
-        public void ReadSet_AddsSetPrefixConvention()
+        public void LoadSet_AddsSetPrefixConvention()
         {
             WriteDataFile("Set_Machine.csv", "M1\nM2\n");
 
             // 邏輯名稱與完整檔名兩種呼叫皆可
-            Assert.Equal(new[] { "M1", "M2" }, new CsvDataSource().ReadSet("Machine"));
-            Assert.Equal(new[] { "M1", "M2" }, new CsvDataSource().ReadSet("Set_Machine"));
+            Assert.Equal(new[] { "M1", "M2" }, new CsvDataSource().LoadSet("Machine"));
+            Assert.Equal(new[] { "M1", "M2" }, new CsvDataSource().LoadSet("Set_Machine"));
         }
     }
 
@@ -133,52 +141,25 @@ namespace OptimFoundation.Cplex.Tests.Unit
             return dt;
         }
 
+        // DB 是 query-only：LoadParam / LoadSet 第一引數是 SQL，欄名對 property（大小寫不敏感、多餘欄忽略）
         [Fact]
-        public void ReadParameters_MapsByColumnName_IgnoresExtras()
+        public void LoadParam_MapsByColumnName_IgnoresExtras()
         {
             var fake = new FakeDbCtrl { NextResult = ParamTable() };
 
-            var rows = new DbDataSource(fake).ReadParameters<DsParam>();
+            var rows = new DbDataSource(fake).LoadParam<DsParam>(
+                "SELECT lot, eqp, qty FROM demand WHERE data_id = :id", (":id", "D1"));
 
             Assert.Single(rows);
             Assert.Equal("L9", rows[0].Lot);
             Assert.Equal("E9", rows[0].Eqp);
             Assert.Equal(7, rows[0].QTY);
-            Assert.Equal("SELECT * FROM DSPARAM", fake.LastSql);
-        }
-
-        [Fact]
-        public void ReadParameters_WithDataId_AddsWhereAndBind()
-        {
-            var fake = new FakeDbCtrl { NextResult = ParamTable() };
-
-            new DbDataSource(fake, tablePrefix: "OPT_", dataId: "D1").ReadParameters<DsParam>();
-
-            Assert.Equal("SELECT * FROM OPT_DSPARAM WHERE DATA_ID = :DATA_ID", fake.LastSql);
+            Assert.Equal("SELECT lot, eqp, qty FROM demand WHERE data_id = :id", fake.LastSql);
             Assert.Equal("D1", fake.LastParameters.Single().value);
         }
 
         [Fact]
-        public void ReadParameters_MissingColumn_Throws()
-        {
-            var dt = new DataTable();
-            dt.Columns.Add("LOT");
-            dt.Columns.Add("QTY"); // 缺 EQP
-            var fake = new FakeDbCtrl { NextResult = dt };
-
-            var ex = Assert.Throws<InvalidDataException>(() => new DbDataSource(fake).ReadParameters<DsParam>());
-            Assert.Contains("Eqp", ex.Message);
-        }
-
-        [Fact]
-        public void ReadSet_WithoutResolver_ThrowsNotSupported()
-        {
-            var ex = Assert.Throws<NotSupportedException>(() => new DbDataSource(new FakeDbCtrl()).ReadSet("Machine"));
-            Assert.Contains("setSqlResolver", ex.Message);
-        }
-
-        [Fact]
-        public void ReadSet_WithResolver_ReturnsColumn()
+        public void LoadSet_ReturnsFirstColumn()
         {
             var dt = new DataTable();
             dt.Columns.Add("EQP");
@@ -186,9 +167,9 @@ namespace OptimFoundation.Cplex.Tests.Unit
             dt.Rows.Add("E2");
             var fake = new FakeDbCtrl { NextResult = dt };
 
-            var src = new DbDataSource(fake, setSqlResolver: n => $"SELECT DISTINCT {n} FROM T");
+            var members = new DbDataSource(fake).LoadSet("SELECT DISTINCT eqp FROM t ORDER BY eqp");
 
-            Assert.Equal(new[] { "E1", "E2" }, src.ReadSet("EQP"));
+            Assert.Equal(new[] { "E1", "E2" }, members);
         }
     }
 }

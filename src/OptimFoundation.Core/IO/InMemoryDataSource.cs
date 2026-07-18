@@ -23,20 +23,22 @@ namespace OptimFoundation.Core.IO
         /// <summary>註冊一維 set（重複註冊同名 = 覆蓋）。回傳 this 供鏈式呼叫。</summary>
         public InMemoryDataSource AddSet(string name, IEnumerable<string> members)
         {
-            _sets[name] = members.ToList();
+            _sets[SetNaming.Logical(name)] = members.ToList();
             return this;
         }
 
-        public List<TParamClass> ReadParameters<TParamClass>() where TParamClass : ModelElementBase, new()
+        // file 覆寫對記憶體來源無意義（以型別為 key），忽略之——介面相容用
+        public List<TParamClass> LoadParam<TParamClass>(string file = null) where TParamClass : ModelElementBase, new()
         {
             if (_parameters.TryGetValue(typeof(TParamClass), out var rows))
                 return (List<TParamClass>)rows;
             throw new KeyNotFoundException($"[InMemoryDataSource] 未註冊參數型別 {typeof(TParamClass).Name}，請先 AddParameters。");
         }
 
-        public List<string> ReadSet(string name)
+        // set 名統一為檔名形式（Set_{X}）：AddSet / LoadSet 一律去 Set_ 前綴存查，「Product」與「Set_Product」等價
+        public List<string> LoadSet(string name)
         {
-            if (_sets.TryGetValue(name, out var members))
+            if (_sets.TryGetValue(SetNaming.Logical(name), out var members))
                 return members;
             throw new KeyNotFoundException($"[InMemoryDataSource] 未註冊 set '{name}'，請先 AddSet。");
         }

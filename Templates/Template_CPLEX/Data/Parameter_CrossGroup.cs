@@ -1,11 +1,10 @@
-using OptimFoundation.Core;
+using OptimFoundation.Modeling;
+using SandBox.SetClass;
 
 namespace SandBox.Data
 {
-    public class Parameter_CrossGroup : ParameterBase
-    {
-        public string Employee { get; set; }
-        public string Group { get; set; }
-        public double QTY { get; set; }
-    }
+    [OptParam]
+    [OptDim<Set_Employee>("Employee")]
+    [OptDim<Set_Group>("Group")]
+    public partial class Parameter_CrossGroup;
 }

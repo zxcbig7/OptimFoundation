@@ -17,7 +17,7 @@ namespace FJSP_BASIC
             if (args.Length > 0 && args[0] == "gen-csv") { WriteSampleCsv(); return; }
 
             // 資料來源＝CSV：Dataload() 預設從 Data/Parameter_ProcessTime.csv 讀（foundation CsvCtrl，表頭按名對位）。
-            // 換 DB / 記憶體只需 new Dataload(new DbDataSource(...))，模型與驗證 code 全不動。
+            // 換 InMemory 只需 new Dataload(new InMemoryDataSource()...)；DB 參數只能明寫 SQL，用 DbDataSource 專屬 ctor（見 Tutorial 範本）。
             var dataload = new Dataload();
 
             // 同一個 FJSP 模型、兩種組裝寫法，各自求解並代回驗證解；解寫回 Solution/*.csv。

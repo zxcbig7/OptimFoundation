@@ -1,10 +1,10 @@
-using OptimFoundation.Core;
+using OptimFoundation.Modeling;
+using SandBox.SetClass;
 
 namespace SandBox.VariableClass
 {
-    public class VariableB_SixDayWork : VariableBase
-    {
-        public DateTime Date { get; set; }
-        public string Employee { get; set; }
-    }
+    [OptDim<Set_Date>("Date")]
+    [OptDim<Set_Employee>("Employee")]
+    [OptVar]
+    public partial class VariableB_SixDayWork;
 }

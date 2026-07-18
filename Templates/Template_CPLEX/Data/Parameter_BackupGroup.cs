@@ -2,6 +2,8 @@ using OptimFoundation.Modeling;
 
 namespace SandBox.Data
 {
-    [OptParam("Employee", "Group")]
+    [OptParam]
+    [OptDim<Set_Employee>("Employee")]
+    [OptDim<Set_Group>("Group")]
     public partial class Parameter_BackupGroup;
 }

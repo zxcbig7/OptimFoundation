@@ -7,40 +7,53 @@ using System.Linq;
 namespace OptimFoundation.Core.IO
 {
     /// <summary>
-    /// 資料庫資料來源：靠 IDbCtrl 抽象（Oracle 或其他實作皆可）。
-    /// 慣例：參數表名 = {tablePrefix}{型別名}（可用 sqlOverride 換成任意 SELECT）；
-    /// 讀回按「欄名 = property 名」對位（大小寫不敏感），DATA_ID / USER_ID 等多餘欄自動忽略——
-    /// 與 CsvCtrl.BuildParameter 的 header-aware 同一語意，DB 與 CSV 讀法一致。
+    /// 資料庫資料來源（query-only）：靠 IDbCtrl 抽象（Oracle 或其他實作皆可）。
+    /// DB 讀取一律「明寫 Query SQL」——LoadParam / LoadSet 的第一引數就是 SELECT，不猜表名
+    /// （真實 DB 一定要 join / 條件 / 投影 / WHERE data_id）。與 CsvDataSource / InMemoryDataSource 共用 LoadParam / LoadSet
+    /// 命名，但因 SQL ≠ 名稱、語意不同，本類刻意 NOT 實作 IDataSource（避免「同名不同意」的漏抽象）。
+    /// 讀回按「欄名 = property 名」對位（大小寫不敏感），多餘欄忽略；欄名不符用 AS 別名對過去。
     /// </summary>
-    public sealed class DbDataSource : IDataSource
+    public sealed class DbDataSource
     {
         private readonly IDbCtrl _db;
-        private readonly string _tablePrefix;
-        private readonly string _dataId;
-        private readonly Func<string, string> _setSqlResolver;
 
         /// <param name="db">資料庫控制器（如 OracleDBCtrl）</param>
-        /// <param name="tablePrefix">參數表名前綴（表名 = 前綴 + 型別名，一律轉大寫）</param>
-        /// <param name="dataId">非 null 時自動加 WHERE DATA_ID = :id（多情境同表）</param>
-        /// <param name="setSqlResolver">ReadSet 的 SQL 解析器（name → SELECT 單欄語句）；未提供時 ReadSet 丟例外</param>
-        public DbDataSource(IDbCtrl db, string tablePrefix = "", string dataId = null, Func<string, string> setSqlResolver = null)
+        public DbDataSource(IDbCtrl db) => _db = db ?? throw new ArgumentNullException(nameof(db));
+
+        /// <summary>
+        /// 用 SELECT 讀參數（欄名對 property，大小寫不敏感、多餘欄忽略）——與 CsvDataSource.LoadParam 同名，第一引數是 SQL。
+        /// join / 條件 / view / WHERE data_id 都行，欄名不符用 AS 別名對到 property 名。
+        /// </summary>
+        public List<T> LoadParam<T>(string sql, params (string name, object value)[] parameters)
+            where T : ModelElementBase, new()
         {
-            _db = db ?? throw new ArgumentNullException(nameof(db));
-            _tablePrefix = tablePrefix ?? "";
-            _dataId = dataId;
-            _setSqlResolver = setSqlResolver;
+            if (string.IsNullOrWhiteSpace(sql)) throw new ArgumentNullException(nameof(sql));
+            return MapRows<T>(_db.Query(sql, parameters), sql);
         }
 
-        public List<TParamClass> ReadParameters<TParamClass>() where TParamClass : ModelElementBase, new()
+        /// <summary>用 SELECT 讀一維 set（取第一欄）——與 CsvDataSource.LoadSet 同名，第一引數是 SQL。</summary>
+        public List<string> LoadSet(string sql, params (string name, object value)[] parameters)
+        {
+            if (string.IsNullOrWhiteSpace(sql)) throw new ArgumentNullException(nameof(sql));
+            var dt = _db.Query(sql, parameters);
+            return dt.Rows.Cast<DataRow>().Select(r => r.ItemArray[0]?.ToString() ?? "").ToList();
+        }
+
+        /// <summary>
+        /// 用 SELECT 讀整張表 raw DataTable（set/param 以外的通用用途）——與 CsvDataSource.LoadTable 同名，第一引數是 SQL。
+        /// 不做欄名對位 / 轉型，直接回 IDbCtrl.Query 的結果。
+        /// </summary>
+        public DataTable LoadTable(string sql, params (string name, object value)[] parameters)
+        {
+            if (string.IsNullOrWhiteSpace(sql)) throw new ArgumentNullException(nameof(sql));
+            return _db.Query(sql, parameters);
+        }
+
+        // 與 InitClassBySets 相同的順序來源；欄位按名對位（大小寫不敏感），多餘欄忽略
+        private static List<TParamClass> MapRows<TParamClass>(DataTable dt, string sourceDesc)
+            where TParamClass : ModelElementBase, new()
         {
             var type = typeof(TParamClass);
-            string table = (_tablePrefix + type.Name).ToUpperInvariant();
-
-            DataTable dt = _dataId == null
-                ? _db.Query($"SELECT * FROM {table}")
-                : _db.Query($"SELECT * FROM {table} WHERE DATA_ID = :DATA_ID", (":DATA_ID", _dataId));
-
-            // 與 InitClassBySets 相同的順序來源；欄位按名對位（大小寫不敏感），多餘欄忽略
             var props = type.GetProperties();
             var colMap = props.Select(p =>
             {
@@ -49,7 +62,7 @@ namespace OptimFoundation.Core.IO
                     if (string.Equals(dt.Columns[c].ColumnName, p.Name, StringComparison.OrdinalIgnoreCase)) { idx = c; break; }
                 if (idx < 0)
                     throw new InvalidDataException(
-                        $"[DbDataSource] 資料表 {table} 缺少欄位 '{p.Name}'。{type.Name} 需要：{string.Join(", ", props.Select(x => x.Name))}；表內欄位：{string.Join(", ", dt.Columns.Cast<DataColumn>().Select(c => c.ColumnName))}");
+                        $"[DbDataSource] 來源 {sourceDesc} 缺少欄位 '{p.Name}'。{type.Name} 需要：{string.Join(", ", props.Select(x => x.Name))}；回傳欄位：{string.Join(", ", dt.Columns.Cast<DataColumn>().Select(c => c.ColumnName))}");
                 return idx;
             }).ToArray();
 
@@ -64,16 +77,6 @@ namespace OptimFoundation.Core.IO
                 data.Add(instance);
             }
             return data;
-        }
-
-        public List<string> ReadSet(string name)
-        {
-            if (_setSqlResolver == null)
-                throw new NotSupportedException(
-                    $"[DbDataSource] ReadSet('{name}') 需要 setSqlResolver（name → SELECT 單欄 SQL），或改由 Parameter distinct 衍生 set。");
-
-            var dt = _db.Query(_setSqlResolver(name));
-            return dt.Rows.Cast<DataRow>().Select(r => r.ItemArray[0]?.ToString() ?? "").ToList();
         }
     }
 }

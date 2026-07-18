@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -52,6 +53,31 @@ namespace OptimFoundation.Core.IO
         }
 
         /// <summary>
+        /// 讀整張 CSV 為 DataTable（供 set/param 以外的通用用途）：第一列 = 欄名，其餘 = 資料列，全欄型別 string。
+        /// 與 typed 的 BuildParameter 不同——不對 class 對位、不轉型，回原始表格。fileName 帶不帶 .csv 皆可。
+        /// </summary>
+        public static DataTable ReadTable(string fileName)
+        {
+            string path = FolderDir.Data.GetFilePath(EnsureCsv(fileName));
+            var table = new DataTable();
+            var lines = File.ReadAllLines(path, _csvRead).Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
+            if (lines.Length == 0) return table;
+
+            foreach (var col in SplitLine(lines[0]))
+                table.Columns.Add(col.Trim());
+
+            foreach (var line in lines.Skip(1))
+            {
+                var parts = SplitLine(line);
+                var row = table.NewRow();
+                for (int i = 0; i < table.Columns.Count && i < parts.Length; i++)
+                    row[i] = parts[i].Trim();
+                table.Rows.Add(row);
+            }
+            return table;
+        }
+
+        /// <summary>
         /// 讀「key 欄在前、值在最後一欄」的參數檔為字典：key = "@k1@k2@…"、value = 最後一欄。
         /// 最後一欄 parse 不成數字的行（如表頭）自動跳過；無法忽略多餘欄，欄位對名請改用 BuildParameter。
         /// </summary>
@@ -76,7 +102,7 @@ namespace OptimFoundation.Core.IO
         /// 表頭缺任何 property 欄即丟例外——按名對位徹底解掉欄序錯位問題，框架自己輸出的檔（CreateParamTable /
         /// WriteSolution）皆可直接讀回（round-trip）。
         /// 無表頭 → legacy 按 property 宣告順序對位（set 欄在前、QTY 最後）。
-        /// fileName 帶不帶 .csv 皆可；省略時用 {型別名}.csv。
+        /// fileName 帶不帶 .csv 皆可；省略時用 {型別名}.csv（呼叫端可就地指定檔名覆寫慣例）。
         /// TParameter 必須繼承 ModelElementBase 並有無參建構子（properties-only 類別符合此要求）。
         /// </summary>
         public static List<TParameter> BuildParameter<TParameter>(string fileName = null) where TParameter : ModelElementBase, new()
