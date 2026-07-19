@@ -14,6 +14,7 @@ namespace OptimFoundation.Cplex.Tests.Mocks
 
         private static readonly MockConfig _cfg = new();
         public MockEngine() : base(_cfg) { }
+        public MockEngine(ISolverConfig config) : base(config) { }
 
         public override void Configuration(ISolverConfig config) { }
 
@@ -44,8 +45,8 @@ namespace OptimFoundation.Cplex.Tests.Mocks
 
         protected override void SetVariableBounds(string variable, double? lb, double? ub) { }
 
-        public override void Build() => Configuration(Config);
-        public override bool Solve() => true;
+        protected override void BuildCore() => Configuration(Config);
+        protected override bool SolveCore() => true;
         public override double GetObjectiveValue() => 0;
         public override double GetVariableValue(string name) => 0;
         public override void Dispose() { }

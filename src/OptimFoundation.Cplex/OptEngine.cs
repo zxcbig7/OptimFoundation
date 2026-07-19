@@ -647,9 +647,9 @@ namespace OptimFoundation.Cplex
         /// 初始化 CPLEX 模型並套用 Config 參數。
         /// 子類別覆寫時必須先呼叫 base.Build()。
         /// </summary>
-        public override void Build() => Configuration(Config);
+        protected override void BuildCore() => Configuration(Config);
 
-        public override bool Solve()
+        protected override bool SolveCore()
         {
             string proj = _modelName ?? "Model";
 

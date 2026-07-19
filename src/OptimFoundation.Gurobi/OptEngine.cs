@@ -178,9 +178,9 @@ namespace OptimFoundation.Gurobi
 
         #region ISolverEngine 實作
 
-        public override void Build() => Configuration(Config);
+        protected override void BuildCore() => Configuration(Config);
 
-        public override bool Solve()
+        protected override bool SolveCore()
         {
             string proj = (Config as GurobiConfig)?.ProjectName ?? "Model";
 
@@ -408,8 +408,8 @@ namespace OptimFoundation.Gurobi
         public override void Configuration(ISolverConfig config)
             => throw new NotSupportedException("Gurobi DLL 未安裝");
 
-        public override void Build()           => throw new NotSupportedException("Gurobi DLL 未安裝");
-        public override bool Solve()           => throw new NotSupportedException("Gurobi DLL 未安裝");
+        protected override void BuildCore()    => throw new NotSupportedException("Gurobi DLL 未安裝");
+        protected override bool SolveCore()    => throw new NotSupportedException("Gurobi DLL 未安裝");
         public override double GetObjectiveValue()       => throw new NotSupportedException("Gurobi DLL 未安裝");
         public override double GetVariableValue(string name) => throw new NotSupportedException("Gurobi DLL 未安裝");
         public override void Dispose() { }

@@ -19,8 +19,39 @@ namespace OptimFoundation.Core.IO
         private static string EnsureCsv(string fileName)
             => fileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) ? fileName : fileName + ".csv";
 
-        // 統一的行切割：去引號後以逗號切（框架資料值不含逗號；不做完整 CSV 引號跳脫）
-        private static string[] SplitLine(string line) => line.Replace("\"", "").Split(',');
+        // 統一的行切割：RFC4180 逐字元解析——逗號分隔，"…" 包住的欄位允許內含逗號，"" 跳脫成一個字面 "。
+        // 未加引號的欄位照字面取用，不 trim（維持現況行為）。lineNumber 僅供例外訊息使用（預設 0＝不明）。
+        // 不支援欄位內換行：行結束時引號未閉合 → InvalidDataException，訊息含行號與該行內容。
+        private static string[] SplitLine(string line, int lineNumber = 0)
+        {
+            var fields = new List<string>();
+            var sb = new StringBuilder();
+            bool inQuotes = false;
+
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+                if (inQuotes)
+                {
+                    if (c != '"') { sb.Append(c); continue; }
+                    if (i + 1 < line.Length && line[i + 1] == '"') { sb.Append('"'); i++; }
+                    else inQuotes = false;
+                }
+                else if (c == '"') inQuotes = true;
+                else if (c == ',') { fields.Add(sb.ToString()); sb.Clear(); }
+                else sb.Append(c);
+            }
+
+            if (inQuotes)
+                throw new InvalidDataException(
+                    $"[CsvCtrl] 第 {lineNumber} 行引號未閉合，不支援欄位內換行：'{line}'");
+
+            fields.Add(sb.ToString());
+            return fields.ToArray();
+        }
+
+        // Set 檔（單欄）沿用同一套逐字元解析，只是不切欄——整行視為一個欄位，引號 / "" 跳脫規則與 SplitLine 相同。
+        private static string UnquoteLine(string line, int lineNumber) => string.Join(",", SplitLine(line, lineNumber));
 
         public static void ClearData(string fileName)
         {
@@ -47,8 +78,12 @@ namespace OptimFoundation.Core.IO
             var list = new List<TValue>();
             using var sr = new StreamReader(path, _csvRead);
             string line;
+            int lineNum = 0;
             while ((line = sr.ReadLine()) != null)
-                list.Add(parser(line.Replace("\"", "")));
+            {
+                lineNum++;
+                list.Add(parser(UnquoteLine(line, lineNum)));
+            }
             return list;
         }
 
@@ -60,15 +95,18 @@ namespace OptimFoundation.Core.IO
         {
             string path = FolderDir.Data.GetFilePath(EnsureCsv(fileName));
             var table = new DataTable();
-            var lines = File.ReadAllLines(path, _csvRead).Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
+            var lines = File.ReadAllLines(path, _csvRead)
+                .Select((l, idx) => (Line: l, Num: idx + 1))
+                .Where(t => !string.IsNullOrWhiteSpace(t.Line))
+                .ToArray();
             if (lines.Length == 0) return table;
 
-            foreach (var col in SplitLine(lines[0]))
+            foreach (var col in SplitLine(lines[0].Line, lines[0].Num))
                 table.Columns.Add(col.Trim());
 
-            foreach (var line in lines.Skip(1))
+            foreach (var (line, num) in lines.Skip(1))
             {
-                var parts = SplitLine(line);
+                var parts = SplitLine(line, num);
                 var row = table.NewRow();
                 for (int i = 0; i < table.Columns.Count && i < parts.Length; i++)
                     row[i] = parts[i].Trim();
@@ -87,9 +125,11 @@ namespace OptimFoundation.Core.IO
             var data = new Dictionary<string, double>();
             using var sr = new StreamReader(path, _csvRead);
             string line;
+            int lineNum = 0;
             while ((line = sr.ReadLine()) != null)
             {
-                var parts = SplitLine(line);
+                lineNum++;
+                var parts = SplitLine(line, lineNum);
                 if (parts.Length >= 2 && double.TryParse(parts.Last(), NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
                     data["@" + string.Join("@", parts.Take(parts.Length - 1))] = val;
             }
@@ -114,11 +154,14 @@ namespace OptimFoundation.Core.IO
             var props = type.GetProperties();
             var data = new List<TParameter>();
 
-            var lines = File.ReadAllLines(path, _csvRead).Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
+            var lines = File.ReadAllLines(path, _csvRead)
+                .Select((l, idx) => (Line: l, Num: idx + 1))
+                .Where(t => !string.IsNullOrWhiteSpace(t.Line))
+                .ToArray();
             if (lines.Length == 0) return data;
 
             // 表頭偵測：第一行最後一欄 parse 不成數字 → 視為表頭（參數/解檔最後的資料欄必為數值或 USER 字串欄）
-            var firstParts = SplitLine(lines[0]);
+            var firstParts = SplitLine(lines[0].Line, lines[0].Num);
             bool hasHeader = !double.TryParse(firstParts.Last(), NumberStyles.Any, CultureInfo.InvariantCulture, out _);
 
             // colMap[i] = props[i] 的值在哪一欄
@@ -140,9 +183,9 @@ namespace OptimFoundation.Core.IO
                 colMap = Enumerable.Range(0, props.Length).ToArray();
             }
 
-            foreach (var line in lines.Skip(hasHeader ? 1 : 0))
+            foreach (var (line, num) in lines.Skip(hasHeader ? 1 : 0))
             {
-                var parts = SplitLine(line);
+                var parts = SplitLine(line, num);
                 var values = new object[props.Length];
                 for (int i = 0; i < props.Length; i++)
                 {

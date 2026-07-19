@@ -9,8 +9,22 @@ namespace OptimFoundation.Core
     /// <summary>
     /// Set 積木的 marker interface。泛型 attribute（OptVar&lt;T&gt;/OptParam&lt;T&gt;）以
     /// <c>where T : ISetBrick</c> 約束型別參數，讓「引用非積木」變 CS0311 原生 compile error。
+    /// 另兼型別化萃取器的非泛型讀值面：供驗證器在零 runtime reflection 前提下讀 index 值
+    /// （見框架資料防護規格——型別安全的邊界只在這裡做一次型別抹除，之後全走 object[]）。
     /// </summary>
-    public interface ISetBrick { }
+    public interface ISetBrick
+    {
+        int Count { get; }
+
+        /// <summary>本集合的元素型別（SetBase&lt;T&gt; 的 T）。供驗證器辨別 dangling 與 type mismatch（見框架資料防護規格）。</summary>
+        Type ElementType { get; }
+
+        /// <summary>value 是否為本集合成員（先型別檢查再比對，非本集合元素型別一律回 false）。</summary>
+        bool ContainsObject(object value);
+
+        /// <summary>逐一 box 回傳成員（保序），供驗證器組 dangling 檢查用的比對來源。</summary>
+        IEnumerable<object> MembersAsObjects();
+    }
 
     /// <summary>
     /// 索引集合積木基底：一個 Set 一顆積木，宣告名稱與元素型別。實作 <see cref="IEnumerable{T}"/>，
@@ -44,6 +58,8 @@ namespace OptimFoundation.Core
             get { EnsureLoaded(); return _items.Count; }
         }
 
+        public Type ElementType => typeof(T);
+
         /// <summary>索引存取（保序）。積木即唯讀 List：支援 [i] / Count / foreach / LINQ，consumer 免另存 List 視圖。</summary>
         public T this[int index]
         {
@@ -51,6 +67,15 @@ namespace OptimFoundation.Core
         }
 
         public bool Contains(T item) => _index.Contains(item);
+
+        public bool ContainsObject(object value) => value is T t && Contains(t);
+
+        public IEnumerable<object> MembersAsObjects()
+        {
+            EnsureLoaded();
+            foreach (var it in _items)
+                yield return it!;
+        }
 
         /// <summary>
         /// 從名稱可定址來源載入（paved path，CSV / InMemory）：set 名預設 = SetName（類名去 Set_ 前綴），

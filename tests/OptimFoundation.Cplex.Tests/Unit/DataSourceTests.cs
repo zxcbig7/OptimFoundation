@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using OptimFoundation.Core;
 using OptimFoundation.Core.IO;
+using OptimFoundation.Cplex.Tests.Mocks;
 using Xunit;
 
 namespace OptimFoundation.Cplex.Tests.Unit
@@ -103,6 +104,45 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
     }
 
+    // ── CsvSolutionSink batch（無交易語意，Write 直接寫檔、Commit/Dispose 皆 no-op）──
+    // 驗證需求 5：batch 產生的檔案內容須與直接呼叫 WriteSolution 逐字相同（CSV 端零行為變更）。
+    public class CsvSolutionSinkTests : IDisposable
+    {
+        private readonly string _file;
+
+        public CsvSolutionSinkTests()
+        {
+            FolderDir.Solution.CreateFolder();
+            _file = FolderDir.Solution.GetFilePath($"{typeof(VarS).Name}.csv");
+        }
+
+        public void Dispose()
+        {
+            if (File.Exists(_file)) File.Delete(_file);
+        }
+
+        [Fact]
+        public void Batch_ProducesSameFileContent_AsDirectWriteSolution()
+        {
+            var engineDirect = new MockEngine();
+            engineDirect.BuildBVs<VarS>(new[] { "E1", "E2" });
+            new CsvSolutionSink().WriteSolution<VarS>(engineDirect, "D1", "U1");
+            string direct = File.ReadAllText(_file);
+            File.Delete(_file);
+
+            var engineBatch = new MockEngine();
+            engineBatch.BuildBVs<VarS>(new[] { "E1", "E2" });
+            using (var batch = new CsvSolutionSink().BeginBatch("D1", "U1"))
+            {
+                batch.Write<VarS>(engineBatch);
+                batch.Commit();
+            }
+            string viaBatch = File.ReadAllText(_file);
+
+            Assert.Equal(direct, viaBatch);
+        }
+    }
+
     // ── DbDataSource（FakeDbCtrl 回手工 DataTable，不需真 DB）────────────
 
     public class FakeDbCtrl : IDbCtrl
@@ -110,6 +150,19 @@ namespace OptimFoundation.Cplex.Tests.Unit
         public string LastSql = string.Empty;
         public (string name, object value)[] LastParameters = Array.Empty<(string, object)>();
         public DataTable NextResult = new DataTable();
+
+        // ── ExecuteInTransaction / Execute / ExecuteBatch 的假交易語意（供 OracleSolutionSink 批次測試）──
+        // 記錄實際送出的每筆 Execute 呼叫（sql + bind 參數），供斷言「幾筆寫入」。
+        public List<(string sql, (string name, object value)[] parameters)> ExecutedCommands = new();
+        // 記錄實際送出的每次 ExecuteBatch 呼叫（sql + 多列參數），供斷言「批次寫入而非逐列」。
+        public List<(string sql, (string name, object value)[][] rows)> ExecutedBatches = new();
+        public int ExecuteInTransactionCallCount;
+        public bool Committed;
+        public bool RolledBack;
+        // 設定 >=1 時，第 N 次 Execute 呼叫丟例外，模擬「批次中途失敗」。-1（預設）= 永不丟。
+        public int ThrowOnExecuteCallNumber = -1;
+        // 設定 >=1 時，第 N 次 ExecuteBatch 呼叫丟例外，模擬「多變數型別批次中途失敗」。-1（預設）= 永不丟。
+        public int ThrowOnBatchCallNumber = -1;
 
         public DataTable Query(string sql, params (string name, object value)[] parameters)
         {
@@ -121,8 +174,39 @@ namespace OptimFoundation.Cplex.Tests.Unit
         public void Open() { }
         public void Close() { }
         public void NonQuery(string sql, params (string name, object value)[] parameters) { }
-        public int Execute(string sql, params (string name, object value)[] parameters) => 0;
+
+        public int Execute(string sql, params (string name, object value)[] parameters)
+        {
+            ExecutedCommands.Add((sql, parameters));
+            if (ThrowOnExecuteCallNumber == ExecutedCommands.Count)
+                throw new InvalidOperationException($"[FakeDbCtrl] 模擬第 {ExecutedCommands.Count} 筆寫入失敗。");
+            return 0;
+        }
+
         public TResult QueryScalar<TResult>(string sql, params (string name, object value)[] parameters) => default;
+
+        public void ExecuteBatch(string sql, IReadOnlyList<(string name, object value)[]> rows)
+        {
+            ExecutedBatches.Add((sql, rows.ToArray()));
+            if (ThrowOnBatchCallNumber == ExecutedBatches.Count)
+                throw new InvalidOperationException($"[FakeDbCtrl] 模擬第 {ExecutedBatches.Count} 批次寫入失敗。");
+        }
+
+        public void ExecuteInTransaction(Action<IDbCtrl> work)
+        {
+            ExecuteInTransactionCallCount++;
+            try
+            {
+                work(this);
+                Committed = true;
+            }
+            catch
+            {
+                RolledBack = true;
+                throw;
+            }
+        }
+
         public void Dispose() { }
     }
 

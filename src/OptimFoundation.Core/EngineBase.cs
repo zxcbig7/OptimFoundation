@@ -83,8 +83,8 @@ namespace OptimFoundation.Core
         //   AddRangeConstraint — 新增範圍限制式（lb <= expr <= ub）
         //   SetObjective   — 設定目標式方向（Minimize / Maximize）
         //   SetVariableBounds — 直接修改已建立變數的 LB / UB
-        //   Build          — 入口：呼叫 Configuration(Config) 完成初始化
-        //   Solve          — 求解，回傳 bool（true = Optimal or Feasible）
+        //   BuildCore      — 入口：呼叫 Configuration(Config) 完成初始化（由 Build() template method 呼叫）
+        //   SolveCore      — 求解，回傳 bool（true = Optimal or Feasible）（由 Solve() template method 呼叫，前面先跑 PreSolveGuard）
         //   GetObjectiveValue / GetVariableValue / Dispose
         //
         // 可選 override 的 virtual 方法（EngineBase 有 default 實作）：
@@ -103,10 +103,32 @@ namespace OptimFoundation.Core
         protected abstract void SetVariableBounds(TVar variable, double? lb, double? ub);
 
         /// <summary>
-        /// 建立模型的入口，由外部呼叫。建議實作流程：
+        /// 建立模型的入口，由外部呼叫。內部呼叫 BuildCore()（各 engine 實作）。
         /// </summary>>
-        public abstract void Build();
-        public abstract bool Solve();
+        public void Build()
+        {
+            BuildCore();
+        }
+
+        /// <summary>求解入口：先跑 PreSolveGuard()（scale guard），再呼叫 SolveCore()（各 engine 實作）。</summary>
+        public bool Solve()
+        {
+            PreSolveGuard();
+            return SolveCore();
+        }
+
+        protected abstract void BuildCore();
+        protected abstract bool SolveCore();
+
+        // TotalVarCount > Config.ScaleWarnThreshold → Logging.Warn（只警告不阻擋，大但合法的模型不該被擋）。
+        // Config 為 null 時防禦性跳過（不炸）。
+        private void PreSolveGuard()
+        {
+            if (Config == null) return;
+            if (TotalVarCount > Config.ScaleWarnThreshold)
+                Logging.Warn($"[EngineBase] 變數規模警告：TotalVarCount={TotalVarCount} 超過門檻 ScaleWarnThreshold={Config.ScaleWarnThreshold}，模型可能拖慢求解（僅警告，不阻擋）。");
+        }
+
         public abstract double GetObjectiveValue();
         public abstract double GetVariableValue(string name);
         public abstract void Dispose();

@@ -79,6 +79,15 @@ namespace OptimFoundation.Generators
             defaultSeverity: DiagnosticSeverity.Error,
             isEnabledByDefault: true);
 
+        // DataContext 欄位漏掛 attribute → 靜默不註冊（永遠不被驗證）。只在 DataContext 子類欄位掃描路徑觸發（見框架資料防護規格）。
+        private static readonly DiagnosticDescriptor UnregisteredDataMemberRule = new DiagnosticDescriptor(
+            id: "OPTF006",
+            title: "DataContext 欄位引用的型別漏掛 attribute，將被靜默排除於資料驗證外",
+            messageFormat: "{0}",
+            category: "OptimFoundation.DataGuard",
+            defaultSeverity: DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
         // "VariableB_Assign" → "Binary"；非法前綴回 null（呼叫端報 OPTF001）
         private static string? VarTypeFromPrefix(string className)
         {
@@ -176,6 +185,14 @@ namespace OptimFoundation.Modeling
                 Register(context, VarAttr + "`" + n, ExtractVarGeneric);
                 Register(context, ParamAttr + "`" + n, ExtractParamGeneric);
             }
+
+            // C. DataContext 註冊碼：非屬性標記，靠繼承關係掃（見框架資料防護規格）
+            var dataContexts = context.SyntaxProvider.CreateSyntaxProvider(
+                    predicate: static (node, _) => node is ClassDeclarationSyntax cds
+                        && cds.Modifiers.Any(Microsoft.CodeAnalysis.CSharp.SyntaxKind.PartialKeyword),
+                    transform: static (ctx, _) => ExtractDataContext(ctx))
+                .Where(m => m is not null);
+            context.RegisterSourceOutput(dataContexts, static (spc, m) => EmitDataContextRegister(spc, m!));
         }
 
         private static void Register(
@@ -308,6 +325,269 @@ namespace OptimFoundation.Modeling
                 NamingViolation: badPrefix ? ParamNamingRule : notBrick,
                 DiagLocation: symbol.Locations.FirstOrDefault(),
                 Props: props, DiagArg: symbol.Name);
+        }
+
+        // ── C. DataContext 註冊碼提取（新增，見框架資料防護規格）──
+        // 靠繼承關係找 DataContext 子類（非 attribute 標記），為它 emit RegisterAll override。
+
+        private static DataContextEmitModel? ExtractDataContext(GeneratorSyntaxContext ctx)
+        {
+            var cds = (ClassDeclarationSyntax)ctx.Node;
+            if (ctx.SemanticModel.GetDeclaredSymbol(cds) is not INamedTypeSymbol symbol) return null;
+            if (!DerivesFrom(symbol, "OptimFoundation.Core.DataContext")) return null;
+
+            // 多個 partial 宣告時只處理其一（member 已由 symbol.GetMembers() 彙整），避免重複 emit RegisterAll
+            var syntaxRefs = symbol.DeclaringSyntaxReferences;
+            if (syntaxRefs.Length > 1)
+            {
+                var first = syntaxRefs
+                    .OrderBy(r => r.SyntaxTree.FilePath, System.StringComparer.Ordinal)
+                    .ThenBy(r => r.Span.Start)
+                    .First();
+                if (first.SyntaxTree != cds.SyntaxTree || first.Span != cds.Span) return null;
+            }
+
+            var sets = new System.Collections.Generic.List<SetReg>();
+            var parms = new System.Collections.Generic.List<ParamReg>();
+            var diagnostics = new System.Collections.Generic.List<Diagnostic>();
+            var aliases = new System.Collections.Generic.List<(string CustomName, string SetRegisterName)>();
+
+            foreach (var member in symbol.GetMembers())
+            {
+                ITypeSymbol? memberType = member switch
+                {
+                    IFieldSymbol f when !f.IsStatic && f.DeclaredAccessibility == Accessibility.Public => f.Type,
+                    IPropertySymbol p when !p.IsStatic && p.DeclaredAccessibility == Accessibility.Public => p.Type,
+                    _ => null
+                };
+                if (memberType is not INamedTypeSymbol namedType) continue;
+
+                if (IsSetBrick(namedType))
+                {
+                    string regName = namedType.Name.StartsWith("Set_", System.StringComparison.Ordinal)
+                        ? namedType.Name.Substring(4) : namedType.Name;
+                    sets.Add(new SetReg(regName, member.Name));
+                    continue;
+                }
+
+                if (TryGetParamElementType(namedType, out var paramType))
+                {
+                    string[] indexProps = ResolveIndexSetNames(paramType);
+                    string[] numberProps = ResolveNumberPropNames(paramType);
+                    bool fullGrid = paramType.GetAttributes().Any(a =>
+                        a.AttributeClass?.ToDisplayString() == "OptimFoundation.Core.FullGridAttribute");
+                    parms.Add(new ParamReg(member.Name, indexProps, numberProps, fullGrid));
+                    aliases.AddRange(ResolveDimAliases(paramType));
+                    continue;
+                }
+
+                // 靜默跳過防呆：欄位型別看起來是 Set_*/Parameter_* 但漏掛對應 attribute → 不會被 IsSetBrick/
+                // TryGetParamElementType 承認，會被無聲排除於 RegisterAll 之外——升級成 compile error（OPTF006）。
+                if (namedType.Name.StartsWith("Set_", System.StringComparison.Ordinal))
+                {
+                    diagnostics.Add(Diagnostic.Create(UnregisteredDataMemberRule, member.Locations.FirstOrDefault(),
+                        $"'{namedType.Name}' 被 '{symbol.Name}.{member.Name}' 引用但未掛 [OptSet]/[OptSet<T>]，將無法納入資料驗證；請補上 attribute"));
+                    continue;
+                }
+
+                if (IsListLike(namedType, out var elem) && elem.Name.StartsWith("Parameter_", System.StringComparison.Ordinal))
+                {
+                    diagnostics.Add(Diagnostic.Create(UnregisteredDataMemberRule, member.Locations.FirstOrDefault(),
+                        $"'{elem.Name}' 被 '{symbol.Name}.{member.Name}' 引用但未掛 [OptParam]/[OptParam<...>]，將無法納入資料驗證；請補上 attribute"));
+                }
+            }
+
+            return new DataContextEmitModel(NamespaceOf(symbol), symbol.Name, sets.ToArray(), parms.ToArray(), diagnostics.ToArray(), aliases.ToArray());
+        }
+
+        // [OptDim<TSet>("自訂名")] 且自訂名與 TSet 型別推導出的預設 register 名不同時，回傳 (自訂名, 型別推導名)。
+        // 供 EmitDataContextRegister 額外註冊別名：同一顆 Set 被多個自訂維度名引用時（如 PreGroup/Group 皆指向
+        // Set_Group），generator 只會用型別名註冊一次，若不補別名，用自訂名查詢會恆報 MissingSet（見框架資料防護規格）。
+        // 非合法 Set 積木（漏掛 [OptSet]）已由 ResolveDims 報 NotASetBrickRule，這裡略過不重複處理。
+        private static (string CustomName, string SetRegisterName)[] ResolveDimAliases(INamedTypeSymbol paramType)
+        {
+            var dims = paramType.GetAttributes()
+                .Where(a => a.AttributeClass != null && a.AttributeClass.Name == "OptDimAttribute" && a.AttributeClass.IsGenericType)
+                .ToList();
+            if (dims.Count == 0) return System.Array.Empty<(string, string)>();
+
+            var list = new System.Collections.Generic.List<(string, string)>();
+            foreach (var d in dims)
+            {
+                string customName = d.ConstructorArguments.Length > 0
+                    ? d.ConstructorArguments[0].Value?.ToString() ?? string.Empty : string.Empty;
+                var setSym = d.AttributeClass!.TypeArguments.Length == 1 ? d.AttributeClass.TypeArguments[0] : null;
+                if (setSym == null || customName.Length == 0) continue;
+
+                bool isBrick = setSym.GetAttributes().Any(a => a.AttributeClass?.Name == "OptSetAttribute");
+                if (!isBrick) continue;
+
+                string registerName = setSym.Name.StartsWith("Set_", System.StringComparison.Ordinal)
+                    ? setSym.Name.Substring(4) : setSym.Name;
+
+                if (customName != registerName)
+                    list.Add((customName, registerName));
+            }
+            return list.ToArray();
+        }
+
+        // set 積木判定：類別本身掛 [OptSet]/[OptSet&lt;T&gt;]（原始語法即見，不吃同一 pass 內其它 emit 的 base type）
+        private static bool IsSetBrick(INamedTypeSymbol t)
+            => t.GetAttributes().Any(a => a.AttributeClass != null && a.AttributeClass.Name == "OptSetAttribute");
+
+        // List&lt;T&gt; / IReadOnlyList&lt;T&gt; → T（不判斷 T 是否為合法 param，純結構判斷，供兩處共用）
+        private static bool IsListLike(INamedTypeSymbol listType, out INamedTypeSymbol elementType)
+        {
+            elementType = null!;
+            if (!listType.IsGenericType || listType.TypeArguments.Length != 1) return false;
+
+            string originalName = listType.OriginalDefinition.ToDisplayString();
+            bool isListLike = originalName == "System.Collections.Generic.List<T>"
+                || originalName == "System.Collections.Generic.IReadOnlyList<T>";
+            if (!isListLike) return false;
+
+            if (listType.TypeArguments[0] is not INamedTypeSymbol elem) return false;
+            elementType = elem;
+            return true;
+        }
+
+        // List&lt;Parameter_X&gt; / IReadOnlyList&lt;Parameter_X&gt; → Parameter_X（Parameter_X 本身掛 [OptParam]/[OptParam&lt;...&gt;]）
+        private static bool TryGetParamElementType(INamedTypeSymbol listType, out INamedTypeSymbol elementType)
+        {
+            elementType = null!;
+            if (!IsListLike(listType, out var elem)) return false;
+            bool isParam = HasOptParamAttribute(elem);
+            if (!isParam) return false;
+
+            elementType = elem;
+            return true;
+        }
+
+        private static bool HasOptParamAttribute(INamedTypeSymbol t)
+            => t.GetAttributes().Any(a => a.AttributeClass != null && a.AttributeClass.Name == "OptParamAttribute");
+
+        private static bool DerivesFrom(INamedTypeSymbol type, string fullyQualifiedBaseName)
+        {
+            for (var b = type.BaseType; b != null; b = b.BaseType)
+                if (b.ToDisplayString() == fullyQualifiedBaseName) return true;
+            return false;
+        }
+
+        // index-set 屬性規格沿用 Parameter 類別自己產碼時已解析出的來源（ResolveDims/ResolveBricks/字串式），
+        // NEVER 命名猜測——供 ResolveIndexSetNames（註冊 metadata）與 ResolveNumberPropNames（numbersOf 萃取器）共用。
+        private static PropSpec[] ResolveParamIndexProps(INamedTypeSymbol paramType)
+        {
+            var (dimProps, _, hasDims) = ResolveDims(paramType);
+            if (hasDims) return dimProps;
+
+            var optParamAttr = paramType.GetAttributes()
+                .FirstOrDefault(a => a.AttributeClass != null && a.AttributeClass.Name == "OptParamAttribute");
+            if (optParamAttr == null) return System.Array.Empty<PropSpec>();
+
+            if (optParamAttr.AttributeClass!.IsGenericType)
+            {
+                var (props, _) = ResolveBricks(optParamAttr.AttributeClass);
+                return props;
+            }
+
+            if (optParamAttr.ConstructorArguments.Length > 0)
+            {
+                string setsCsv = JoinSets(optParamAttr.ConstructorArguments[0]);
+                if (setsCsv.Length == 0) return System.Array.Empty<PropSpec>();
+                return setsCsv.Split('|').Select(raw =>
+                {
+                    var (name, type, isString) = ParseSet(raw);
+                    return new PropSpec(name, type, isString);
+                }).ToArray();
+            }
+
+            return System.Array.Empty<PropSpec>();
+        }
+
+        private static string[] ResolveIndexSetNames(INamedTypeSymbol paramType)
+            => ResolveParamIndexProps(paramType).Select(p => p.Name).ToArray();
+
+        // numbersOf 萃取器涵蓋的欄位名：index props 裡型別為 double 的 + QTY（若 HasValue）。
+        private static string[] ResolveNumberPropNames(INamedTypeSymbol paramType)
+        {
+            var names = ResolveParamIndexProps(paramType)
+                .Where(p => p.Type == "double")
+                .Select(p => p.Name)
+                .ToList();
+            if (ParamHasValue(paramType)) names.Add("QTY");
+            return names.ToArray();
+        }
+
+        private static bool ParamHasValue(INamedTypeSymbol paramType)
+        {
+            var optParamAttr = paramType.GetAttributes()
+                .FirstOrDefault(a => a.AttributeClass != null && a.AttributeClass.Name == "OptParamAttribute");
+            return optParamAttr == null || ReadHasValue(optParamAttr);
+        }
+
+        private static void EmitDataContextRegister(SourceProductionContext spc, DataContextEmitModel m)
+        {
+            foreach (var d in m.Diagnostics)
+                spc.ReportDiagnostic(d);
+
+            var sb = new StringBuilder();
+            sb.AppendLine("// <auto-generated/>");
+            sb.AppendLine("#nullable enable");
+            sb.AppendLine();
+
+            bool hasNs = m.Namespace.Length > 0;
+            if (hasNs)
+            {
+                sb.Append("namespace ").Append(m.Namespace).AppendLine();
+                sb.AppendLine("{");
+            }
+
+            sb.Append("    public partial class ").Append(m.ClassName).AppendLine();
+            sb.AppendLine("    {");
+            sb.AppendLine("        // 由 AutoSetsGenerator 依繼承關係掃出的 DataContext 子類 emit（見框架資料防護規格）");
+            sb.AppendLine("        protected override void RegisterAll()");
+            sb.AppendLine("        {");
+
+            var registeredSetNames = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal);
+            foreach (var s in m.Sets)
+            {
+                sb.Append("            RegisterSet(\"").Append(s.RegisterName).Append("\", ").Append(s.FieldName).AppendLine(");");
+                registeredSetNames.Add(s.RegisterName);
+            }
+
+            // 同一顆 Set 被多個自訂維度名引用（[OptDim<TSet>("自訂名")]）→ 各自訂名都額外註冊一次別名，
+            // 指向同一顆 Set 欄位（同名只註冊一次）。找不到對應 Set 欄位（使用者沒宣告那顆積木）→ 略過，
+            // 維持現狀讓它報 MissingSet（那是真缺，不該掩蓋）。
+            foreach (var alias in m.Aliases)
+            {
+                if (!registeredSetNames.Add(alias.CustomName)) continue;
+                var targetSet = m.Sets.FirstOrDefault(s => s.RegisterName == alias.SetRegisterName);
+                if (targetSet == null) continue;
+                sb.Append("            RegisterSet(\"").Append(alias.CustomName).Append("\", ").Append(targetSet.FieldName).AppendLine(");");
+            }
+
+            foreach (var p in m.Params)
+            {
+                string idxArr = p.IndexSets.Length == 0
+                    ? "global::System.Array.Empty<string>()"
+                    : "new[] { " + string.Join(", ", p.IndexSets.Select(n => "\"" + n + "\"")) + " }";
+                string indexOf = p.IndexSets.Length == 0
+                    ? "r => global::System.Array.Empty<object>()"
+                    : "r => new object[] { " + string.Join(", ", p.IndexSets.Select(n => "r." + n)) + " }";
+                string numbersOf = p.NumberProps.Length == 0
+                    ? "r => global::System.Array.Empty<(string, double)>()"
+                    : "r => new (string, double)[] { " + string.Join(", ", p.NumberProps.Select(n => "(\"" + n + "\", r." + n + ")")) + " }";
+
+                sb.Append("            RegisterParam(").Append(p.FieldName).Append(", ").Append(idxArr)
+                  .Append(", ").Append(indexOf).Append(", ").Append(numbersOf)
+                  .Append(", fullGrid: ").Append(p.FullGrid ? "true" : "false").AppendLine(");");
+            }
+
+            sb.AppendLine("        }");
+            sb.AppendLine("    }");
+            if (hasNs) sb.AppendLine("}");
+
+            spc.AddSource($"{m.ClassName}.DataContextRegister.g.cs", SourceText.From(sb.ToString(), Encoding.UTF8));
         }
 
         // 把泛型 attribute 的型別參數（Set 積木）解析成 property 規格。回傳 (props, 若有非積木則帶 diagnostic)
@@ -509,5 +789,11 @@ namespace OptimFoundation.Modeling
             bool AddQty, bool AddCtors, string Meta,
             DiagnosticDescriptor? NamingViolation = null, Location? DiagLocation = null,
             PropSpec[]? Props = null, string? DiagArg = null);
+
+        private sealed record SetReg(string RegisterName, string FieldName);
+        private sealed record ParamReg(string FieldName, string[] IndexSets, string[] NumberProps, bool FullGrid);
+        private sealed record DataContextEmitModel(
+            string Namespace, string ClassName, SetReg[] Sets, ParamReg[] Params, Diagnostic[] Diagnostics,
+            (string CustomName, string SetRegisterName)[] Aliases);
     }
 }

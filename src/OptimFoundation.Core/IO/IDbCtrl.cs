@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Data;
 
 namespace OptimFoundation.Core.IO
@@ -33,5 +34,17 @@ namespace OptimFoundation.Core.IO
         /// <summary>查詢單一值（如 COUNT、MAX），轉型為 TResult 回傳。</summary>
         /// <typeparam name="TResult">回傳值型別</typeparam>
         TResult QueryScalar<TResult>(string sql, params (string name, object value)[] parameters);
+
+        /// <summary>在單一 transaction 內執行 work；任一步失敗須全 rollback（見框架資料防護規格輸出 transaction）。</summary>
+        void ExecuteInTransaction(Action<IDbCtrl> work);
+
+        /// <summary>
+        /// 同一句 SQL 套用多列參數，一次送出（批次寫入）。實作應優先使用底層 driver 的批次能力
+        /// （如 Oracle array-bind），避免逐列往返造成效能退化。遵循 ambient transaction（於
+        /// ExecuteInTransaction 期間呼叫時，須併入外層交易）。
+        /// </summary>
+        /// <param name="sql">SQL 語句，bind variable 用 :name 佔位</param>
+        /// <param name="rows">每列一組 (name, value) 參數，各列的 name 集合須一致</param>
+        void ExecuteBatch(string sql, IReadOnlyList<(string name, object value)[]> rows);
     }
 }

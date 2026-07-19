@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace OptimFoundation.Core.IO
@@ -27,5 +28,15 @@ namespace OptimFoundation.Core.IO
     {
         /// <summary>輸出某變數型別的全部解值。dataId / userId 供多情境與稽核欄位（實作可忽略）。</summary>
         void WriteSolution<TVariableClass>(ISolverEngine engine, string dataId = null, string userId = null);
+
+        /// <summary>開一個批次：多變數型別原子寫入。CSV 為 no-op batch，Oracle 為真 transaction。</summary>
+        ISolutionBatch BeginBatch(string dataId = null, string userId = null);
+    }
+
+    /// <summary>單一輸出 transaction 的批次寫入：未 Commit 即 Dispose 視為 rollback。</summary>
+    public interface ISolutionBatch : IDisposable
+    {
+        void Write<TVariableClass>(ISolverEngine engine);
+        void Commit();
     }
 }

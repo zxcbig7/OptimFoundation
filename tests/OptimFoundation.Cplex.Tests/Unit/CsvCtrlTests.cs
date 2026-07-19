@@ -129,5 +129,73 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Single(dict);
             Assert.Equal(4, dict["@LOT1@EQP1"]);
         }
+
+        // ── RFC4180：引號內逗號不裂欄 ────────────────────────────────────
+
+        [Fact]
+        public void BuildParameter_QuotedFieldWithComma_DoesNotSplit()
+        {
+            // Lot 欄含逗號、用引號包住；Eqp/QTY 照常——驗證引號內的逗號不裂欄
+            WriteDataFile("CsvT7.csv", "Lot,Eqp,QTY\n\"a, b\",c,1\n");
+
+            var rows = CsvCtrl.BuildParameter<CsvParam>("CsvT7");
+
+            Assert.Single(rows);
+            Assert.Equal("a, b", rows[0].Lot);
+            Assert.Equal("c", rows[0].Eqp);
+            Assert.Equal(1, rows[0].QTY);
+        }
+
+        // ── RFC4180："" 跳脫成一個字面 " ──────────────────────────────────
+
+        [Fact]
+        public void BuildParameter_EscapedQuote_DecodesToLiteralQuote()
+        {
+            WriteDataFile("CsvT8.csv", "Lot,Eqp,QTY\n\"he said \"\"hi\"\"\",EQP1,2\n");
+
+            var rows = CsvCtrl.BuildParameter<CsvParam>("CsvT8");
+
+            Assert.Single(rows);
+            Assert.Equal("he said \"hi\"", rows[0].Lot);
+        }
+
+        // ── RFC4180：一般無引號行為不變（既有 CSV 不 regression）────────────
+
+        [Fact]
+        public void BuildParameter_PlainUnquotedRow_Unchanged()
+        {
+            WriteDataFile("CsvT9.csv", "Lot,Eqp,QTY\nLOT1,EQP1,5\n");
+
+            var rows = CsvCtrl.BuildParameter<CsvParam>("CsvT9");
+
+            Assert.Single(rows);
+            Assert.Equal("LOT1", rows[0].Lot);
+            Assert.Equal("EQP1", rows[0].Eqp);
+            Assert.Equal(5, rows[0].QTY);
+        }
+
+        // ── RFC4180：欄位內換行不支援 → 未閉合引號丟 InvalidDataException ───
+
+        [Fact]
+        public void BuildParameter_UnclosedQuote_ThrowsInvalidDataException()
+        {
+            WriteDataFile("CsvT10.csv", "Lot,Eqp,QTY\n\"unterminated,EQP1,3\n");
+
+            var ex = Assert.Throws<InvalidDataException>(() => CsvCtrl.BuildParameter<CsvParam>("CsvT10"));
+            Assert.Contains("未閉合", ex.Message);
+            Assert.Contains("不支援欄位內換行", ex.Message);
+        }
+
+        // ── ReadStrSet（單欄 Set 檔）：同一套解析，含逗號引號欄位不裂 ────────
+
+        [Fact]
+        public void ReadStrSet_QuotedFieldWithComma_KeptWhole()
+        {
+            WriteDataFile("Set_CsvT11.csv", "A\n\"Product, Large\"\nC\n");
+
+            var result = CsvCtrl.ReadStrSet("Set_CsvT11.csv");
+
+            Assert.Equal(new[] { "A", "Product, Large", "C" }, result);
+        }
     }
 }

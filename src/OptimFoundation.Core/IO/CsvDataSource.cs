@@ -39,5 +39,35 @@ namespace OptimFoundation.Core.IO
     {
         public void WriteSolution<TVariableClass>(ISolverEngine engine, string dataId = null, string userId = null)
             => CsvCtrl.WriteSolution<TVariableClass>(engine, dataId ?? "", userId ?? "");
+
+        // CSV 逐檔寫本無 transaction 語意：no-op batch，Write 直接呼叫既有 WriteSolution，Commit 空實作，
+        // 保持既有 CSV 輸出行為可用。
+        public ISolutionBatch BeginBatch(string dataId = null, string userId = null)
+            => new CsvSolutionBatch(this, dataId, userId);
+
+        private sealed class CsvSolutionBatch : ISolutionBatch
+        {
+            private readonly CsvSolutionSink _sink;
+            private readonly string _dataId;
+            private readonly string _userId;
+
+            public CsvSolutionBatch(CsvSolutionSink sink, string dataId, string userId)
+            {
+                _sink = sink;
+                _dataId = dataId;
+                _userId = userId;
+            }
+
+            public void Write<TVariableClass>(ISolverEngine engine)
+                => _sink.WriteSolution<TVariableClass>(engine, _dataId, _userId);
+
+            public void Commit()
+            {
+            }
+
+            public void Dispose()
+            {
+            }
+        }
     }
 }
