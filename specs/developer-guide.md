@@ -12,6 +12,7 @@
 3.5. [Set 積木與OptDim逐維宣告（paved path）](#35-set-積木與optdim逐維宣告paved-path)
 4. [Dataload — 資料初始化](#4-dataload--資料初始化)
 4.5. [IDataSource — 資料來源抽象](#45-idatasource--資料來源抽象)
+4.6. [DataContext — 資料防護（驗證 / OptData.Load）](#46-datacontext--資料防護驗證--optdataload)
 5. [VariableCreate — 建立變數（BuildVars 泛型建立）](#5-variablecreate--建立變數buildvars-泛型建立)
 6. [Pool API — 建立限制式](#6-pool-api--建立限制式)
 7. [Objective Function — 目標式](#7-objective-function--目標式)
@@ -220,6 +221,7 @@ public partial class VariableX_Makespan { }
 | 泛型參數塞非積木 class | CS0311（`where T : ISetBrick`，C# 原生） |
 | `[OptSet<T>]` 元素型別非法 | OPTF004 |
 | 引用的型別無 `[OptSet]` | OPTF005 |
+| `DataContext` 子類的 `Set_*`/`Parameter_*` 欄位漏掛 `[OptSet]`/`[OptParam]` | OPTF006（見 §4.6——否則該欄位靜默不註冊、永不受驗） |
 
 ### `SetBase<T>` 契約
 
@@ -229,6 +231,15 @@ public partial class VariableX_Makespan { }
 2. 載入後為空 → `InvalidOperationException`
 3. 二次載入 → `InvalidOperationException`（載入即封存；v1 無 Reload）
 4. 重複成員 → `ArgumentException`
+
+`ISetBrick`（`SetBase<T>` 實作的 marker interface）額外提供型別安全的非泛型讀值面，供 `DataValidator` 在零 runtime reflection 前提下讀值（見 §4.6）：
+
+| 成員 | 用途 |
+| --- | --- |
+| `int Count` | 集合成員數 |
+| `Type ElementType` | 元素型別（`SetBase<T>` 的 `T`），供辨別 dangling 與 type mismatch |
+| `bool ContainsObject(object value)` | 先型別檢查再比對，非本集合元素型別一律回 `false` |
+| `IEnumerable<object> MembersAsObjects()` | 逐一 box 回傳成員（保序），供 `[FullGrid]` 完整性檢查組笛卡兒積 |
 
 ### 資料載入（paved path = Load(IDataSource)，來源回 string 由 ParseElement 依 T 轉型）
 
@@ -292,7 +303,7 @@ public class Dataload
 }
 ```
 
-上面是最基礎的手動初始化寫法（測試 / 小題目）。paved path 用 Set 積木 + `IDataSource` 抽象，見下節。
+上面是最基礎的手動初始化寫法（測試 / 小題目），本身不觸發任何驗證。paved path 用 Set 積木 + `IDataSource` 抽象（見下節），且正式專案的 `Dataload` 應繼承 `DataContext`、透過 `OptData.Load` 建構，才會取得自動資料驗證（見 §4.6）。
 
 ---
 
@@ -328,7 +339,8 @@ public interface IDataSource
 Dataload ctor **每行一句、顯式**——一眼看得出每個 set / parameter 的資料從哪來。慣例走預設，特例就地指定：
 
 ```csharp
-public class Dataload
+// public partial + : DataContext：見 §4.6，讓 OptData.Load 建構後自動驗證資料
+public partial class Dataload : DataContext
 {
     public Set_Lot LOT = new();
     public Set_Operation OPERATION = new();
@@ -347,12 +359,13 @@ public class Dataload
         // Parameter：慣例（型別名）。特例見下方「就地覆寫」
         parameter_ProcessTime = source.LoadParam<Parameter_ProcessTime>();
 
-        ValidateSetsCoverParameters();   // 失同步驗證，明明白白寫在這裡
+        // 不在這裡手寫驗證——OptData.Load 建構完成後自動跑 DataValidator（見 §4.6）
     }
 }
 
-// 換來源（CSV↔InMemory）：new Dataload(new InMemoryDataSource()...)
+// 換來源（CSV↔InMemory）：OptData.Load(() => new Dataload(new InMemoryDataSource()...))
 // DB 來源：DB 參數只能明寫 SQL，故用專屬 ctor（見下方「混合 / DB 來源」），非套進本 IDataSource ctor
+// 建構一律走 OptData.Load(() => new Dataload(...))（blessed path，見 §4.6）；直接 new Dataload(...) 仍可編譯但不觸發驗證
 ```
 
 ### 就地覆寫「吃哪個檔 / Query 哪段 SQL」
@@ -376,25 +389,15 @@ public Dataload(CsvDataSource csv, DbDataSource db)
     LOT.Load(csv, "Set_Lot");                                    // 維度小表放 CSV
     parameter_ProcessTime = db.LoadParam<Parameter_ProcessTime>(  // 主檔放 DB，明寫 Query
         "SELECT lot, operation, eqp, proc_time AS qty FROM route WHERE data_id = :id", (":id", "V1"));
-    ValidateSetsCoverParameters();
+    // 不在這裡手寫驗證——OptData.Load 建構完成後自動跑 DataValidator（見 §4.6）
 }
 ```
 
 **set 名統一（`Core/IO/SetNaming.cs`）**：使用端一律用檔名形式 `Set_{X}`（= 磁碟 `Set_X.csv`、Set 積木類名），各來源在邊界自動轉位址——CSV 讀 `Set_X.csv`、DB 交 resolver 邏輯名 `X`、InMemory 當 key。`"Product"` 與 `"Set_Product"` 經此一律等價，三來源不再各行其是。
 
-### 失同步驗證（自己寫、看得見）
+### 失同步驗證——已收進框架，NEVER 專案端手寫
 
-set 若改由檔案 / 資料表定義，可能與 parameter 失同步；ctor 尾端 MUST 立即驗證，parameter 出現的值必須 ⊆ 對應 set：
-
-```csharp
-private void ValidateSetsCoverParameters()
-{
-    var missing = parameter_ProcessTime.Select(p => p.Lot).Distinct()
-        .Where(v => !LOT.Contains(v)).Select(v => $"Lot '{v}'").ToList();
-    if (missing.Count > 0)
-        throw new InvalidDataException($"[Dataload] parameter 出現不在 set 的值：{string.Join("、", missing)}");
-}
-```
+> **舊版**曾教在 ctor 尾端手寫 `ValidateSetsCoverParameters()`（逐 parameter 手動比對 set），**此寫法已過時**：這類「set 若改由檔案 / 資料表定義，可能與 parameter 失同步」的檢查，連同重複 key、缺格、數值 sanity 等機械邏輯，**2026-07-18 起集中到框架的 `DataContext`/`DataValidator`（見 §4.6）**，`Dataload` 繼承 `DataContext` 並透過 `OptData.Load` 建構即自動取得，涵蓋範圍比手寫版更完整（dangling / type mismatch / duplicate key / missing cell / numeric sanity 一次全報）。**專案端 NEVER 再手寫這類驗證方法。**
 
 ### BigM 由數據推導，NEVER 寫死
 
@@ -404,6 +407,15 @@ BigM 一律從已載入的 Parameter 算出（如「最壞情況全序列排程�
 public double BigM => parameter_ProcessTime
     .GroupBy(p => new { p.Lot, p.Operation })
     .Sum(g => g.Max(p => p.QTY));
+```
+
+若推導涉及除法（比值型 BigM，如「產能上限 / 最小單位工時」），改用 `Numeric.SafeRatio` 防呆除零 / 非有限 / 過大量級（見 §4.6 有完整門檻說明），Tutorial 的實際寫法：
+
+```csharp
+public double BigM => Numeric.SafeRatio(
+    parameter_Capacity.Max(c => c.QTY),
+    parameter_MachineHours.Where(h => h.QTY > 0).Min(h => h.QTY),
+    context: "BigM");
 ```
 
 ### 解回讀：GetSetVarValues 批量取解
@@ -424,6 +436,129 @@ string assignedEqp = EqpSet.FirstOrDefault(e => assign[$"VariableB_Assign@{lot}@
 var sink = new CsvSolutionSink();
 sink.WriteSolution<VariableB_Assign>(engine);   // → Solution/VariableB_Assign.csv
 ```
+
+### 輸出 transaction：多變數型別原子寫入（`BeginBatch`）
+
+單一 `WriteSolution<T>` 逐次呼叫時彼此獨立；若要多個變數型別包進**同一個** transaction（要嘛全寫、要嘛全不寫），改用 `ISolutionSink.BeginBatch` 開一個 `ISolutionBatch`：
+
+```csharp
+using (var batch = new OracleSolutionSink(dbCtrl, "SOLUTION_TABLE").BeginBatch(dataId: "V1"))
+{
+    batch.Write<VariableX_Produce>(engine);
+    batch.Write<VariableB_Setup>(engine);
+    batch.Write<VariableI_Batch>(engine);
+    batch.Commit();   // 未呼叫 Commit 即 Dispose → 整批捨棄，DB 無殘留
+}
+```
+
+- `OracleSolutionSink`：`Write<T>` 先緩衝，`Commit()` 時才把全部緩衝包進單一 `IDbCtrl.ExecuteInTransaction` 一次送出；任一步失敗全 rollback。單一變數型別的實際寫入走 `IDbCtrl.ExecuteBatch`（Oracle 端用 array-bind 一次送出整批列），非逐列 `Execute`——MILP 解動輒數十萬列，逐列 INSERT 會讓輸出從秒級退化成分鐘級。
+- `CsvSolutionSink`：`BeginBatch` 為 no-op batch（逐檔寫、`Commit()` 空實作），行為與直接呼叫 `WriteSolution` 逐字相同。
+- `IDbCtrl` 新增的 primitive：`void ExecuteInTransaction(Action<IDbCtrl> work)`（巢狀呼叫參與外層交易，不重複 begin/commit）、`void ExecuteBatch(string sql, IReadOnlyList<(string name, object value)[]> rows)`。交易編排（ambient 連線/交易、成功 commit、例外 rollback 後 rethrow）集中在 `DBCtrlBase`，與 Oracle 無關；具體驅動只需覆寫 `CreateRawConnection`。
+
+> **誠實標記已知限制**：以上交易編排邏輯與 `OracleSolutionSink` 對 `IDbCtrl` 的呼叫序**已用假 `IDbConnection`/假 `IDbCtrl` 單元測試驗證**；但 `OracleDBCtrl.CreateRawConnection` 對真實 `OracleConnection` 的行為、`ExecuteBatch` 對真實 Oracle 的 array-bind 型別綁定**未對真實 Oracle DB 驗證過**（無可用測試 DB），僅保證編譯與 code review 層級的正確性。本手冊 NEVER 暗示 Oracle 端的 transaction / array-bind 已對真實 DB 驗證。
+
+### CSV 解析：RFC4180（引號 / 逗號 / 跳脫）
+
+`CsvCtrl` 的解析（`SplitLine`，供 `ReadLines`/`ReadTable`/`ReadParameter`/`BuildParameter` 共用）已升級為 RFC4180：
+
+- `"a, b",c` → `["a, b", "c"]`（引號內的逗號不裂欄）
+- `"he said ""hi"""` → `he said "hi"`（`""` 跳脫成一個字面 `"`）
+- 前後空白、無引號欄位行為與舊版一致，不 regression
+- **不支援欄位內換行**：行結束時引號未閉合 → 丟 `InvalidDataException`（訊息含行號），維持逐行讀取，非跨行掃描
+
+---
+
+## 4.6 DataContext — 資料防護（驗證 / OptData.Load）
+
+> 2026-07-18 新增：把「load 之後」的機械邏輯（參照完整性、key 唯一性、數值 sanity……）從各專案手寫、複製，集中進框架寫一次。**LOAD 本身維持顯式手寫**（§4.5 的每行 `.Load()` 一行未改）；改變的只是「驗證」與「建構入口」。
+
+### `Dataload : DataContext` + `OptData.Load`（blessed 建構路徑）
+
+`Dataload` MUST 宣告成 `public partial class Dataload : DataContext`；建構統一走 `OptData.Load`：
+
+```csharp
+public partial class Dataload : DataContext
+{
+    // ... Set 積木 / Parameter 欄位 / ctor 同 §4.5，不需改動 ...
+}
+
+// 建構（Program.cs / 問題入口）：
+var dataload = OptData.Load(() => new Dataload());
+var dataload2 = OptData.Load(() => new Dataload(new InMemoryDataSource()));   // 任意 ctor 皆可，含多來源
+```
+
+```csharp
+public static class OptData
+{
+    public static T Load<T>(Func<T> factory) where T : DataContext;   // 唯一多載，支援任意 ctor
+}
+```
+
+**只有這一個多載**（`Func<T> factory`）；不存在 `Load<T>(IDataSource)` 這種第二多載——換來源 / 混合來源一律靠 `factory` lambda 內自行決定怎麼 `new Dataload(...)`，`OptData.Load` 本身不關心建構細節。
+
+`OptData.Load` 內部：`factory()` 建出實例 → 呼叫 generator 為 `Dataload` emit 的註冊碼（登記每顆 set / 每批 parameter）→ 自動跑 `ValidateData()`。**直接 `new Dataload(...)` 仍可編譯，但不會觸發驗證**——`OptData.Load` 是唯一 blessed path，Tutorial 只示範這條路徑。
+
+### `DataValidator`：五類檢查 + opt-in 完整性，一次全報
+
+建構完成時聚合檢查，任何違規 → 一次丟出 `DataValidationException`（`Issues` 屬性含**全部**問題，不是遇到第一個就中止）：
+
+| Kind | 觸發時機 | 範例訊息 |
+| --- | --- | --- |
+| `MissingSet` | parameter 宣告的 index-set 名找不到對應已註冊的 Set（每個 parameter 只驗一次，不掛在列迴圈——否則零列 parameter + set 名打錯會完全靜默） | `index 欄位 'Product' 找不到對應的 Set（Set 未註冊或名稱打錯）` |
+| `TypeMismatch` | index 欄位值型別與宣告的 Set 元素型別不符（辨別「宣告打錯」而非「值不存在」） | `第 3 列 index 欄位 'Date' 值 '...' 型別為 String，與 Set 'Date' 元素型別 DateTime 不符` |
+| `Dangling` | index 欄位值型別正確，但不在對應 Set 內 | `第 7 列 index 欄位 'Product' 值 'Ghost' 不在 Set 'Product' 內。` |
+| `DuplicateKey` | 同一 parameter 出現重複 index-key | `index key (Desk,2026-08-01) 重複：第 1 列與第 7 列。` |
+| `Numeric` | 任一 `double` 欄位（含 `QTY`）為 `NaN` / `±Infinity` / 超過量級門檻 | 見下方「數值量級門檻」 |
+| `MissingCell`（opt-in，見下） | 標了 `[FullGrid]` 的 parameter 缺格 | `[FullGrid] 缺 1 格（共 6 格）：(Chair,2026-08-02)` |
+
+**專案端 NEVER 再手寫這類驗證**（如舊版 `ValidateSetsCoverParameters()`，見 §4.5）——邏輯零複製，繼承 `DataContext` 即得。
+
+驗證失敗時的例外：
+
+```csharp
+public sealed class DataValidationException : Exception
+{
+    public IReadOnlyList<DataIssue> Issues { get; }   // 每筆：Kind / Parameter / Detail
+}
+```
+
+驗證通過時，`Logging.Info` 印載入摘要（各 set 成員數、各 parameter 列數），非靜默成功。
+
+### `[FullGrid]`：opt-in 完整性檢查
+
+稀疏資料在 MILP 中合法（如「只列有需求的日期」），故完整性檢查**預設不檢查**；某 parameter 語意上必須全格覆蓋時才標 `[FullGrid]`：
+
+```csharp
+[OptParam]
+[FullGrid]
+[OptDim<Set_Product>("Product")]
+[OptDim<Set_Date>("Date")]
+public partial class Parameter_Demand { }
+```
+
+缺格時報 `MissingCell`，訊息列出缺的 `(set₁,set₂,…)` 組合（笛卡兒積過大——超過 1,000,000 格——則不逐一枚舉，改報格數不符，避免記憶體/時間爆掉）。
+
+### `OPTF006`：漏掛 attribute → compile error
+
+`DataContext` 子類（`Dataload`）裡引用的 `Set_*`/`Parameter_*` 型別，若忘記掛 `[OptSet]`/`[OptParam]`，該欄位會被 generator 的註冊碼**靜默排除**——不報錯但永遠不受驗證，是最危險的靜默失效。故升級成 compile error `OPTF006`，訊息教你補上對應 attribute（見 §3.5 編譯期診斷表）。
+
+### `Numeric.SafeRatio`：衍生值的除法防呆
+
+```csharp
+public static double SafeRatio(double numerator, double denominator,
+    double magnitudeCeiling = 1e9, string context = null);
+```
+
+`den == 0` / 結果非有限（`NaN`/`Infinity`）/ `|結果| > magnitudeCeiling` 一律 throw `InvalidOperationException`（訊息含 `context`），否則回傳比值。供 BigM 這類「由資料推導的衍生值」防呆用（見 §4.5「BigM 由數據推導」）。
+
+### 兩個量級門檻，刻意不同、NEVER 統一
+
+| 門檻 | 用途 | 預設值 | 對象 |
+| --- | --- | --- | --- |
+| `Numeric.SafeRatio` 的 `magnitudeCeiling` | 衍生值（如 BigM）的比值 sanity | **1e9**（較嚴） | solver 數值穩定性（BigM 過大會讓 relaxation 鬆弛、branch 爆炸） |
+| `DataValidator.MaxMagnitude` | 原始資料值（parameter 的 `double` 欄位）的數值 sanity | **1e15**（較寬） | 超過此值連 `double` 的整數精度都保不住，任何 solver 都會數值失穩 |
+
+兩者服務不同對象（衍生值 vs 原始值），門檻刻意不同——**NEVER 為了「統一」而改成同一個值**。
 
 ---
 
@@ -667,6 +802,20 @@ var config = new CplexConfig
 | `true` | 即時顯示 CPLEX solver progress（node、gap、iteration） | 完整 CPLEX log + 框架 log |
 | `false` | 只顯示框架 log（ObjVal、Status 等） | 只有框架 log |
 
+### Scale Guard：`Solve()` 前的變數規模警告
+
+`ISolverConfig` 額外提供 `int ScaleWarnThreshold { get; } = 10_000_000`（default interface member，各 Config 實作免改動即繼承此預設，需要時可覆寫）：
+
+```csharp
+public interface ISolverConfig
+{
+    // ... TimeLimit / MipGap / Threads / LogToConsole / LogFilePath ...
+    int ScaleWarnThreshold => 10_000_000;
+}
+```
+
+`engine.Solve()`（見 §12 template method 說明）在真正送出求解前，先比較 `TotalVarCount` 與 `Config.ScaleWarnThreshold`：超過門檻只 `Logging.Warn` 一則（含實際變數數與門檻），**不 throw、不中止**——大但合法的模型不該被擋，只是提醒可能拖慢求解。
+
 ---
 
 ## 10. 執行與結果
@@ -792,14 +941,16 @@ engine.CreateEqSoft(rhs: demand, penalty: 5.0, name: $"Demand@{d:yyyy_MM_dd}@D")
 
 在 `Build()` 後，可以透過 protected 方法動態修改已建立變數的 LB/UB（限繼承 OptEngine 的子類別）：
 
+> **NEVER override `Build()` / `Solve()`**：`EngineBase.Build()`/`Solve()` 現為 **sealed template method**（`Build()` 內呼叫 `BuildCore()`；`Solve()` 先跑 scale guard `PreSolveGuard()` 再呼叫 `SolveCore()`，見 §9），**已不是 `virtual`**，`override void Build()` 會直接 CS0506 compile error。需要客製建模流程（如下例的 PreAssign）時，改覆寫 `BuildCore()`：
+
 ```csharp
 public class MyEngine : OptEngine
 {
     public MyEngine(CplexConfig config) : base(config) { }
 
-    public override void Build()
+    protected override void BuildCore()
     {
-        base.Build();
+        base.BuildCore();
         BuildBVs<VariableB_ShiftAssign>(dates, employees, groups);
 
         // 固定特定排班（強制 PreAssign）
@@ -821,7 +972,7 @@ public class MyEngine : OptEngine
 
 ## 13. 進階：繼承 OptEngine
 
-當需要存取 dual values、追蹤特定限制式物件或擴充 OptEngine 功能時，可以繼承 `OptimFoundation.Cplex.OptEngine`。
+當需要存取 dual values、追蹤特定限制式物件或擴充 OptEngine 功能時，可以繼承 `OptimFoundation.Cplex.OptEngine`。擴充建模流程請覆寫 `BuildCore()`/`SolveCore()`，**NEVER** 嘗試 `override Build()`/`Solve()`（已是 sealed template method，見 §12）。
 
 繼承後可存取以下 protected 成員：
 

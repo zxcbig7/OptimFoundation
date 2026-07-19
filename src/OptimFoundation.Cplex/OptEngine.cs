@@ -645,7 +645,7 @@ namespace OptimFoundation.Cplex
 
         /// <summary>
         /// 初始化 CPLEX 模型並套用 Config 參數。
-        /// 子類別覆寫時必須先呼叫 base.Build()。
+        /// 由 EngineBase.Build() 這個 template method 呼叫；消費端 NEVER override Build()（已非 virtual）。
         /// </summary>
         protected override void BuildCore() => Configuration(Config);
 
