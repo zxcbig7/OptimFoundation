@@ -42,6 +42,24 @@ namespace OptimFoundation.Core
     }
 
     /// <summary>
+    /// 摘要用的單一 set 群組：主名（最早登記的名稱）+ 該 set 實例本身 + 其餘登記名稱（別名）。
+    /// public：供 <see cref="DataContext.GroupSetsByInstance"/>（純函式）與測試共用。
+    /// </summary>
+    public sealed class SetGroup
+    {
+        public string PrimaryName { get; }
+        public ISetBrick Set { get; }
+        public List<string> Aliases { get; }
+
+        public SetGroup(string primaryName, ISetBrick set, List<string> aliases)
+        {
+            PrimaryName = primaryName;
+            Set = set;
+            Aliases = aliases;
+        }
+    }
+
+    /// <summary>
     /// Dataload 的 base：持有 set / param 註冊表，供 DataValidator 消費（見框架資料防護規格）。
     /// 由 generator emit 的 partial override RegisterAll 呼叫 RegisterSet/RegisterParam 登記；
     /// OptData.Load 建構完成後呼叫 Initialize（= RegisterAll + ValidateData）。
@@ -49,12 +67,18 @@ namespace OptimFoundation.Core
     public abstract class DataContext
     {
         private readonly Dictionary<string, ISetBrick> _sets = new Dictionary<string, ISetBrick>();
+        private readonly List<(string Name, ISetBrick Set)> _setRegistrationOrder = new List<(string, ISetBrick)>();
         private readonly List<ParamRegistration> _params = new List<ParamRegistration>();
 
-        /// <summary>登記一顆 set，供驗證 dangling / [FullGrid] 完整性用。</summary>
+        /// <summary>
+        /// 登記一顆 set，供驗證 dangling / [FullGrid] 完整性用。同一顆 set 實例可能被多個名稱登記
+        /// （[OptDim&lt;TSet&gt;("自訂名")] 別名——見框架資料防護規格），別名查找（本字典）不受影響；
+        /// 但登記順序另存一份（含實例本身），供 ValidateData 印摘要時把「同一實例的多個名稱」併成一行、只算一顆 set。
+        /// </summary>
         protected void RegisterSet(string name, ISetBrick set)
         {
             _sets[name] = set;
+            _setRegistrationOrder.Add((name, set));
         }
 
         /// <summary>
@@ -101,9 +125,14 @@ namespace OptimFoundation.Core
 
             Logging.Info("===== 資料載入摘要 =====");
 
-            Logging.Info($"Sets（{_sets.Count}）：");
-            foreach (var kv in _sets)
-                Logging.Info($"  {kv.Key}: {kv.Value.Count} 個成員");
+            var setGroups = GroupSetsByInstance(_setRegistrationOrder);
+            Logging.Info($"Sets（{setGroups.Count}）：");
+            foreach (var g in setGroups)
+            {
+                string aliasSuffix = g.Aliases.Count > 0
+                    ? $"（別名: {string.Join(", ", g.Aliases)}）" : string.Empty;
+                Logging.Info($"  {g.PrimaryName}: {g.Set.Count} 個成員{aliasSuffix}");
+            }
 
             Logging.Info($"Parameters（{_params.Count}）：");
             foreach (var p in _params)
@@ -116,6 +145,35 @@ namespace OptimFoundation.Core
                     Logging.Info($"    第一列 index=[{idxVals}]（型別化萃取器讀值，零反射）");
                 }
             }
+        }
+
+        /// <summary>
+        /// 依「set 實例」（reference equality，非名稱）把登記序列分組：同一顆 set 被多個自訂維度名
+        /// （[OptDim&lt;TSet&gt;("自訂名")] 別名）登記時，只算一顆、只列一行，主名 = 最早登記的名稱、
+        /// 其餘登記名稱併為附註別名。純函式（不碰 instance 狀態），供 ValidateData 印摘要與測試共用——
+        /// 修掉「別名在載入摘要顯示成獨立 set」的顯示誤導（見框架資料防護規格追補）。
+        /// </summary>
+        public static IReadOnlyList<SetGroup> GroupSetsByInstance(
+            IReadOnlyList<(string Name, ISetBrick Set)> registrationsInOrder)
+        {
+            var groups = new Dictionary<ISetBrick, SetGroup>(ReferenceEqualityComparer.Instance);
+            var order = new List<SetGroup>();
+
+            foreach (var (name, set) in registrationsInOrder)
+            {
+                if (groups.TryGetValue(set, out var existing))
+                {
+                    existing.Aliases.Add(name);
+                }
+                else
+                {
+                    var g = new SetGroup(name, set, new List<string>());
+                    groups[set] = g;
+                    order.Add(g);
+                }
+            }
+
+            return order;
         }
 
         // Index 值格式化（僅供摘要顯示；DateTime 統一 yyyy-MM-dd，其餘用 ToString）

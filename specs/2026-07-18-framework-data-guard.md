@@ -61,7 +61,7 @@ modules: [core, generators, cplex, gurobi, templates]
 - [x] parameter 某 index-set 欄位值不在對應 Set 內 → 建構時報「dangling」錯，含 parameter 名 / 欄位 / 違規值 / 所屬 Set。端到端實證：`[Dangling] Parameter_Demand: 第 7 列 index 欄位 'Product' 值 'Ghost' 不在 Set 'Product' 內。`
 - [x] 同一 parameter 出現重複 index-key（如兩列同 `(Product,Date)`）→ 報「duplicate key」錯，含重複的 key。實證：`index key (Desk,2026-08-01) 重複：第 1 列與第 7 列。`
 - [x] 標了 `[FullGrid]` 的 parameter 缺格 → 報缺哪些 `(set₁,set₂,…)` 組合；未標則不檢查完整性（opt-in 已測：稀疏且未標者不誤報）。實證：`[MissingCell] Parameter_Demand: [FullGrid] 缺 1 格（共 6 格）：(Chair,2026-08-02)`
-- [x] 任一 parameter 的 `double` 欄位（含 `QTY`）為 `NaN` / `±Infinity` / 超過量級門檻（**1e15**，與 `SafeRatio` 的 1e9 刻意不同）→ 報「numeric」錯。
+- [x] 任一 parameter 的 `double` 欄位（含 `QTY`）為 `NaN` / `±Infinity` / 超過量級門檻（**1e15**，與 `SafeRatio` 的 1e9 刻意不同）→ 報「numeric」錯。（2026-07-19 修正：初版實作只涵蓋 index props + QTY，非 QTY 的手寫 double 值欄位完全漏檢，見「追加修正」一節）
 - [x] 多個錯誤**一次全報**（聚合），不是遇到第一個就中止；訊息含載入摘要（各 set 成員數、各 param 列數）。
 - [x] 驗證由 generator 註冊的 metadata 驅動，**程式中無 `GetFields()`/`GetProperties()` 掃 Dataload 欄位的 runtime reflection**（index/數值取值改由 generator emit 的編譯期 lambda 萃取）。
 - [x] `Dataload` 的 `.Load(...)` 顯式行**一行未改**；驗證不寫在專案 ctor 內（邏輯零複製）。
@@ -111,6 +111,36 @@ modules: [core, generators, cplex, gurobi, templates]
 - **真實 Oracle 未驗證**：交易編排與 sink wiring 已測，但真連線、array-bind 實際行為、整欄皆 null 時的 `OracleDbType` 推斷 fallback 都沒有測試 DB 可驗。
 - `Templates/Template_CPLEX`、`Templates/Template_Gurobi` 的 pre-existing 編譯錯誤未處理（使用者明確指示不碰，另案）。
 - 多情境（scenario）載入本波不做（見 Out of Scope）。
+
+## 追加修正（2026-07-19）——真實專案遷移踩出的兩個問題
+
+8 個既有專案遷移到本規格的資料防護後，暴露 Tutorial 測不出來的兩個問題（Tutorial 的值欄位剛好都叫 `QTY`、也沒用到別名）：
+
+**問題 1（實質漏洞）：數值 sanity 涵蓋範圍不足**
+`AutoSetsGenerator.ResolveNumberPropNames` 原本只涵蓋「index props 中型別為 double 的」＋「`HasValue=true` 才有的 QTY」。真實專案的值欄位多半**不叫 QTY**（`Profit`/`Required`/`Stock`/`PeopleSupply`…），走 `[OptParam(HasValue=false)]` + 手寫 double 值欄位——這些欄位完全不受數值檢查（NaN / ±Infinity / 超量級皆驗不到），5 個以上專案踩在這個洞上。
+
+修正：`ResolveNumberPropNames` 改為涵蓋「該 Parameter 型別上所有 `double` 型別屬性」，來源三路徑去重、保序：
+
+1. index props 裡型別為 double 的（generator 自己 emit，來源＝attribute 宣告反推）
+2. QTY（generator 自己 emit，當 `HasValue=true`）
+3. **使用者在 partial 另一半手寫的 double 屬性**（宣告期即存在於原始碼，用 `INamedTypeSymbol.GetMembers()` 掃 `IPropertySymbol`，零 runtime reflection）
+
+**涵蓋範圍現況（誠實聲明）**：本次只擴大到 **double** 型別的值欄位。`int`/`decimal` 等其他數值型別的手寫值欄位**仍不納入**數值 sanity 檢查——維持原規格 Out of Scope 的邊界，未來如需涵蓋需另開規格評估（`decimal` 沒有 NaN/Infinity 概念，`int` 溢位語意也不同，不能照搬同一套 sanity 規則）。
+
+**問題 2（顯示誤導）：Set 別名在載入摘要顯示成獨立 set**
+`[OptDim<Set_X>("自訂名")]` 這種自訂維度名會讓 generator 額外註冊一個別名（指向**同一顆** Set 實例），但 `DataContext.ValidateData` 印摘要時把它列成獨立一筆，「Sets（N）」的 N 因此虛高。實例：`MaxWeightIndependentSet` 印出 `Node: 250` 與 `NODE: 250` 兩筆同一顆；`HospitalRostering_Manual` 印出 `Group` 與 `PreGroup`。
+
+修正：`DataContext` 的 set 登記表新增登記序列（`(name, set)` pair，保序），新增純函式 `DataContext.GroupSetsByInstance`（依 reference equality 分組，主名＝最早登記名稱、其餘為別名），`ValidateData` 印摘要改用分組結果——同一顆 Set 只列一次，`Sets（N）` 的 N 為真實 Set 顆數，別名以附註呈現（如 `Group: 5 個成員（別名: PreGroup）`）。別名本身的查找字典（`_sets`）不變，解析行為不退化。
+
+**測試（`tests/OptimFoundation.Cplex.Tests/`）**：
+
+- `Unit/DataValidatorTests.cs`：`Validate_NonQtyHandwrittenValueField_BadValue_ReportsNumeric`（Theory：NaN/+Inf/-Inf/2e15）——驗證器端證明非 QTY 欄位一樣會報 Numeric。
+- `Unit/GeneratorNumericCoverageTests.cs`：**真的走 `AutoSetsGenerator`**（`OptimFoundation.Cplex.Tests.csproj` 新增 `Generators.csproj` 的 Analyzer ProjectReference），宣告 `[OptParam(HasValue=false)]` + 手寫 double 屬性的 Parameter/DataContext，鎖住 generator 端涵蓋範圍——**反向證明**：把 `ResolveNumberPropNames` 還原成舊版（只取 index props + QTY）後，`HandwrittenNonQtyDoubleField_BadValue_ReportsNumeric` 這 4 個 Theory case 全部失敗（`Assert.Throws() Failure: No exception was thrown`），其餘 146 支不受影響；還原修正後 150 支全過。
+- `Unit/DataContextSummaryTests.cs`：`DataContext.GroupSetsByInstance` 純函式測試（無別名各自獨立 / 同一實例兩名稱只列一次+別名 / 三名稱皆別名 / 不同實例縱使內容相同仍分開算）。
+
+**實跑佐證**：`AI-Modeling/Projects/SandwichProduction`（`Profit`/`Required`/`Stock` 皆 `HasValue=false`）用新 dll 實跑，載入摘要正常；臨時把 `Profit = 4` 改成 `Profit = double.NaN` 重建重跑，拋出 `DataValidationException`：`[Numeric] Parameter_SandwichSpec: 第 2 列欄位 'Profit' 為 NaN。`——證明手寫值欄位現在真的受檢查；驗完已還原（`git diff` 零異動）。`AI-Modeling/Projects/MaxWeightIndependentSet` 與 `HospitalRostering_Manual` 用新 dll 實跑，摘要分別印出 `Sets（1）：Node: 250 個成員（別名: NODE）` 與 `Sets（3）：… Group: 5 個成員（別名: PreGroup）…`，且 `Parameter_NightToDay`（`index=[PreGroup,Group]`）解析正常、無 `MissingSet`，驗證別名查找未退化。
+
+**重佈**：`Templates/dlls/` 與 `AI-Modeling/dlls/` 皆已用本次 Release build 重佈（`OptimFoundation.Core.dll` / `OptimFoundation.Cplex.dll` / `OptimFoundation.Generators.dll`）。
 
 ## Module Interactions
 
@@ -233,7 +263,7 @@ public sealed class OracleSolutionSink : ISolutionSink { /* 真 transaction + ar
 ## Edge Cases & Error Handling
 
 - **空 parameter 表**：不算錯（合法「這個 param 這批沒資料」）；但 `[FullGrid]` + 對應 set 非空 → 報缺格。
-- **parameter 有多個 double 欄**：全部納入 numeric sanity，非只 `QTY`。
+- **parameter 有多個 double 欄**：全部納入 numeric sanity，非只 `QTY`（含使用者手寫的非 QTY double 值欄位；`int`/`decimal` 等非 double 型別仍不納入，見「追加修正」一節）。
 - **index-set 欄位型別非 string（DateTime/int）**：比對用 Set 的實際元素型別（`SetBase<T>` 已保序 + `Contains`）。
 - **`OptData.Load` 以外的建構**（直接 `new Dataload()`）：仍可編譯但不觸發驗證 → 文件標明 `OptData.Load` 為 blessed path；Tutorial 只示範 blessed path。
 - **scale guard 與 soft constraint 彈性變數**：`TotalVarCount` 已含框架自動加的 surplus/deficit 變數，門檻判斷用最終值。

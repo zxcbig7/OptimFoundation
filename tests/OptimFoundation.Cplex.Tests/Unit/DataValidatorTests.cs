@@ -315,6 +315,30 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Contains("Prodcut", issue.Detail);
         }
 
+        // ── 數值涵蓋範圍：HasValue=false + 手寫（非 QTY）double 值欄位（見框架資料防護規格追補）──
+        // 真實專案值欄位多半不叫 QTY（Profit/Required/Stock…），走 [OptParam(HasValue=false)] + 手寫 double 屬性。
+        // 這裡直接驗證器端證明：只要該欄位有被納入 ParamRow.Numbers（即 generator 端有正確萃取），
+        // NaN/Infinity/超量級門檻都會被回報 Numeric——generator 端「是否真的納入」由
+        // GeneratorNumericCoverageTests（走真實 AutoSetsGenerator）另外鎖住，見該檔案的反向證明。
+        [Theory]
+        [InlineData(double.NaN)]
+        [InlineData(double.PositiveInfinity)]
+        [InlineData(double.NegativeInfinity)]
+        [InlineData(2e15)]
+        public void Validate_NonQtyHandwrittenValueField_BadValue_ReportsNumeric(double badValue)
+        {
+            var sets = SetsOf(("Product", BuildProductSet("Desk")));
+            // HasValue=false 情境：ParamRow.Numbers 只含手寫欄位（如 Profit），不含 QTY
+            var reg = Reg("Parameter_SandwichProfit", new[] { "Product" }, false,
+                Row(new object[] { "Desk" }, ("Profit", badValue)));
+
+            var issues = DataValidator.Validate(sets, new[] { reg });
+
+            var issue = Assert.Single(issues);
+            Assert.Equal(DataIssueKind.Numeric, issue.Kind);
+            Assert.Contains("Profit", issue.Detail);
+        }
+
         // ── 同一顆 Set 被多個自訂維度名引用（[OptDim<TSet>("自訂名")]）──
         // generator 除了用型別名註冊 Set，還會為每個自訂維度名各別名一次，指向同一顆 Set 欄位；
         // 此處模擬別名註冊後的結果（同一物件登記在兩個鍵下），驗證兩個名字都查得到、不報 MissingSet。

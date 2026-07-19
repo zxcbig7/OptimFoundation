@@ -507,14 +507,32 @@ namespace OptimFoundation.Modeling
         private static string[] ResolveIndexSetNames(INamedTypeSymbol paramType)
             => ResolveParamIndexProps(paramType).Select(p => p.Name).ToArray();
 
-        // numbersOf 萃取器涵蓋的欄位名：index props 裡型別為 double 的 + QTY（若 HasValue）。
+        // numbersOf 萃取器涵蓋的欄位名：該 Parameter 型別上「所有 double 型別屬性」，來源三路徑（去重、保持穩定順序）：
+        //   1) index props 裡型別為 double 的（generator 自己 emit，來源＝attribute 宣告反推，symbol 這時看不到）
+        //   2) QTY（generator 自己 emit，當 HasValue=true，同理不能靠 symbol 看）
+        //   3) 使用者在 partial 另一半手寫的 double 屬性（宣告期即存在於原始碼，symbol 可見，用 GetMembers() 掃）
+        // 這是修掉「數值 sanity 漏掉非 QTY 值欄位」的實質漏洞（見框架資料防護規格追補）：真實專案值欄位多半
+        // 走 [OptParam(HasValue=false)] + 手寫 double 值欄位（如 Profit/Required/Stock），先前完全不受涵蓋。
+        // 非 double 的值欄位（int/decimal 等）本次不納入，維持現狀。
         private static string[] ResolveNumberPropNames(INamedTypeSymbol paramType)
         {
-            var names = ResolveParamIndexProps(paramType)
-                .Where(p => p.Type == "double")
-                .Select(p => p.Name)
-                .ToList();
-            if (ParamHasValue(paramType)) names.Add("QTY");
+            var names = new System.Collections.Generic.List<string>();
+            var seen = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal);
+
+            foreach (var p in ResolveParamIndexProps(paramType).Where(p => p.Type == "double"))
+                if (seen.Add(p.Name)) names.Add(p.Name);
+
+            if (ParamHasValue(paramType) && seen.Add("QTY"))
+                names.Add("QTY");
+
+            foreach (var member in paramType.GetMembers())
+            {
+                if (member is not IPropertySymbol prop) continue;
+                if (prop.IsStatic || prop.DeclaredAccessibility != Accessibility.Public) continue;
+                if (prop.Type.SpecialType != SpecialType.System_Double) continue;
+                if (seen.Add(prop.Name)) names.Add(prop.Name);
+            }
+
             return names.ToArray();
         }
 
