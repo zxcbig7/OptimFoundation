@@ -107,7 +107,7 @@ namespace SandBox.Data
             int year = 2026;
             int month = 1;   // 1~12
             int daysInMonth = DateTime.DaysInMonth(year, month);
-            Random random = new Random();
+            Random random = new Random(42);   // 固定種子：範本教學需要每次跑出同一份需求資料，才能對照解可重現（同 FJSP_BASIC_BRICK 的 seed:42 慣例）
 
             for (int day = 1; day <= daysInMonth; day++)
             {

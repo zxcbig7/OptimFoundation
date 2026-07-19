@@ -9,8 +9,6 @@ namespace FJSP_BASIC_BRICK.SetClass
     [OptSet<string>] 
     public partial class Set_Operation { }
 
-    [OptSet<string>] 
+    [OptSet<string>]
     public partial class Set_Eqp { }
-    [OptSet<DateTime>]
-    public partial class Set_Date { }
 }

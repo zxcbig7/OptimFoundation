@@ -93,8 +93,10 @@ namespace FJSP_BASIC_BRICK
         // ── 求解單一模型並驗證解 ─────────────────────────────────────────
         static void SolveAndVerify(string name, Dataload data, Action<Dataload, OptEngine> buildModel)
         {
+            // timeLimit=90：實測 30/60 秒兩模型皆停在 Feasible（gap 15~50%），90 秒起兩模型各測 3 次全數 Status=Optimal
+            // 且 ObjVal 逐次一致（19），範本教學要可重現的解，故取這個穩定值而非硬湊更短。
             using var model = new OptModel(name)
-                .UseConfig(() => new CplexConfig { epGap = 1e-4, timeLimit = 30, enableLog = false })
+                .UseConfig(() => new CplexConfig { epGap = 1e-4, timeLimit = 90, enableLog = false })
                 .AddModel(engine => buildModel(data, engine))
                 .OnSolved(engine =>
                 {

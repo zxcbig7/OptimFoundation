@@ -17,10 +17,10 @@ namespace MyApp
         static void Main(string[] args)
         {
             // Model1 vs Model2 交叉實驗：dotnet run -- cross
-                CrossExperiment.Run();
-                return;
             if (args.Length > 0 && args[0] == "cross")
             {
+                CrossExperiment.Run();
+                return;
             }
 
             // tuning 實驗環境示範：dotnet run -- experiment
