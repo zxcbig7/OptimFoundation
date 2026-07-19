@@ -23,7 +23,7 @@ namespace SandBox
 
         public RosteringProblem()
         {
-            dataload = new Dataload();
+            dataload = OptData.Load(() => new Dataload());
             _isSuccess = false;
             Logging.SetLogFileName(_projectName);
         }

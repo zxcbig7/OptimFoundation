@@ -1,4 +1,5 @@
 using OptimFoundation.Modeling;
+using SandBox.SetClass;
 
 namespace SandBox.Data
 {

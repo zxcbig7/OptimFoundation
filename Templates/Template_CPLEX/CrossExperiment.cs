@@ -38,7 +38,7 @@ namespace SandBox
             Logging.SetLogFileName("CrossExperiment");
 
             // 資料只讀一次，跨所有 Trial 共用（模型只讀不改）
-            var data = new Dataload();
+            var data = OptData.Load(() => new Dataload());
 
             var exp = new Experiment("rostering-cross", "Model1 vs Model2 × 兩組 solver 設定的交叉實驗");
 

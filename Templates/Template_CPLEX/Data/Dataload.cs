@@ -1,4 +1,5 @@
-﻿using SandBox.VariableClass;
+﻿using SandBox.SetClass;
+using SandBox.VariableClass;
 using OptimFoundation.Cplex;
 
 using OptimFoundation.Core;
@@ -8,7 +9,7 @@ using OptimFoundation.Core.IO;
 
 namespace SandBox.Data
 {
-    public class Dataload
+    public partial class Dataload : DataContext
     {
         // 罰分權重參數
         public double Penalty_SixDay = 1;
@@ -25,6 +26,11 @@ namespace SandBox.Data
         public List<string> Employee = new List<string>();
         public List<string> Group = new List<string>();
         public List<DateTime> Date = new List<DateTime>();
+
+        // Set 積木：與上面的 List 同一份資料，僅供 DataContext 註冊 / 自動驗證用，既有 List 供 constraint 端沿用
+        public Set_Employee EMPLOYEE = new();
+        public Set_Group GROUP = new();
+        public Set_Date DATE = new();
 
         // 模型建構使用的參數
         public List<Parameter_NightToDay> parameter_NightToDay = new List<Parameter_NightToDay>(); // 前一天-今天班別對應成本
@@ -92,6 +98,10 @@ namespace SandBox.Data
 
             parameter_ShiftDemand = CsvCtrl.BuildParameter<Parameter_ShiftDemand>("Parameter_ShiftDemand");
 
+            // CSV 種子資料已覆蓋的日子不再自動產生——同 (Date,Group) 重複會被框架驗證器擋下（DuplicateKey）
+            var seededDates = new HashSet<DateTime>();
+            foreach (var seeded in parameter_ShiftDemand)
+                seededDates.Add(seeded.Date);
 
             //  排程月份
             int year = 2026;
@@ -103,6 +113,8 @@ namespace SandBox.Data
             {
                 DateTime d = new DateTime(year, month, day);
                 Date.Add(d);
+
+                if (seededDates.Contains(d)) continue;   // 這天的需求由 CSV 種子提供
 
                 //每日各班別需求
                 parameter_ShiftDemand.Add(new Parameter_ShiftDemand { Date = d, Group = "D", QTY = random.Next(4, 6) }); // 隨機4~5人需求
@@ -118,7 +130,6 @@ namespace SandBox.Data
             parameter_PreAssign.Add(new Parameter_PreAssign { Date = new DateTime(2026, 1, 1), Employee = "E3", Group = "O" });
             parameter_PreAssign.Add(new Parameter_PreAssign { Date = new DateTime(2026, 1, 2), Employee = "E2", Group = "D" });
             parameter_PreAssign.Add(new Parameter_PreAssign { Date = new DateTime(2026, 1, 2), Employee = "E3", Group = "E" });
-            parameter_PreAssign.Add(new Parameter_PreAssign { Date = new DateTime(2026, 1, 2), Employee = "E3", Group = "E" });
 
 
             #region 資料讀取 - CSV
@@ -128,6 +139,10 @@ namespace SandBox.Data
             //this.Set4 = CSVCtrl.ReadDateSet("Set_Set4.csv");
             //this.parameters_Template = CSVCtrl.BuildParameter<Parameter_Template>("Prarm");
             #endregion
+
+            EMPLOYEE.LoadFrom(Employee);
+            GROUP.LoadFrom(Group);
+            DATE.LoadFrom(Date);
         }
 
         public void WriteToCSV(OptEngine engine)

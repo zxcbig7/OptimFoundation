@@ -15,12 +15,12 @@ namespace Tutorial
     {
         static void Main(string[] args)
         {
-            if (args.Length > 0 && args[0] == "experiment") { ExperimentRunner.Run(new Dataload()); return; }
+            if (args.Length > 0 && args[0] == "experiment") { ExperimentRunner.Run(OptData.Load(() => new Dataload())); return; }
 
             // 換來源示範：InMemoryDataSource 與 CsvDataSource 同一介面，Dataload / 模型全不動
             var dataload = args.Length > 0 && args[0] == "inmemory"
-                ? new Dataload(BuildInMemorySource())
-                : new Dataload();
+                ? OptData.Load(() => new Dataload(BuildInMemorySource()))
+                : OptData.Load(() => new Dataload());
 
             SolveAndReport("Tutorial_ProductMix", dataload);
         }

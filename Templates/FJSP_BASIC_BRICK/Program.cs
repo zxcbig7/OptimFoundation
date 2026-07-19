@@ -18,7 +18,7 @@ namespace FJSP_BASIC_BRICK
 
             // 資料來源＝CSV：Dataload() 預設從 Data/Parameter_ProcessTime.csv 讀（foundation CsvCtrl，表頭按名對位）。
             // 換 DB / 記憶體只需 new Dataload(new DbDataSource(...))，模型與驗證 code 全不動。
-            var dataload = new Dataload();
+            var dataload = OptData.Load(() => new Dataload());
 
             // 同一個 FJSP 模型、兩種組裝寫法，各自求解並代回驗證解；解寫回 Solution/*.csv。
             SolveAndVerify("FJSP_Aggregated", dataload, BuildModelA);

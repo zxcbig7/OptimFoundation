@@ -1,3 +1,4 @@
+using OptimFoundation.Core;
 using OptimFoundation.Cplex;
 
 using SandBox.Data;
@@ -16,7 +17,7 @@ namespace SandBox
     {
         public static OptModel Build()
         {
-            var dataload = new Dataload();
+            var dataload = OptData.Load(() => new Dataload());
 
             return new OptModel("RosteringProblem")
                 .UseConfig(() => new CplexConfig

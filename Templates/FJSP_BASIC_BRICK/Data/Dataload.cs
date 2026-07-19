@@ -9,7 +9,7 @@ namespace FJSP_BASIC_BRICK.Data
 {
     // 資料層唯一入口：ctor 就是「寫讀檔的家」——每行一句、顯式，特例就地指定檔名。
     // 換來源：CSV↔InMemory 只換傳入的 IDataSource（DB query-only 用型別化 DbDataSource，見 Tutorial 範本）。
-    public class Dataload
+    public partial class Dataload : DataContext
     {
         // Set 積木（[OptSet]）：就是 Set，可直接 [i] / Count / foreach / LINQ / 餵 BuildVars
         public Set_Lot LOT = new();
@@ -47,18 +47,6 @@ namespace FJSP_BASIC_BRICK.Data
             OPERATION.Load(source);
             EQP.Load(source);
             parameter_ProcessTime = source.LoadParam<Parameter_ProcessTime>();
-            ValidateSetsCoverParameters();
-        }
-
-        // 載入即 fail fast：parameter 出現的值必須 ⊆ 對應 set
-        private void ValidateSetsCoverParameters()
-        {
-            var missing = new List<string>();
-            missing.AddRange(parameter_ProcessTime.Select(p => p.Lot).Distinct().Where(v => !LOT.Contains(v)).Select(v => $"Lot '{v}'"));
-            missing.AddRange(parameter_ProcessTime.Select(p => p.Operation).Distinct().Where(v => !OPERATION.Contains(v)).Select(v => $"Operation '{v}'"));
-            missing.AddRange(parameter_ProcessTime.Select(p => p.Eqp).Distinct().Where(v => !EQP.Contains(v)).Select(v => $"Eqp '{v}'"));
-            if (missing.Count > 0)
-                throw new InvalidDataException($"[Dataload] Parameter_ProcessTime 出現不在 set 檔的值：{string.Join("、", missing)}");
         }
 
         // 生成 N lots × M ops × K machines 的放大版 FJSP 實例（seeded 決定論）。

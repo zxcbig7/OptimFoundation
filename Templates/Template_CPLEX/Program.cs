@@ -34,7 +34,7 @@ namespace MyApp
             // OptModel（Fluent 管線）打包版：dotnet run -- optmodel
             if (args.Length > 0 && args[0] == "optmodel")
             {
-                var dataload = new Dataload();
+                var dataload = OptData.Load(() => new Dataload());
 
                 var Model1 = new OptModel("RosteringProblem")
                     .UseConfig(() => new CplexConfig
@@ -79,7 +79,7 @@ namespace MyApp
             // OptModel 拆開版（不經 VariableCreate / BuildModel，逐一註冊變數與約束）：dotnet run -- optmodel-expanded
             if (args.Length > 0 && args[0] == "optmodel-expanded")
             {
-                var dataload = new Dataload();
+                var dataload = OptData.Load(() => new Dataload());
                 using (var m = new OptModel("RosteringProblem")
                     .UseConfig(() => new CplexConfig
                     {

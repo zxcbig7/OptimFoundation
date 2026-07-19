@@ -46,7 +46,7 @@ namespace SandBox
                 tune(config);
 
                 // 每個 Trial 用全新 engine（避免狀態跨 Trial 污染），求解後自然 Dispose
-                var dataload = new Dataload();
+                var dataload = OptData.Load(() => new Dataload());
                 using var engine = new OptEngine(config);
                 engine.Build();
                 new VariableCreate(dataload, engine).Build();

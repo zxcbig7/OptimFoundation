@@ -9,7 +9,7 @@ namespace Tutorial.Data
 {
     // 資料層唯一入口：ctor 就是「寫讀檔的家」——每行一句、顯式讀檔。
     // 換來源：CSV↔InMemory 只換傳入的 IDataSource（DB query-only 用型別化 DbDataSource，見 developer-guide）。
-    public class Dataload
+    public partial class Dataload : DataContext
     {
         // Set 積木：三種元素型別 string / DateTime / int
         public Set_Product PRODUCT = new();
@@ -25,8 +25,10 @@ namespace Tutorial.Data
         public List<Parameter_Capacity> parameter_Capacity = new();
 
         // BigM = max Capacity / min{正的 MachineHours}：單班單品產量上界，由數據推導、NEVER 寫死
-        public double BigM => parameter_Capacity.Max(c => c.QTY)
-            / parameter_MachineHours.Where(h => h.QTY > 0).Min(h => h.QTY);
+        public double BigM => Numeric.SafeRatio(
+            parameter_Capacity.Max(c => c.QTY),
+            parameter_MachineHours.Where(h => h.QTY > 0).Min(h => h.QTY),
+            context: "BigM");
 
         // soft 換線預算（demo）：需滿足 3 產品 × 2 日 → 至少 6 次開線 > 4，soft 違反現形
         public double SetupBudget = 4;
