@@ -145,7 +145,7 @@ Set 從 Dataload 的裸 `List<string>` 欄位，升級成標準積木：一個 S
 ### 三步宣告（Set 積木 → Parameter → Variable）
 
 ```csharp
-// 1. Set 積木：一個 Set 一顆，[OptSet] 無參數 = 預設 string
+// 1. Set 積木：一個 Set 一顆，元素型別 MUST 顯式寫出（裸 [OptSet] 仍合法 = [OptSet<string>]，但非預設寫法）
 [OptSet<string>] public partial class Set_Lot { }
 [OptSet<string>] public partial class Set_Operation { }
 [OptSet<string>] public partial class Set_Eqp { }
@@ -220,8 +220,8 @@ public partial class VariableX_Makespan { }
 | --- | --- |
 | 泛型參數塞非積木 class | CS0311（`where T : ISetBrick`，C# 原生） |
 | `[OptSet<T>]` 元素型別非法 | OPTF004 |
-| 引用的型別無 `[OptSet]` | OPTF005 |
-| `DataContext` 子類的 `Set_*`/`Parameter_*` 欄位漏掛 `[OptSet]`/`[OptParam]` | OPTF006（見 §4.6——否則該欄位靜默不註冊、永不受驗） |
+| 引用的型別無 `[OptSet<T>]` | OPTF005 |
+| `DataContext` 子類的 `Set_*`/`Parameter_*` 欄位漏掛 `[OptSet<T>]`/`[OptParam]` | OPTF006（見 §4.6——否則該欄位靜默不註冊、永不受驗） |
 
 ### `SetBase<T>` 契約
 
@@ -540,7 +540,7 @@ public partial class Parameter_Demand { }
 
 ### `OPTF006`：漏掛 attribute → compile error
 
-`DataContext` 子類（`Dataload`）裡引用的 `Set_*`/`Parameter_*` 型別，若忘記掛 `[OptSet]`/`[OptParam]`，該欄位會被 generator 的註冊碼**靜默排除**——不報錯但永遠不受驗證，是最危險的靜默失效。故升級成 compile error `OPTF006`，訊息教你補上對應 attribute（見 §3.5 編譯期診斷表）。
+`DataContext` 子類（`Dataload`）裡引用的 `Set_*`/`Parameter_*` 型別，若忘記掛 `[OptSet<T>]`/`[OptParam]`，該欄位會被 generator 的註冊碼**靜默排除**——不報錯但永遠不受驗證，是最危險的靜默失效。故升級成 compile error `OPTF006`，訊息教你補上對應 attribute（見 §3.5 編譯期診斷表）。
 
 ### `Numeric.SafeRatio`：衍生值的除法防呆
 

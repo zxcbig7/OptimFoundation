@@ -9,7 +9,7 @@ using Xunit;
 
 namespace OptimFoundation.Cplex.Tests.Unit
 {
-    // 測試用積木（模擬 [OptSet] 生成結果：直接繼承 SetBase）
+    // 測試用積木（模擬 [OptSet<T>] 生成結果：直接繼承 SetBase）
     public class Set_City : SetBase<string> { }
 
     // Dataload ctor 顯式讀檔：Load(source, name)（set）/ LoadParam(file)（CSV/InMemory 參數）/ DbDataSource.LoadParam(sql)（DB 參數，query-only）

@@ -67,7 +67,7 @@ modules: [core, generators, cplex, gurobi, templates]
 - [x] `Dataload` 的 `.Load(...)` 顯式行**一行未改**；驗證不寫在專案 ctor 內（邏輯零複製）。
 - [x] **追加**：index-set 名不存在 → 報 `MissingSet`，且**每個 parameter 只驗一次**（NOT 掛在列迴圈上——否則「零列 parameter + set 名打錯」會完全靜默）。
 - [x] **追加**：值型別與 Set 元素型別不符 → 報 `TypeMismatch` 而非 `Dangling`（錯誤訊息指向宣告打錯，不誤導成「值不存在」）。
-- [x] **追加**：`Set_*`/`Parameter_*` 型別漏掛 `[OptSet]`/`[OptParam]` → **compile error `OPTF006`**（否則該欄位靜默不註冊、永不受驗）。
+- [x] **追加**：`Set_*`/`Parameter_*` 型別漏掛 `[OptSet<T>]`/`[OptParam]` → **compile error `OPTF006`**（否則該欄位靜默不註冊、永不受驗）。
 
 **CSV RFC4180**
 - [x] `"a, b",c` 解析成 `["a, b","c"]`（引號內逗號不裂欄）。

@@ -16,7 +16,8 @@ namespace OptimFoundation.Generators
     ///
     /// B. Set 積木 + 泛型引用（paved path）：
     ///     [OptSet&lt;DateTime&gt;] partial class Set_Date {}   → SetBase&lt;DateTime&gt;
-    ///     [OptSet]               partial class Set_Emp {}    → SetBase&lt;string&gt;（無參數 = 預設 string）
+    ///     [OptSet&lt;string&gt;]   partial class Set_Emp {}    → SetBase&lt;string&gt;（元素型別一律顯式寫出）
+    ///     [OptSet]               partial class Set_Emp {}    → SetBase&lt;string&gt;（無參數版仍受支援，但非預設寫法）
     ///     [OptVar&lt;Set_Date, Set_Emp&gt;]                     → VariableBase，property 名/型別從積木自動抓
     ///     [OptParam&lt;Set_Date, Set_Grp&gt;]                   → ParameterBase + QTY + ctor
     ///   泛型 attribute 以 where T : ISetBrick 約束，引用非積木 = CS0311 原生 compile error。

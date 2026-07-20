@@ -43,7 +43,7 @@ Dataload 底板             組合積木 + 三檔位載入（inline / CSV / Orac
 [OptSet<DateTime>]                    // 元素型別直接吃泛型參數
 public partial class Set_Date { }
 
-[OptSet]                              // 無參數版 = 預設 string（最常見情況）
+[OptSet<string>]                      // 元素型別 MUST 顯式寫出，string 也不例外
 public partial class Set_Employee { }
 ```
 
@@ -57,6 +57,7 @@ public partial class Set_Date : global::OptimFoundation.Core.SetBase<global::Sys
 
 - 類名 MUST `Set_<PascalName>`，違反 → OPTF 診斷（沿用 OPTF001/002 機制）
 - 元素型別走泛型 `[OptSet<T>]`，與 `[OptParam<>]`/`[OptVar<>]` 三者語法統一；`OptSetAttribute` 與 `OptSetAttribute<T>` 同名不同 arity 合法並存
+- **寫法定案（2026-07-20）**：無參數版 `[OptSet]` 仍合法、generator 持續視為 `SetBase<string>`（舊 code 不需遷移），但**預設一律寫 `[OptSet<string>]`** —— Why: 宣告處看得出元素型別；兩者 codegen 完全相同，顯式零成本
 - 封閉域由 generator 診斷把守：`T` 不在合法清單（string/DateTime/int…，/sdd 定案）→ OPTF error，訊息列出合法清單 —— Why: C# 無 union constraint，寫不出「只准三種型別」的 `where`
 - attribute 引數不能放 tuple 或裸型別名（C# 限制），這是整套泛型 attribute 設計的由來
 
@@ -133,7 +134,7 @@ public partial class VariableB_ShiftAssign { }   // B 前綴 = Binary（既有�
 ## 5. Generator 運作流程（編譯期，每次 build 自動發生）
 
 ```text
-Step 1  掃描：找出所有掛 [OptSet] / [OptParam] / [OptVar] 的 partial class
+Step 1  掃描：找出所有掛 [OptSet<T>] / [OptParam] / [OptVar] 的 partial class
 
 Step 2  先解析 Set 積木（名稱 & 型態的唯一來源）
         [OptSet<DateTime>] + class 名 Set_Date
@@ -157,7 +158,7 @@ Step 4  生成 body：維度 property（依泛型參數順序）+ QTY（Param �
 | 泛型參數 / `typeof` 指到不存在的 class | CS0246（C# 原生） |
 | Param/Var 泛型參數塞非積木 class | CS0311（`where T : ISetBrick` constraint，C# 原生） |
 | `[OptSet<T>]` 的 `T` 不在合法元素型別清單 | OPTF 診斷（新增）：訊息列出合法清單 |
-| 逃生口 `typeof` 指到沒掛 `[OptSet]` 的 class | OPTF 診斷（新增）：「引用的不是 Set 積木」 |
+| 逃生口 `typeof` 指到沒掛 `[OptSet<T>]` 的 class | OPTF 診斷（新增）：「引用的不是 Set 積木」 |
 | Set/Param/Var 類名前綴違規 | OPTF 診斷（沿用 OPTF001/002 機制） |
 
 ## 6. 成員名稱推導（全機械，唯一命名動作 = 幫積木取名）

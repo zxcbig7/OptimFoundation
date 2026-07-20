@@ -11,7 +11,7 @@ namespace FJSP_BASIC_BRICK.Data
     // 換來源：CSV↔InMemory 只換傳入的 IDataSource（DB query-only 用型別化 DbDataSource，見 Tutorial 範本）。
     public partial class Dataload : DataContext
     {
-        // Set 積木（[OptSet]）：就是 Set，可直接 [i] / Count / foreach / LINQ / 餵 BuildVars
+        // Set 積木（[OptSet<T>]）：就是 Set，可直接 [i] / Count / foreach / LINQ / 餵 BuildVars
         public Set_Lot LOT = new();
         public Set_Operation OPERATION = new();   // 行序 = 加工順序（RoutePrecedence 依此索引）
         public Set_Eqp EQP = new();

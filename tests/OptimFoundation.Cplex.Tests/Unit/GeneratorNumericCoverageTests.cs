@@ -18,6 +18,8 @@ namespace OptimFoundation.Cplex.Tests.Unit
     // ResolveNumberPropNames 的涵蓋範圍。反向證明：把 ResolveNumberPropNames 還原成舊版
     // （只取 index props + QTY）後，本檔測試必須失敗（Profit 不會被納入 numbersOf，NaN 永遠驗不到）。
 
+    // 刻意用無參數版 [OptSet]（非專案端預設的 [OptSet<string>]）：全 solution 只剩這裡走 generator 的
+    // 非泛型分支，改成泛型就沒有任何測試釘住「[OptSet] = SetBase<string>」這個仍受支援的向後相容行為。
     [OptSet]
     public partial class Set_GncItem
     {
