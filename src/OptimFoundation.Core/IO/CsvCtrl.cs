@@ -243,5 +243,91 @@ namespace OptimFoundation.Core.IO
 
             Logging.Info($"[CsvCtrl] Solution exported: {file}");
         }
+
+        /// <summary>
+        /// 把一維 set 的成員寫成 Data/{fileName}.csv（單欄、無表頭、保序）——即 ReadStrSet / SetBase.Load 讀得回的格式。
+        /// 輸出位置就是既有的讀取位置：第一階段解析完不規則來源後寫回 Data/，第二階段 new CsvDataSource() 原封不動就讀得到。
+        /// fileName 省略時用 set.GetType().Name（"Set_Row" 這個檔名形式）——ISetBrick 上沒有 SetName，故走 GetType()。
+        /// </summary>
+        public static void WriteSet(ISetBrick set, string fileName = null)
+        {
+            if (set == null) throw new ArgumentNullException(nameof(set));
+
+            // 先取 Count 觸發 SetBase 的 EnsureLoaded：未載入時在開檔前就丟例外，不留半截檔
+            int count = set.Count;
+
+            string path = FolderDir.Data.GetFilePath(EnsureCsv(SetNaming.File(fileName ?? set.GetType().Name)));
+            bool overwritten = File.Exists(path);
+            FolderDir.Data.CreateFolder();
+
+            using (var sw = new StreamWriter(path, append: false, _csvWrite))
+            {
+                foreach (var member in set.MembersAsObjects())
+                    sw.WriteLine(Quote(FormatValue(member)));
+            }
+
+            Logging.Info($"[CsvCtrl] set written: {path}（rows={count}, overwritten={overwritten}）");
+        }
+
+        /// <summary>
+        /// 把 parameter 列寫成 Data/{fileName}.csv（第一列表頭 = property 名大寫，其後每列一筆）——即 BuildParameter 讀得回的格式。
+        /// fileName 省略時用型別名，與 BuildParameter 的預設一致。
+        /// 欄位來源 MUST 是 typeof(TParameter).GetProperties()（與 BuildParameter / InitClassBySets 同一來源）——
+        /// NEVER 用 ReflectionHelper.GetMemberNames，它會撈進 field 與 static member，round-trip 會對不上欄。
+        /// </summary>
+        public static void WriteParam<TParameter>(IReadOnlyList<TParameter> rows, string fileName = null)
+            where TParameter : ModelElementBase
+        {
+            if (rows == null) throw new ArgumentNullException(nameof(rows));
+
+            var props = typeof(TParameter).GetProperties();
+            if (props.Length == 0)
+                throw new InvalidOperationException($"[CsvCtrl] {typeof(TParameter).Name} 沒有任何 public property，無法輸出。");
+
+            string path = FolderDir.Data.GetFilePath(EnsureCsv(fileName ?? typeof(TParameter).Name));
+            bool overwritten = File.Exists(path);
+            FolderDir.Data.CreateFolder();
+
+            using (var sw = new StreamWriter(path, append: false, _csvWrite))
+            {
+                // 表頭欄名大寫：與 CreateParamTable / WriteSolution 一致；BuildParameter 按名對位時大小寫不敏感
+                sw.WriteLine(string.Join(",", props.Select(p => p.Name.ToUpperInvariant())));
+
+                foreach (var row in rows)
+                    sw.WriteLine(string.Join(",", props.Select(p => Quote(FormatValue(p.GetValue(row))))));
+            }
+
+            Logging.Info($"[CsvCtrl] param written: {path}（rows={rows.Count}, overwritten={overwritten}）");
+        }
+
+        // 值 → CSV 欄位字串。數值一律 InvariantCulture（double 用 "R" round-trip 格式，與 WriteSolution 同）；
+        // DateTime 固定 yyyy-MM-dd，與 ModelElementBase.ToString() 的變數 key 格式一致。
+        private static string FormatValue(object value)
+        {
+            switch (value)
+            {
+                case null:
+                    return "";
+                case DateTime d when d.TimeOfDay != TimeSpan.Zero:
+                    // index set 的粒度只到日（變數 key 就是 yyyy-MM-dd），靜默截掉時分秒會讓 round-trip 悄悄失真
+                    throw new NotSupportedException($"[CsvCtrl] 不支援帶時分秒的 DateTime：{d:O}——index 粒度只到日。");
+                case DateTime d:
+                    return d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                case double n:
+                    return n.ToString("R", CultureInfo.InvariantCulture);
+                case float f:
+                    return f.ToString("R", CultureInfo.InvariantCulture);
+                case IFormattable formattable:
+                    return formattable.ToString(null, CultureInfo.InvariantCulture);
+                default:
+                    return value.ToString();
+            }
+        }
+
+        // 與 SplitLine 對稱的 quoting：含逗號 / 引號 / 前後空白才包引號，內含的 " 跳脫成 ""
+        private static string Quote(string field)
+            => field.IndexOf(',') >= 0 || field.IndexOf('"') >= 0 || field != field.Trim()
+                ? "\"" + field.Replace("\"", "\"\"") + "\""
+                : field;
     }
 }
