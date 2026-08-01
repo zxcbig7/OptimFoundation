@@ -22,14 +22,17 @@ namespace OptimFoundation.Core
             Converters = { new JsonStringEnumConverter() }                // SolveStatus 以字串輸出
         };
 
+        /// <summary>輸出格式為 JSON。</summary>
         public ExpWriterType Extension => ExpWriterType.JSON;
 
+        /// <summary>把整個 Experiment 序列化覆寫到 path（UTF-8 無 BOM）。累積語意由呼叫端先合併後再寫。</summary>
         public void Write(Experiment experiment, string path)
         {
             string json = JsonSerializer.Serialize(experiment, _opts);
             File.WriteAllText(path, json, new UTF8Encoding(false));
         }
 
+        /// <summary>讀回既有實驗；檔案不存在或內容空白回 null（不丟例外）。</summary>
         public Experiment Read(string path)
         {
             if (!File.Exists(path)) return null;

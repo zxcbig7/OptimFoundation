@@ -112,34 +112,60 @@ using System;
 namespace OptimFoundation.Modeling
 {
     // ── 字串式（逃生口 / 遷移用），原封保留 ──
+
+    /// <summary>
+    /// 以 set 名稱字串標記變數類別，generator 據此生成各維度 property。
+    /// 逃生口用法——set 有對應積木類別時 ALWAYS 改用泛型版 OptVar&lt;TSet1, …&gt;，才享有編譯期檢查。
+    /// </summary>
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
     public sealed class OptVarAttribute : Attribute
     {
+        /// <summary>各維度的 set 名；順序即生成 property 的順序，也是變數 key 的組成順序。</summary>
         public string[] Sets { get; }
+
+        /// <summary>依序列出各維度的 set 名。</summary>
         public OptVarAttribute(params string[] sets) { Sets = sets; }
     }
 
+    /// <summary>
+    /// 以 set 名稱字串標記參數類別（字串式逃生口，同 OptVarAttribute 的取捨）。
+    /// </summary>
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
     public sealed class OptParamAttribute : Attribute
     {
+        /// <summary>各維度的 set 名；順序即生成 property 的順序。</summary>
         public string[] Sets { get; }
+
         /// <summary>true（預設）會生成 QTY 值欄位；純 key 參數設 false。</summary>
         public bool HasValue { get; set; } = true;
+
+        /// <summary>依序列出各維度的 set 名。</summary>
         public OptParamAttribute(params string[] sets) { Sets = sets; }
     }
 
     // ── Set 積木：元素型別由泛型參數帶（無參數 = 預設 string） ──
+
+    /// <summary>標記這個類別是一顆 set 積木，成員型別為 string。</summary>
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
     public sealed class OptSetAttribute : Attribute { }
 
+    /// <summary>標記這個類別是一顆 set 積木，成員型別為 T（支援 string / DateTime / int / long / double / decimal）。</summary>
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
     public sealed class OptSetAttribute<T> : Attribute { }
 
     // ── 具名維度：同 set 多維度 / 自訂 index 名。泛型 = 來源 set（直接綁，不 alias），字串 = 維度名 ──
+
+    /// <summary>
+    /// 為某個維度取自訂名稱，來源 set 由泛型參數 TSet 指定。
+    /// 用於同一顆 set 當多個維度的情形（例：來源站 / 目的站都是 Set_Station），可重複標記多次。
+    /// </summary>
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
     public sealed class OptDimAttribute<TSet> : Attribute where TSet : global::OptimFoundation.Core.ISetBrick
     {
+        /// <summary>這個維度的名稱，會成為生成的 property 名與 CSV / DB 欄名。</summary>
         public string Name { get; }
+
+        /// <summary>指定維度名稱。</summary>
         public OptDimAttribute(string name) { Name = name; }
     }
 
@@ -151,9 +177,16 @@ namespace OptimFoundation.Modeling
                 string constraints = string.Join(" ", Enumerable.Range(1, n)
                     .Select(i => $"where T{i} : global::OptimFoundation.Core.ISetBrick"));
 
-                sb.Append($@"    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+                sb.Append($@"    /// <summary>
+    /// 標記變數類別的維度（paved path）：泛型參數依序為各維度的 set 積木型別，generator 據此生成 property。
+    /// 型別不是積木會直接 compile error（CS0311），比字串式早一步抓到錯。
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
     public sealed class OptVarAttribute<{tparams}> : Attribute {constraints} {{ }}
 
+    /// <summary>
+    /// 標記參數類別的維度（paved path）：泛型參數依序為各維度的 set 積木型別。
+    /// </summary>
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
     public sealed class OptParamAttribute<{tparams}> : Attribute {constraints}
     {{
@@ -167,6 +200,11 @@ namespace OptimFoundation.Modeling
             return sb.ToString();
         }
 
+        /// <summary>
+        /// generator 進入點：先把 attribute 定義注入使用端編譯（PostInitialization，故使用端不需引用額外組件），
+        /// 再依各 attribute 分別註冊產碼管線——字串式 OptVar / OptParam（逃生口）、OptSet 積木、
+        /// 泛型 OptVar / OptParam（arity 1..6）與 OptDim 具名維度。
+        /// </summary>
         public void Initialize(IncrementalGeneratorInitializationContext context)
         {
             context.RegisterPostInitializationOutput(ctx =>

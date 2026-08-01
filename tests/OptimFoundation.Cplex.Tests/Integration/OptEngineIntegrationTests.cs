@@ -8,6 +8,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
     /// 需要 CPLEX DLL 才能執行。若 DLL 不存在，全部 Skip。
     /// 執行：dotnet test --filter Category=Integration
     /// </summary>
+    [Collection("Logging")]
     public class OptEngineIntegrationTests
     {
         private static readonly bool CplexAvailable =
@@ -49,6 +50,27 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.True(solved);
             Assert.Equal(SolveStatus.Optimal, engine.Status);
             Assert.Equal(3.0, engine.GetObjectiveValue(), precision: 5);
+        }
+
+        [Fact]
+        public void SolverLog_ConsoleDisabled_IsStillPersisted()
+        {
+            if (!CplexAvailable) return;
+            string tag = "SolverLogFileOnly_" + Guid.NewGuid().ToString("N");
+            Logging.SetLogFileName(tag);
+            using var engine = BuildEngine();
+            engine.BuildCVs<VarS>(new[] { "x" });
+            engine.AddLHS(1.0, new VarS { S = "x" });
+            engine.CreateMinimize();
+
+            engine.Solve();
+
+            string file = Directory.GetFiles(FolderDir.Log.GetPath(), $"{tag}_*.txt")
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .First();
+            using var fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(fs);
+            Assert.Contains("[CPLEX Log]", reader.ReadToEnd());
         }
 
         [Fact(DisplayName = "簡單 MILP：Binary x，min -x s.t. x <= 1，解 = 1")]

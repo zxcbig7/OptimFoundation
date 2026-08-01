@@ -11,6 +11,7 @@ namespace OptimFoundation.Cplex.Tests.Mocks
         public readonly List<string> BuiltConstraints = new();
         public readonly List<(string Name, double Lb, double Ub, VarType Type)> BuiltVars = new();
         public ObjectiveSense? ObjectiveSenseResult { get; private set; }
+        public override int ConstraintCount => BuiltConstraints.Count;
 
         private static readonly MockConfig _cfg = new();
         public MockEngine() : base(_cfg) { }

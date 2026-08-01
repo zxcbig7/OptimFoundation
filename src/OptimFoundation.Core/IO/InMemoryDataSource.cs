@@ -27,7 +27,8 @@ namespace OptimFoundation.Core.IO
             return this;
         }
 
-        // file 覆寫對記憶體來源無意義（以型別為 key），忽略之——介面相容用
+        /// <summary>取先前以 AddParameters 註冊的參數列。file 參數對記憶體來源無意義（以型別為 key），僅為介面相容而保留。</summary>
+        /// <exception cref="KeyNotFoundException">該參數型別尚未註冊。</exception>
         public List<TParamClass> LoadParam<TParamClass>(string file = null) where TParamClass : ModelElementBase, new()
         {
             if (_parameters.TryGetValue(typeof(TParamClass), out var rows))
@@ -35,7 +36,8 @@ namespace OptimFoundation.Core.IO
             throw new KeyNotFoundException($"[InMemoryDataSource] 未註冊參數型別 {typeof(TParamClass).Name}，請先 AddParameters。");
         }
 
-        // set 名統一為檔名形式（Set_{X}）：AddSet / LoadSet 一律去 Set_ 前綴存查，「Product」與「Set_Product」等價
+        /// <summary>取先前以 AddSet 註冊的 set 成員。名稱去 Set_ 前綴後比對，故 "Product" 與 "Set_Product" 等價。</summary>
+        /// <exception cref="KeyNotFoundException">該 set 尚未註冊。</exception>
         public List<string> LoadSet(string name)
         {
             if (_sets.TryGetValue(SetNaming.Logical(name), out var members))

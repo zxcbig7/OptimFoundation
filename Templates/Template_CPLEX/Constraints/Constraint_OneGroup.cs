@@ -34,11 +34,9 @@ namespace SandBox.Constraints
 
                     _engine.AddRHS(1);
                     _engine.CreateEqual($"{ConstraintName}@{d:yyyy_MM_dd}@{e}");
-                    ConstraintCount++;
                 });
             });
 
-            Logging.Info($"[{ConstraintName}] {ConstraintCount}");
         }
     }
 }

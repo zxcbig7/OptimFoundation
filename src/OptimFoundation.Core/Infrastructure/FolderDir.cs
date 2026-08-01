@@ -3,14 +3,31 @@ using System.IO;
 
 namespace OptimFoundation.Core
 {
+    /// <summary>
+    /// 框架固定的資料夾配置：全部掛在執行檔目錄下，一個屬性對應一個用途。
+    /// 各資料夾在需要時才建立（寫入端自行呼叫 CreateFolder），不會在啟動時全部生出來。
+    /// </summary>
     public class FolderDir
     {
+        /// <summary>輸入資料（參數 CSV、set 檔）。唯一的「讀」資料夾，不會被保留期清理掃到。</summary>
         public static ProjFolder Data = new ProjFolder("Data");
+
+        /// <summary>解輸出的 CSV（CsvSolutionSink 寫這裡）。</summary>
         public static ProjFolder Solution = new ProjFolder("Solution");
+
+        /// <summary>框架與 solver 的 log 檔。</summary>
         public static ProjFolder Log = new ProjFolder("Logs");
+
+        /// <summary>模型匯出檔（.lp / .mps）。</summary>
         public static ProjFolder Model = new ProjFolder("Models");
+
+        /// <summary>infeasible 時的 conflict / IIS 分析結果。</summary>
         public static ProjFolder IIS = new ProjFolder("IISs");
+
+        /// <summary>solver 的解檔（.sol）。</summary>
         public static ProjFolder Sol = new ProjFolder("Sols");
+
+        /// <summary>實驗記錄（.csv / .json / -trajectory.csv）。</summary>
         public static ProjFolder Experiment = new ProjFolder("Experiments");
 
         /// <summary>框架產生的輸出資料夾（不含輸入用的 Data），供保留期清理逐一掃描。</summary>
@@ -25,6 +42,7 @@ namespace OptimFoundation.Core
             return total;
         }
 
+        /// <summary>單一資料夾的路徑計算與檔案操作；不持有狀態，只記資料夾名。</summary>
         public class ProjFolder
         {
             /// <summary>執行檔所在目錄（AppDomain.BaseDirectory）</summary>
@@ -32,16 +50,14 @@ namespace OptimFoundation.Core
 
             private readonly string _folderName;
 
+            /// <summary>指定資料夾名（相對於執行檔目錄）；此時不建立實體資料夾。</summary>
             public ProjFolder(string folderName)
             {
                 _folderName = folderName;
             }
 
 
-            /// <summary>
-            /// 取得資料夾完整路徑。ProjectPath + folderName
-            /// </summary>
-            /// <returns></returns>
+            /// <summary>取得資料夾完整路徑（ProjectPath + folderName）；不檢查是否存在。</summary>
             public string GetPath() => Path.Combine(ProjectPath, _folderName);
 
             /// <summary>
@@ -52,13 +68,11 @@ namespace OptimFoundation.Core
                 Directory.CreateDirectory(GetPath());
             }
 
-            /// <summary>
-            /// 建立資料夾，若已存在則不 throw。
-            /// </summary>
-            /// <param name="fileName"></param>
-            /// <returns></returns>
+            /// <summary>組出這個資料夾下某檔案的完整路徑；不建立資料夾也不建立檔案。</summary>
             public string GetFilePath(string fileName) => Path.Combine(GetPath(), fileName);
 
+            /// <summary>建立空檔（連同資料夾）。檔案已存在時不覆寫、直接回 false。</summary>
+            /// <returns>true = 這次真的建了新檔；false = 檔案本來就在。</returns>
             public bool TryCreateFile(string fileName)
             {
                 string path = GetFilePath(fileName);
@@ -76,6 +90,8 @@ namespace OptimFoundation.Core
 
                 DateTime cutoff = DateTime.Now.AddDays(-retentionDays);
                 int deleted = 0;
+                int skipped = 0;
+                string firstFailure = null;
                 foreach (var file in Directory.GetFiles(dir))
                 {
                     try
@@ -86,9 +102,19 @@ namespace OptimFoundation.Core
                             deleted++;
                         }
                     }
-                    catch (IOException) { }                 // 檔案使用中，跳過
-                    catch (UnauthorizedAccessException) { } // 無權限，跳過
+                    catch (IOException ex)
+                    {
+                        skipped++;
+                        firstFailure ??= $"{Path.GetFileName(file)}: {ex.Message}";
+                    }
+                    catch (UnauthorizedAccessException ex)
+                    {
+                        skipped++;
+                        firstFailure ??= $"{Path.GetFileName(file)}: {ex.Message}";
+                    }
                 }
+                if (skipped > 0)
+                    Logging.Warn($"[OUTPUT_PURGE_SKIPPED] 部分舊檔未清除 | folder={_folderName} count={skipped} reason={firstFailure} result=kept");
                 return deleted;
             }
         }

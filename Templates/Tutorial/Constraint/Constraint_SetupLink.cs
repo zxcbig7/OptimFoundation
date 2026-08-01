@@ -38,10 +38,8 @@ namespace Tutorial.Constraint
                         _engine.AddLHS(1.0, new VariableX_Produce { Product = product, Date = date, Shift = shift });
                         _engine.AddRHS(_bigM, new VariableB_Setup { Product = product, Date = date, Shift = shift });
                         _engine.CreateLessEqual($"{ConstraintName}@{product}@{date:yyyy-MM-dd}@{shift}");
-                        ConstraintCount++;
                     }
 
-            Logging.Info($"[{ConstraintName}] {ConstraintCount}");
         }
     }
 }

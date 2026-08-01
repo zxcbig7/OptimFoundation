@@ -22,9 +22,7 @@ namespace FJSP_BASIC_BRICK.Constraint
         {
             _engine.AddLHS(1.0, new VariableX_Makespan());
             _engine.CreateRange(_floor, _deadline, ConstraintName);
-            ConstraintCount++;
-
-            Logging.Info($"[{ConstraintName}] {ConstraintCount}  [{_floor}, {_deadline}]");
+            Logging.Info($"[限制式設定] group={ConstraintName} floor={_floor} deadline={_deadline}");
         }
     }
 }

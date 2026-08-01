@@ -25,9 +25,7 @@ namespace FJSP_BASIC_BRICK.Constraint
         {
             _engine.AddLHS(1.0, new VariableX_Makespan());
             _engine.CreateLeSoft(_target, _penalty);
-            ConstraintCount++;
-
-            Logging.Info($"[{ConstraintName}] target={_target} penalty={_penalty}");
+            Logging.Info($"[限制式設定] group={ConstraintName} target={_target} penalty={_penalty}");
         }
     }
 }

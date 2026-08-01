@@ -41,11 +41,9 @@ namespace FJSP_BASIC_BRICK.Constraint
                         _engine.AddRHS(procTime, new VariableB_Assign { Lot = lot, Operation = op, Eqp = eqp });
                     }
                     _engine.CreateEqual($"{ConstraintName}@{lot}@{op}");
-                    ConstraintCount++;
                 }
             }
 
-            Logging.Info($"[{ConstraintName}] {ConstraintCount}");
         }
     }
 }

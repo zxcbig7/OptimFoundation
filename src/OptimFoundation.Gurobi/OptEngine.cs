@@ -191,8 +191,19 @@ namespace OptimFoundation.Gurobi
                 Model.Write(FolderDir.Model.GetFilePath($"{proj}_MPS_{_startTime}.mps"));
 
             var solveTimer = System.Diagnostics.Stopwatch.StartNew();
-            Model.Optimize();
-            solveTimer.Stop();
+            try
+            {
+                Model.Optimize();
+            }
+            catch (Exception ex)
+            {
+                Logging.Error($"[SOLVER_EXCEPTION] 求解器執行失敗 | solver=Gurobi exception={ex.GetType().FullName} reason={ex.GetBaseException().Message} result=rethrown");
+                throw;
+            }
+            finally
+            {
+                solveTimer.Stop();
+            }
 
             int s = Model.Status;
             if (s == GRB.Status.OPTIMAL) Status = SolveStatus.Optimal;

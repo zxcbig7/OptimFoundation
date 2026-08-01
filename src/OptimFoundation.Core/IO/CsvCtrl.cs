@@ -8,6 +8,11 @@ using System.Text;
 
 namespace OptimFoundation.Core.IO
 {
+    /// <summary>
+    /// CSV 讀寫的單一入口：輸入一律從 Data/ 讀、解輸出寫到 Solution/。
+    /// 讀寫都走同一套 RFC4180 解析（逗號分隔、雙引號包住可含逗號、"" 跳脫），不支援欄位內換行。
+    /// 檔名帶不帶 .csv 皆可，入口會自動補齊。
+    /// </summary>
     public static class CsvCtrl
     {
         // CSV 給人 / Excel 開啟：UTF-8 with BOM，避免 zh-TW Excel 以 Big5(950) 誤判中文成亂碼
@@ -53,12 +58,17 @@ namespace OptimFoundation.Core.IO
         // Set 檔（單欄）沿用同一套逐字元解析，只是不切欄——整行視為一個欄位，引號 / "" 跳脫規則與 SplitLine 相同。
         private static string UnquoteLine(string line, int lineNumber) => string.Join(",", SplitLine(line, lineNumber));
 
+        /// <summary>把 Data/ 下的檔案內容清成一行空白（檔案保留，資料全失）。無法復原，確認過再叫。</summary>
         public static void ClearData(string fileName)
         {
             using var sw = new StreamWriter(FolderDir.Data.GetFilePath(EnsureCsv(fileName)), append: false, _csvWrite);
             sw.WriteLine("");
         }
 
+        /// <summary>
+        /// 在 Data/ 產一份只有表頭的參數 CSV 範本（欄位 = DATA_ID + 該類別各 property 大寫），供人工填資料。
+        /// 檔名為型別名；檔案已存在會被覆寫成空表頭。
+        /// </summary>
         public static void CreateParamTable<TParameter>()
         {
             string name = typeof(TParameter).Name;
@@ -68,9 +78,18 @@ namespace OptimFoundation.Core.IO
             sw.WriteLine(cols);
         }
 
+        // 以下四個讀 Data/ 下的單欄檔（每列一個成員），差別只在轉型；格式不符會由 Parse 丟 FormatException
+
+        /// <summary>讀單欄 CSV 成 int 清單。</summary>
         public static List<int> ReadIntSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(EnsureCsv(fileName)), int.Parse);
+
+        /// <summary>讀單欄 CSV 成 double 清單。</summary>
         public static List<double> ReadDoubleSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(EnsureCsv(fileName)), double.Parse);
+
+        /// <summary>讀單欄 CSV 成 string 清單（不轉型，set 載入的預設路徑）。</summary>
         public static List<string> ReadStrSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(EnsureCsv(fileName)), s => s);
+
+        /// <summary>讀單欄 CSV 成 DateTime 清單（依當前 culture 解析）。</summary>
         public static List<DateTime> ReadDateSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(EnsureCsv(fileName)), DateTime.Parse);
 
         private static List<TValue> ReadLines<TValue>(string path, Func<string, TValue> parser)

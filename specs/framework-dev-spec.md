@@ -223,13 +223,15 @@ public class Constraint_OneGroup : RosterConstraintBase
                     Engine.AddLHS(1, new VariableB_ShiftAssign { Date = d, Employee = e, Group = g }));
                 Engine.AddRHS(1);
                 Engine.CreateEqual($"{ConstraintName}@{d:yyyy_MM_dd}@{e}");
-                ConstraintCount++;
             });
         });
-        Logging.Info($"{ConstraintName} 共：{ConstraintCount} 條");
     }
 }
 ```
+
+限制式數量由 `EngineBase` 自動統計；不要自行累加或輸出數量。呼叫 `Solve()` 時會依
+`ConstraintName@識別欄位` 的名稱前綴輸出 `[限制式建立完成]`，格式為
+`count=<實際建立>/<預期建立>`。
 
 ### 4.5 BuildModel
 

@@ -33,7 +33,6 @@ namespace Tutorial.Constraint
             }
 
             _engine.CreateMaximize();
-            Logging.Info("[Objective] max Σ profit·Produce − Σ setupCost·Setup");
         }
     }
 }

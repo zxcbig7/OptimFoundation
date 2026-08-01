@@ -34,19 +34,28 @@ namespace OptimFoundation.Cplex
         private readonly List<Action<OptEngine>> _solvedHandlers = new List<Action<OptEngine>>();
         private Func<CplexConfig> _configFactory = () => new CplexConfig();
 
-        // ── 執行期狀態 ───────────────────────────────────────────────────
-        public OptEngine optEngine;
+        // ── 執行期狀態（一律唯讀對外：看得到、不給換掉）──────────────────
+        /// <summary>本次求解的引擎；Execute() 建立。細部資訊（模型名、狀態、目標值、best bound、建立明細）由它自己提供。</summary>
+        public OptEngine optEngine { get; private set; }
+
         /// <summary>
         /// 記錄建構模型的時間，包含變數、目標式、限制式的建構。可用於 log 或除錯。
         /// </summary>
-        /// <returns></returns>
-        public Stopwatch buildModelTimer = new Stopwatch();
+        public Stopwatch buildModelTimer { get; } = new Stopwatch();
+
         /// <summary>
         /// 記錄整體運作時間，包含建構模型、求解、後處理。可用於 log 或除錯。
         /// </summary>
-        /// <returns></returns>
-        public Stopwatch totalTimer = new Stopwatch();
-        public TimeSpan totalTimeSpan = new TimeSpan();
+        public Stopwatch totalTimer { get; } = new Stopwatch();
+
+        /// <summary>上一次 Execute() 的總耗時快照（建模 + 求解 + 後處理）；Execute() 結束時定格，之後查得到。</summary>
+        public TimeSpan totalTimeSpan { get; private set; }
+
+        /// <summary>上一次 Execute() 是否求得可用解。Execute() 的回傳值，事後仍查得到。</summary>
+        public bool IsSuccess => _isSuccess;
+
+        /// <summary>本模型名稱——log 檔與 LP / MPS / Sol / IIS 輸出檔都以它命名。</summary>
+        public string ProjectName => _projectName;
 
         private bool _isSuccess;
         private readonly string _projectName;
@@ -99,6 +108,12 @@ namespace OptimFoundation.Cplex
         }
 
         // ── 執行流程：對具體 class 零依賴，永不需修改 ────────────────────
+
+        /// <summary>
+        /// 跑完整條求解管線：建引擎 → 套組態 → 依註冊順序建變數 → 建目標式 / 限制式 → 求解 →
+        /// 成功才依序跑 OnSolved handler。全程計時並寫進 log。
+        /// </summary>
+        /// <returns>true = 求得可用解（Optimal 或 Feasible）；事後亦可由 <see cref="IsSuccess"/> 查詢。</returns>
         public bool Execute()
         {
             totalTimer.Restart();
@@ -111,8 +126,11 @@ namespace OptimFoundation.Cplex
             // 建構模型
             buildModelTimer.Restart();
 
-            foreach (var step in _variableSteps) step(optEngine);   // 變數先建
-            Logging.Info("【建構變數完成】", buildModelTimer);
+            if (_variableSteps.Count > 0)
+            {
+                foreach (var step in _variableSteps) step(optEngine);   // 變數先建
+                Logging.Info("【建構變數完成】", buildModelTimer);
+            }
 
             foreach (var step in _modelSteps) step(optEngine);      // 再建目標式 / 限制式
             Logging.Info("【建構模型完成】", buildModelTimer);
@@ -132,6 +150,7 @@ namespace OptimFoundation.Cplex
             return _isSuccess;
         }
 
+        /// <summary>釋放本次求解建立的引擎（連同 CPLEX native 資源）。ALWAYS 用 using 包住 OptModel，否則 native 記憶體不會回收。</summary>
         public void Dispose()
         {
             optEngine?.Dispose();

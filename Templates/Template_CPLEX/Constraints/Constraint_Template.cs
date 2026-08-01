@@ -37,10 +37,8 @@ namespace SandBox.Constraints
                 //    });
                 //    optEngine.AddRHS(10);
                 //    optEngine.CreateLessEqual($"{ConstraintName}@{s1}");
-                //    ConstraintCount++;
                 //});
 
-                Logging.Info($"[{ConstraintName}] {ConstraintCount}");
             }
             catch (Exception)
             {

@@ -52,7 +52,6 @@ namespace SandBox.Constraints
                     }
 
                     _engine.CreateGreatEqual($"{ConstraintName}_a@{d:yyyy_MM_dd}@{e}");
-                    ConstraintCount++;
                 });
             });
 
@@ -63,10 +62,8 @@ namespace SandBox.Constraints
                 _engine.AddLHS(2, new VariableB_DoubleOffLT2 { Employee = e });
                 _engine.AddRHS(2);
                 _engine.CreateGreatEqual($"{ConstraintName}_b@{e}");
-                ConstraintCount++;
             });
 
-            Logging.Info($"[{ConstraintName}] {ConstraintCount}");
         }
     }
 }

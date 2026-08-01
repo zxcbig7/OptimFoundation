@@ -25,7 +25,6 @@ namespace FJSP_BASIC_BRICK.VariableClass
             _engine.BuildVars<VariableB_Precede>(_dataload.LOT, _dataload.OPERATION, _dataload.LOT, _dataload.OPERATION);
             _engine.BuildVars<VariableX_Makespan>();   // scalar：0 維，無 set
 
-            Logging.Info($"Variables created: {_engine.varCount}");
         }
     }
 }

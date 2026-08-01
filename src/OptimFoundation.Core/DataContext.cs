@@ -10,9 +10,13 @@ namespace OptimFoundation.Core
     /// </summary>
     public sealed class ParamRow
     {
+        /// <summary>index 值，順序 = 該 parameter 的 indexSets 宣告順序（已 box 成 object）。</summary>
         public object[] Index { get; }
+
+        /// <summary>該列所有 double 欄位的 (欄名, 值)，含 QTY。</summary>
         public (string Name, double Value)[] Numbers { get; }
 
+        /// <summary>由 RegisterParam 在註冊當下呼叫；index / numbers 已由 generator lambda 取出，不再反射。</summary>
         public ParamRow(object[] index, (string Name, double Value)[] numbers)
         {
             Index = index;
@@ -26,12 +30,22 @@ namespace OptimFoundation.Core
     /// </summary>
     public sealed class ParamRegistration
     {
+        /// <summary>parameter 類別名。</summary>
         public string Name { get; }
+
+        /// <summary>各 index 維度所屬的 set 名，順序即 <see cref="ParamRow.Index"/> 的順序。</summary>
         public string[] IndexSets { get; }
+
+        /// <summary>是否要求笛卡兒積全覆蓋：true 時驗證器會檢查缺列（少一組索引就報錯）。</summary>
         public bool FullGrid { get; }
+
+        /// <summary>攤平後的資料列。</summary>
         public IReadOnlyList<ParamRow> Rows { get; }
+
+        /// <summary>資料列數。</summary>
         public int RowCount => Rows.Count;
 
+        /// <summary>由 RegisterParam 建立。</summary>
         public ParamRegistration(string name, string[] indexSets, bool fullGrid, IReadOnlyList<ParamRow> rows)
         {
             Name = name;
@@ -47,10 +61,16 @@ namespace OptimFoundation.Core
     /// </summary>
     public sealed class SetGroup
     {
+        /// <summary>主名 = 這顆 set 最早被登記的名稱。</summary>
         public string PrimaryName { get; }
+
+        /// <summary>set 實例本身（分組依 reference equality）。</summary>
         public ISetBrick Set { get; }
+
+        /// <summary>同一實例的其餘登記名稱；摘要以「（別名: …）」附註顯示。</summary>
         public List<string> Aliases { get; }
 
+        /// <summary>由 <see cref="DataContext.GroupSetsByInstance"/> 建立。</summary>
         public SetGroup(string primaryName, ISetBrick set, List<string> aliases)
         {
             PrimaryName = primaryName;
@@ -115,8 +135,10 @@ namespace OptimFoundation.Core
             ValidateData();
         }
 
-        // 聚合三類檢查（referential integrity + type mismatch / duplicate key / numeric sanity）；
-        // 任何違規 → 一次全丟 DataValidationException（見 DataValidator.Validate）；乾淨才印載入摘要。
+        /// <summary>
+        /// 驗證已登記的 sets / params：任何違規一次全丟 <see cref="DataValidationException"/>；
+        /// 全部乾淨才印載入摘要（各 set 幾個成員、各 parameter 幾列）。由 Initialize() 呼叫。
+        /// </summary>
         protected void ValidateData()
         {
             var issues = DataValidator.Validate(_sets, _params);

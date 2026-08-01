@@ -1,9 +1,13 @@
 namespace OptimFoundation.Core
 {
 
+    /// <summary>實驗輸出格式：CSV 扁平給人看，JSON 巢狀含軌跡、是累積時的權威來源。</summary>
     public enum ExpWriterType
     {
+        /// <summary>逗號分隔，一列一個 Trial 摘要。</summary>
         CSV,
+
+        /// <summary>巢狀 JSON，含完整設定快照與收斂軌跡。</summary>
         JSON
     }
 

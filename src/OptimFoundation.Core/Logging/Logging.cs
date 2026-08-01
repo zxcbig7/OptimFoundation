@@ -5,6 +5,10 @@ using System.Text;
 
 namespace OptimFoundation.Core
 {
+    /// <summary>
+    /// 框架統一的 log 出口：每筆同時寫 Console 與 log 檔，格式為「時間 | 等級 | 訊息」。
+    /// 檔案延遲建立（首次寫入才開檔），寫入以 lock 保護，可多執行緒呼叫。
+    /// </summary>
     public static class Logging
     {
         private static readonly string _logDir = FolderDir.Log.GetPath();
@@ -39,9 +43,8 @@ namespace OptimFoundation.Core
 
         private static void Write(string level, string message)
         {
-            string ts = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.ffff");
-            string ns = new StackTrace().GetFrame(2)?.GetMethod()?.DeclaringType?.Namespace ?? "";
-            string line = $"{ts} | {level.PadRight(5)} | [{ns}] {message}";
+            string ts = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            string line = $"{ts} | {level.PadRight(5)} | {message}";
             lock (_lock)
             {
                 _consoleWriter.WriteLine(line);
@@ -49,11 +52,23 @@ namespace OptimFoundation.Core
             }
         }
 
+        /// <summary>一般訊息。</summary>
         public static void Info(string message) => Write("INFO", message);
+
+        /// <summary>除錯訊息（與 Info 同樣會輸出，只是等級標籤不同）。</summary>
         public static void Debug(string message) => Write("DEBUG", message);
+
+        /// <summary>警告：不中斷流程，但需要注意（如限制式被略過、規模超標）。</summary>
         public static void Warn(string message) => Write("WARN", message);
+
+        /// <summary>錯誤：通常伴隨例外拋出，訊息格式為 [ERROR_CODE] 說明 | key=value。</summary>
         public static void Error(string message) => Write("ERROR", message);
 
+        /// <summary>
+        /// 印訊息並附上 Stopwatch 的經過時間。
+        /// ⚠ 有副作用：印完會 <b>Restart</b> 這個 Stopwatch，讓下一段從零開始計時（連續分段計時的慣用寫法）。
+        /// 要保留累計時間 NEVER 用這個 overload。
+        /// </summary>
         public static void Info(string message, Stopwatch sw)
         {
             var e = sw.Elapsed;
@@ -61,6 +76,11 @@ namespace OptimFoundation.Core
             sw.Restart();
         }
 
+        /// <summary>
+        /// 改用新的 log 檔名（實際檔名為 {name}_{時間戳}.txt，非法字元會被換成 '-'）。
+        /// 會關掉目前的 log 檔並在下次寫入時開新檔；已寫入舊檔的內容留在原檔。
+        /// OptModel 建構時會自動以專案名呼叫，一般不需自己叫。
+        /// </summary>
         public static void SetLogFileName(string name)
         {
             foreach (var c in Path.GetInvalidFileNameChars())
@@ -80,6 +100,10 @@ namespace OptimFoundation.Core
                 FileWriter.WriteLine(message);
         }
 
+        /// <summary>
+        /// ⚠ 破壞性：刪掉 Logs 資料夾內的<b>所有</b>檔案（含本次執行正在寫的），不可回復。
+        /// 例行清理 ALWAYS 改用 OptModel 建構時的 retentionDays 保留期機制，只清超過天數的舊檔。
+        /// </summary>
         public static void ClearLogs()
         {
             lock (_lock)

@@ -14,6 +14,7 @@ namespace OptimFoundation.Core
     /// </summary>
     public interface ISetBrick
     {
+        /// <summary>成員數；尚未載入就存取會丟 InvalidOperationException。</summary>
         int Count { get; }
 
         /// <summary>本集合的元素型別（SetBase&lt;T&gt; 的 T）。供驗證器辨別 dangling 與 type mismatch（見框架資料防護規格）。</summary>
@@ -53,11 +54,13 @@ namespace OptimFoundation.Core
             }
         }
 
+        /// <summary>成員數。尚未載入就存取會丟 InvalidOperationException（防止用到空 set 而不自知）。</summary>
         public int Count
         {
             get { EnsureLoaded(); return _items.Count; }
         }
 
+        /// <summary>成員的 CLR 型別（string / DateTime / int / long / double / decimal）。</summary>
         public Type ElementType => typeof(T);
 
         /// <summary>索引存取（保序）。積木即唯讀 List：支援 [i] / Count / foreach / LINQ，consumer 免另存 List 視圖。</summary>
@@ -66,10 +69,13 @@ namespace OptimFoundation.Core
             get { EnsureLoaded(); return _items[index]; }
         }
 
+        /// <summary>是否含此成員（HashSet 查找，O(1)）。未載入時回 false 而不丟例外。</summary>
         public bool Contains(T item) => _index.Contains(item);
 
+        /// <summary>型別抹除版的 <see cref="Contains"/>：型別不符直接回 false。供驗證器對 object 索引值檢查用。</summary>
         public bool ContainsObject(object value) => value is T t && Contains(t);
 
+        /// <summary>依載入順序列舉全部成員（box 成 object）。供驗證器 / 摘要等不知道 T 的地方使用。</summary>
         public IEnumerable<object> MembersAsObjects()
         {
             EnsureLoaded();
@@ -159,6 +165,7 @@ namespace OptimFoundation.Core
             return (T)v;
         }
 
+        /// <summary>依載入順序列舉成員（保序，可直接 foreach / LINQ）。未載入即丟例外。</summary>
         public IEnumerator<T> GetEnumerator()
         {
             EnsureLoaded();

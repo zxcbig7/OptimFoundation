@@ -39,10 +39,8 @@ namespace SandBox.Constraints
                 _engine.AddLHS(1, new VariableX_BelowAVG { Employee = e });
                 _engine.AddRHS(avgOff);
                 _engine.CreateGreatEqual($"{ConstraintName}@{e}");
-                ConstraintCount++;
             });
 
-            Logging.Info($"[{ConstraintName}] {ConstraintCount}");
         }
     }
 }

@@ -9,21 +9,38 @@ namespace OptimFoundation.Core
     /// <summary>驗證問題種類：見框架資料防護規格 Acceptance Criteria。</summary>
     public enum DataIssueKind
     {
+        /// <summary>parameter 宣告的 index-set 名稱沒有被登記（多半是名字打錯或忘了註冊 set）。</summary>
         MissingSet,
+
+        /// <summary>index 值的型別與該 set 的成員型別不符（例：set 是 DateTime，資料給了字串）。</summary>
         TypeMismatch,
+
+        /// <summary>index 值型別正確但不在 set 裡（dangling reference，資料與 set 不同步）。</summary>
         Dangling,
+
+        /// <summary>同一組 index 出現多列（會生出重複變數 key）。</summary>
         DuplicateKey,
+
+        /// <summary>標了 [FullGrid] 卻缺格：笛卡兒積中有組合沒有對應資料列。</summary>
         MissingCell,
+
+        /// <summary>數值不合理：NaN / Infinity，或量級超過 <see cref="DataValidator.MaxMagnitude"/>。</summary>
         Numeric
     }
 
     /// <summary>單一驗證問題：所屬 parameter + 種類 + 細節描述。</summary>
     public sealed class DataIssue
     {
+        /// <summary>問題種類（決定訊息開頭的 [Kind] 標籤）。</summary>
         public DataIssueKind Kind { get; }
+
+        /// <summary>出問題的 parameter 類別名。</summary>
         public string Parameter { get; }
+
+        /// <summary>人可讀的細節，含具體的欄位 / 索引值 / 數值。</summary>
         public string Detail { get; }
 
+        /// <summary>建立一筆驗證問題（由 DataValidator 內部各檢查產生）。</summary>
         public DataIssue(DataIssueKind kind, string parameter, string detail)
         {
             Kind = kind;
@@ -35,8 +52,10 @@ namespace OptimFoundation.Core
     /// <summary>DataContext.ValidateData 聚合失敗時丟出，Issues 一次列出全部違規。</summary>
     public sealed class DataValidationException : Exception
     {
+        /// <summary>本次驗證抓到的所有問題（不是只有第一筆），可逐筆處理或直接看 Message。</summary>
         public IReadOnlyList<DataIssue> Issues { get; }
 
+        /// <summary>以問題清單建立例外；Message 會依 Kind 分組統計並逐筆列出。</summary>
         public DataValidationException(IReadOnlyList<DataIssue> issues)
             : base(BuildMessage(issues))
         {
@@ -84,6 +103,11 @@ namespace OptimFoundation.Core
         /// <summary>[FullGrid] 缺格訊息最多列出的組合數，超過就補「還有 N 組未列出」。</summary>
         private const int FullGridMaxListed = 20;
 
+        /// <summary>
+        /// 對每個 parameter 依序跑五項檢查（宣告的 set 存在 / 參照完整性 / index 唯一 / 數值 sanity / [FullGrid] 完整），
+        /// 把所有問題收集起來一次回傳。
+        /// </summary>
+        /// <returns>全部問題；空清單 = 資料乾淨。本方法自己不 throw，是否中斷由呼叫端決定。</returns>
         public static IReadOnlyList<DataIssue> Validate(
             IReadOnlyDictionary<string, ISetBrick> sets,
             IReadOnlyList<ParamRegistration> parameters)
@@ -299,8 +323,10 @@ namespace OptimFoundation.Core
         // object[] 的結構性相等比較（逐元素 Equals），供 duplicate key 偵測用——非字串拼接比對。
         private sealed class IndexKeyComparer : IEqualityComparer<object[]>
         {
+            /// <summary>無狀態，共用單一實例即可。</summary>
             public static readonly IndexKeyComparer Instance = new IndexKeyComparer();
 
+            /// <summary>長度相同且每個元素 Equals 才算相等（null 視為相等）。</summary>
             public bool Equals(object[] x, object[] y)
             {
                 if (ReferenceEquals(x, y)) return true;
@@ -310,6 +336,7 @@ namespace OptimFoundation.Core
                 return true;
             }
 
+            /// <summary>逐元素累積雜湊（17/31 慣用式），與 <see cref="Equals(object[], object[])"/> 一致。</summary>
             public int GetHashCode(object[] obj)
             {
                 int hash = 17;

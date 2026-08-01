@@ -17,6 +17,7 @@ namespace OptimFoundation.Core
             "TimeLimit", "MipGap", "Threads"
         };
 
+        /// <summary>輸出格式為 CSV。</summary>
         public ExpWriterType Extension => ExpWriterType.CSV;
 
 
@@ -70,7 +71,7 @@ namespace OptimFoundation.Core
             File.WriteAllText(path, sb.ToString(), new UTF8Encoding(true));
         }
 
-        // CSV 以 JSON 為權威來源做累積，此處不回讀。
+        /// <summary>恆回 null：累積以 JSON 為權威來源，本 writer 只寫不讀。</summary>
         public Experiment Read(string path) => null;
 
         private static string Tunable(ConfigSnapshot c, string key)

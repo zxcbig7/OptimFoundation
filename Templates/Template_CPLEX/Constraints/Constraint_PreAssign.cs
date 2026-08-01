@@ -25,10 +25,8 @@ namespace SandBox.Constraints
                 _engine.AddLHS(1, new VariableB_ShiftAssign { Date = p.Date, Employee = p.Employee, Group = p.Group });
                 _engine.AddRHS(1);
                 _engine.CreateEqual($"{ConstraintName}@{p.Date:yyyy_MM_dd}@{p.Employee}@{p.Group}");
-                ConstraintCount++;
             });
 
-            Logging.Info($"[{ConstraintName}] {ConstraintCount}");
         }
     }
 }

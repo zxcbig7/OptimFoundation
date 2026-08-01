@@ -36,7 +36,10 @@ namespace OptimFoundation.Core.IO
     /// <summary>單一輸出 transaction 的批次寫入：未 Commit 即 Dispose 視為 rollback。</summary>
     public interface ISolutionBatch : IDisposable
     {
+        /// <summary>把某變數型別的解排進本批次（實際落地時機由實作決定）。</summary>
         void Write<TVariableClass>(ISolverEngine engine);
+
+        /// <summary>送出整批；全部成功才算數，任一失敗整批不留。</summary>
         void Commit();
     }
 }

@@ -37,14 +37,33 @@ namespace OptimFoundation.Cplex
         private readonly List<IRange> _threadConstraints = new List<IRange>();
         private List<string> _conflictConstraints = null;
 
+        /// <summary>以指定組態建立引擎。此時還沒碰 CPLEX，模型物件要等 Build() 才生出來。</summary>
         public OptEngine(CplexConfig config) : base(config) { }
+
+        /// <summary>以 CplexConfig 預設值建立引擎（32 threads、2GB WorkMem、MIPGap 1e-4、無時限）。</summary>
         public OptEngine() : base(new CplexConfig()) { }
 
+        /// <summary>本引擎已建立的限制式條數（不含尚未併入 model 的 thread 約束）。</summary>
         public override int ConstraintCount => _constraints.Count;
+
+        /// <summary>模型名稱（`SetModelName` 設定）——LP / MPS / Sol / IIS 輸出檔以它命名。未設定時輸出端用 "Model"。</summary>
+        public string ModelName => _modelName;
+
+        /// <summary>本引擎建立的時刻（`yyyy-MM-dd_HH-mm-ss`）——輸出檔名的時間戳來源。</summary>
+        public string StartTime => _startTime;
+
+        /// <summary>尚未併入任何 model 的 thread 約束數（`CreateXxxThread` 建立、可被 `MergeModel` 併入）。</summary>
+        public int ThreadConstraintCount => _threadConstraints.Count;
 
         #region ITrajectorySource（CPLEX 支援逐點軌跡）
         private bool _captureTrajectory;
+        /// <summary>CPLEX 以 MIPInfoCallback 支援收斂軌跡，恆為 true。</summary>
         public override bool SupportsTrajectory => true;
+
+        /// <summary>
+        /// 開啟收斂軌跡記錄，MUST 在 Solve() 之前呼叫。
+        /// 代價：掛 callback 會讓 CPLEX 關閉 dynamic search，求解時間可能變長，所以設計成 opt-in。
+        /// </summary>
         public override void EnableTrajectory() => _captureTrajectory = true;
 
         /// <summary>
@@ -58,12 +77,15 @@ namespace OptimFoundation.Cplex
 
             private readonly System.Diagnostics.Stopwatch _sw;
             private readonly object _lock = new object();
+            /// <summary>收集到的軌跡點，求解結束後由 SolveCore 取走塞進 LastMetrics.Convergence。</summary>
             public readonly List<ConvergencePoint> Points = new List<ConvergencePoint>();
             private double _lastObj = double.NaN;
             private double _lastTimeMs = double.NegativeInfinity;
 
+            /// <summary>用 SolveCore 的計時器當時間軸，讓軌跡的 TimeMs 與求解耗時同一個原點。</summary>
             public TrajectoryCallback(System.Diagnostics.Stopwatch sw) => _sw = sw;
 
+            /// <summary>CPLEX 在 B&amp;B 過程中週期回呼；符合取樣條件就記一點。CPLEX 可能多執行緒呼叫，故整段 lock。</summary>
             public override void Main()
             {
                 double nowMs = _sw.Elapsed.TotalMilliseconds;
@@ -94,6 +116,11 @@ namespace OptimFoundation.Cplex
 
         #region Configuration
 
+        /// <summary>
+        /// 建立 CPLEX 模型物件並逐項套用組態，每套用一項就寫一行 [Environment Setting] log。
+        /// 重複呼叫等同重新開一個空模型：限制式清單、目標式、conflict 結果、限制式名稱去重集合全部重置（變數索引不動）。
+        /// </summary>
+        /// <param name="cfg">MUST 為 <see cref="CplexConfig"/>，傳其他型別會在後續存取時 NullReferenceException。</param>
         public override void Configuration(ISolverConfig cfg)
         {
 
@@ -105,9 +132,9 @@ namespace OptimFoundation.Cplex
 
             CplexConfig config = cfg as CplexConfig;
 
-            // Solver log 路由：
-            //   enableLog = true  → CPLEX 直接寫 Console（即時顯示）
-            //   enableLog = false → CPLEX 輸出導入 MemoryStream 靜默捕捉（不顯示）
+            // Solver log 路由：無論是否顯示 Console，都會捕捉並保存到 framework log。
+            //   enableLog = true  → Console + framework log
+            //   enableLog = false → framework log only
             _solverLogStream?.Dispose();
             _solverLogWriter?.Dispose();
             _solverLogStream = new MemoryStream();
@@ -123,7 +150,7 @@ namespace OptimFoundation.Cplex
             }
             else
             {
-                // 靜默捕捉，不顯示在 Console
+                // 不顯示在 Console，但保留診斷資料
                 Model.SetOut(_solverLogWriter);
                 Model.SetWarning(_solverLogWriter);
             }
@@ -195,6 +222,8 @@ namespace OptimFoundation.Cplex
             #region 是否紀錄LOG
             if (_enableLog)
                 Logging.Info($"[Environment Setting] CPLEX Log → Console (real-time)");
+            else
+                Logging.Info("[Environment Setting] CPLEX Log → framework log file only");
             #endregion
 
             #region 是否輸出 LP 檔案
@@ -538,6 +567,8 @@ namespace OptimFoundation.Cplex
         }
 
 
+        /// <summary>設定模型名稱——LP / MPS / Sol / IIS 輸出檔都以它當檔名前綴。OptModel 會用 projectName 自動代呼叫。</summary>
+        /// <exception cref="ArgumentException">name 為 null 或空白。</exception>
         public void SetModelName(string name)
         {
             if (string.IsNullOrWhiteSpace(name))
@@ -549,6 +580,7 @@ namespace OptimFoundation.Cplex
 
         #region EngineBase 抽象方法實作
 
+        /// <summary>建立單一 CPLEX 變數並登記到 Variables；VarType 對應 NumVarType（Binary→Bool、Integer→Int、其餘→Float）。</summary>
         protected override INumVar AddVariable(string name, double lb, double ub, VarType type)
         {
             NumVarType cplexType = type switch
@@ -562,6 +594,10 @@ namespace OptimFoundation.Cplex
             return v;
         }
 
+        /// <summary>
+        /// 批次建立變數：改用 CPLEX 原生 NumVarArray 一次送出，取代逐筆 AddVariable。
+        /// 大模型的效能關鍵——.NET ↔ native interop 從 N 次降為 1 次。
+        /// </summary>
         protected override void AddVariables(IReadOnlyList<string> names, double lb, double ub, VarType type)
         {
             int n = names.Count;
@@ -590,6 +626,7 @@ namespace OptimFoundation.Cplex
                 Variables[nameArr[i]] = vars[i];
         }
 
+        /// <summary>把 (係數, 變數) 序列組成 CPLEX 線性表達式；terms 只迭代一次，不會保留參考。</summary>
         protected override ILinearNumExpr LinearExpr(IEnumerable<(double coef, INumVar var)> terms)
         {
             var expr = Model.LinearNumExpr();
@@ -598,6 +635,8 @@ namespace OptimFoundation.Cplex
             return expr;
         }
 
+        /// <summary>新增限制式到 CPLEX 模型、設定名稱，並登記進 _constraints（供 ConstraintCount 與 IIS 分析使用）。</summary>
+        /// <exception cref="ArgumentOutOfRangeException">sense 不是 ≤ / = / ≥。</exception>
         protected override IRange AddConstraint(string name, ILinearNumExpr lhs, ConstraintSense sense, double rhs)
         {
             IRange r = sense switch
@@ -612,6 +651,7 @@ namespace OptimFoundation.Cplex
             return r;
         }
 
+        /// <summary>新增範圍限制式 lb ≤ expr ≤ ub，並登記進 _constraints。</summary>
         protected override IRange AddRangeConstraint(string name, ILinearNumExpr expr, double lb, double ub)
         {
             var r = Model.AddRange(lb, expr, ub);
@@ -622,9 +662,11 @@ namespace OptimFoundation.Cplex
 
         private IObjective _objective;
 
-        // CPLEX 的 AddMinimize/AddMaximize 為「新增」語意（重複呼叫會多個目標式），
-        // 故先移除既有目標式再新增，使 SetObjective 成為「覆寫」語意。
-        // 如此 base 的軟性 penalty（多次重設目標式）即可正確運作，無需 override AddObjectiveTerm。
+        /// <summary>
+        /// 設定目標式（覆寫語意）。
+        /// CPLEX 的 AddMinimize / AddMaximize 本身是「新增」語意（重複呼叫會產生多個目標式），
+        /// 故這裡先移除既有目標式再新增。如此 base 的軟性 penalty（每加一項就重設一次目標式）才能正確運作。
+        /// </summary>
         protected override void SetObjective(ILinearNumExpr expr, Core.ObjectiveSense sense)
         {
             if (_objective != null) Model.Remove(_objective);
@@ -633,6 +675,7 @@ namespace OptimFoundation.Cplex
                 : Model.AddMaximize(expr);
         }
 
+        /// <summary>就地改 CPLEX 變數的界限；null 表示該側不動。已建好的模型可直接改，不需重建。</summary>
         protected override void SetVariableBounds(INumVar variable, double? lb, double? ub)
         {
             if (lb.HasValue) variable.LB = lb.Value;
@@ -649,6 +692,13 @@ namespace OptimFoundation.Cplex
         /// </summary>
         protected override void BuildCore() => Configuration(Config);
 
+        /// <summary>
+        /// 執行求解，並把整趟結果收斂成框架的統一狀態。流程：
+        /// 依設定匯出 LP / MPS → （選用）掛軌跡 callback → Model.Solve() → CPLEX 狀態轉成 <see cref="SolveStatus"/> →
+        /// 回填 BestObjValue / MIPGap / LastMetrics → 有解且設定要匯出就寫 .sol → infeasible 時自動跑 conflict(IIS) 分析。
+        /// </summary>
+        /// <returns>true = Optimal 或 Feasible。逾時但有可行解也算 true；逾時無解為 TimeLimit → false。</returns>
+        /// <exception cref="System.Exception">CPLEX 求解丟出的例外會照原樣 rethrow（先寫 SOLVER_EXCEPTION log）。</exception>
         protected override bool SolveCore()
         {
             string proj = _modelName ?? "Model";
@@ -666,12 +716,21 @@ namespace OptimFoundation.Cplex
                 trajCb = new TrajectoryCallback(solveTimer);
                 Model.Use(trajCb);   // 注意：掛 callback 會關閉 CPLEX dynamic search，可能影響求解時間（故為 opt-in）
             }
-            Model.Solve();
-            solveTimer.Stop();
-            if (trajCb != null) Model.ClearCallbacks();
-
-            // CPLEX solver log 讀出（enableLog 時輸出完整 log，否則只輸出摘要）
-            FlushSolverLog();
+            try
+            {
+                Model.Solve();
+            }
+            catch (System.Exception ex)
+            {
+                Logging.Error($"[SOLVER_EXCEPTION] 求解器執行失敗 | solver=CPLEX exception={ex.GetType().FullName} reason={ex.GetBaseException().Message} result=rethrown");
+                throw;
+            }
+            finally
+            {
+                solveTimer.Stop();
+                if (trajCb != null) Model.ClearCallbacks();
+                FlushSolverLog();
+            }
 
             var s = Model.GetStatus();
             if (s == ILOG.CPLEX.Cplex.Status.Optimal) Status = SolveStatus.Optimal;
@@ -720,8 +779,8 @@ namespace OptimFoundation.Cplex
         }
 
         /// <summary>
-        /// 將 CPLEX solver log 從 MemoryStream 讀出並輸出。
-        /// enableLog=true → Logging.Info 完整 log；否則不輸出（仍清空 stream 供下次使用）。
+        /// 將 CPLEX solver log 從 MemoryStream 寫入 framework log。
+        /// enableLog 只控制 Console；檔案診斷資料一律保留。
         /// </summary>
         private void FlushSolverLog()
         {
@@ -730,24 +789,22 @@ namespace OptimFoundation.Cplex
             _solverLogWriter.Flush();
             _solverLogStream.Position = 0;
 
-            if (_enableLog)
-            {
-                // Console 已有即時輸出，只把捕捉到的 log 另存進 log 檔（不重印到 Console）
-                string log = System.Text.Encoding.UTF8.GetString(
-                    _solverLogStream.GetBuffer(), 0, (int)_solverLogStream.Length);
-                if (!string.IsNullOrWhiteSpace(log))
-                    Logging.WriteToFile($"[CPLEX Log]{Environment.NewLine}{log}");
-            }
-
+            string log = System.Text.Encoding.UTF8.GetString(
+                _solverLogStream.GetBuffer(), 0, (int)_solverLogStream.Length);
+            if (!string.IsNullOrWhiteSpace(log))
+                Logging.WriteToFile($"[CPLEX Log]{Environment.NewLine}{log}");
             // 清空 stream 供下次 Solve() 使用（Benders 多輪迭代）
             _solverLogStream.SetLength(0);
             _solverLogStream.Position = 0;
         }
 
+        /// <summary>目標式解值。MUST 在 Solve() 回傳 true 之後呼叫，無解時 CPLEX 會丟例外。</summary>
         public override double GetObjectiveValue() => Model.GetObjValue();
 
+        /// <summary>依變數全名取解值。名稱不存在會 KeyNotFoundException；未求解會由 CPLEX 丟例外。</summary>
         public override double GetVariableValue(string name) => Model.GetValue(Variables[name]);
 
+        /// <summary>結束 CPLEX 模型（釋放 native 記憶體）並關閉 solver log 的暫存串流。Dispose 後本引擎不可再用。</summary>
         public override void Dispose()
         {
             Model?.End();
@@ -760,23 +817,34 @@ namespace OptimFoundation.Cplex
 
         #region 便捷方法（公開給子類別）
 
+        // 以下是給「繼承 OptEngine 自己寫建模流程」的子類別用的短名稱包裝；
+        // 一般專案走 Pool API（AddLHS / AddRHS / Create*），不需要碰這一區。
+
+        /// <summary>建立單一變數的簡寫。預設為 [0, double.MaxValue] 的連續變數。</summary>
         protected INumVar CreateVar(string name, double lb = 0, double ub = double.MaxValue,
             VarType type = VarType.Continuous)
             => AddVariable(name, lb, ub, type);
 
+        /// <summary>組線性表達式的簡寫。</summary>
         protected ILinearNumExpr Expr(IEnumerable<(double coef, INumVar var)> terms)
             => LinearExpr(terms);
 
+        /// <summary>直接建立 lhs ≤ rhs 限制式（不經 pool）。</summary>
         protected IRange AddLE(string name, ILinearNumExpr lhs, double rhs)
             => AddConstraint(name, lhs, ConstraintSense.LessEqual, rhs);
 
+        /// <summary>直接建立 lhs ≥ rhs 限制式（不經 pool）。</summary>
         protected IRange AddGE(string name, ILinearNumExpr lhs, double rhs)
             => AddConstraint(name, lhs, ConstraintSense.GreaterEqual, rhs);
 
+        /// <summary>直接建立 lhs = rhs 限制式（不經 pool）。</summary>
         protected IRange AddEQ(string name, ILinearNumExpr lhs, double rhs)
             => AddConstraint(name, lhs, ConstraintSense.Equal, rhs);
 
+        /// <summary>設定最小化目標式（覆寫既有目標式）。</summary>
         protected void Minimize(ILinearNumExpr expr) => SetObjective(expr, Core.ObjectiveSense.Minimize);
+
+        /// <summary>設定最大化目標式（覆寫既有目標式）。</summary>
         protected void Maximize(ILinearNumExpr expr) => SetObjective(expr, Core.ObjectiveSense.Maximize);
 
         #endregion
@@ -1017,38 +1085,45 @@ namespace OptimFoundation.Cplex
             private readonly TextWriter _primary;   // Console.Out（即時顯示）
             private readonly TextWriter _secondary; // StreamWriter → MemoryStream（捕捉）
 
+            /// <summary>primary 是不該被關掉的目的地（Console.Out），secondary 才由本物件負責釋放。</summary>
             public TeeWriter(TextWriter primary, TextWriter secondary)
             {
                 _primary = primary;
                 _secondary = secondary;
             }
 
+            /// <summary>沿用 primary 的編碼（TextWriter 要求實作）。</summary>
             public override System.Text.Encoding Encoding => _primary.Encoding;
 
+            /// <summary>單字元同時寫到兩邊。</summary>
             public override void Write(char value)
             {
                 _primary.Write(value);
                 _secondary.Write(value);
             }
 
+            /// <summary>字串同時寫到兩邊。</summary>
             public override void Write(string value)
             {
                 _primary.Write(value);
                 _secondary.Write(value);
             }
 
+            /// <summary>整行同時寫到兩邊。</summary>
             public override void WriteLine(string value)
             {
                 _primary.WriteLine(value);
                 _secondary.WriteLine(value);
             }
 
+            /// <summary>兩邊都 flush。</summary>
             public override void Flush()
             {
                 _primary.Flush();
                 _secondary.Flush();
             }
 
+            /// <summary>只釋放 secondary；primary 是 Console.Out，關掉會讓整個 process 之後印不出東西。</summary>
             protected override void Dispose(bool disposing)
             {
                 // _primary = Console.Out，不應 Dispose

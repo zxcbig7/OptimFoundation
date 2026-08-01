@@ -54,8 +54,10 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             string logContent = ReadLatestLogContent(tag);
             Assert.Contains("WARN", logContent);
-            Assert.Contains("TotalVarCount=2", logContent);
-            Assert.Contains("ScaleWarnThreshold=1", logContent);
+            Assert.Contains("MODEL_SCALE_WARNING", logContent);
+            Assert.Contains("count=2", logContent);
+            Assert.Contains("threshold=1", logContent);
+            Assert.Contains("result=continued", logContent);
         }
 
         [Fact]

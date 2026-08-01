@@ -56,7 +56,6 @@ namespace FJSP_BASIC_BRICK.Constraint
                                 _engine.AddRHS(-_bigM, assignA);
                                 _engine.AddRHS(-_bigM, assignB);
                                 _engine.CreateLessEqual($"{ConstraintName}_Fwd@{lotA}@{opA}@{lotB}@{opB}@{eqp}");
-                                ConstraintCount++;
 
                                 // Backward: Complete_B <= Start_A + BigM*(2 + Precede - Assign_A - Assign_B)
                                 _engine.AddLHS(1.0, new VariableX_Complete { Lot = lotB, Operation = opB });
@@ -66,14 +65,12 @@ namespace FJSP_BASIC_BRICK.Constraint
                                 _engine.AddRHS(-_bigM, assignA);
                                 _engine.AddRHS(-_bigM, assignB);
                                 _engine.CreateLessEqual($"{ConstraintName}_Bwd@{lotA}@{opA}@{lotB}@{opB}@{eqp}");
-                                ConstraintCount++;
                             }
                         }
                     }
                 }
             }
 
-            Logging.Info($"[{ConstraintName}] {ConstraintCount}");
         }
     }
 }

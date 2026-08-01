@@ -40,9 +40,7 @@ namespace Tutorial.Constraint
                         _engine.AddLHS(1.0, new VariableB_Setup { Product = product, Date = date, Shift = shift });
 
             _engine.CreateLeSoft(_budget, _penalty);
-            ConstraintCount++;
-
-            Logging.Info($"[{ConstraintName}] budget={_budget} penalty={_penalty}");
+            Logging.Info($"[限制式設定] group={ConstraintName} budget={_budget} penalty={_penalty}");
         }
     }
 }

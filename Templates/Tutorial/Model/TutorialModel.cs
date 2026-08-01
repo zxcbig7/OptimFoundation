@@ -23,16 +23,13 @@ namespace Tutorial.Model
             engine.BuildVars<VariableX_Produce>(_d.PRODUCT, _d.DATE, _d.SHIFT);
             engine.BuildVars<VariableB_Setup>(_d.PRODUCT, _d.DATE, _d.SHIFT);
             engine.BuildVars<VariableI_Batch>(_d.PRODUCT, _d.DATE);
-            Logging.Info($"Variables created: {engine.varCount}");
         }
 
         /// <summary>目標式 + 限制式層（給 OptModel.AddModel）：soft（SetupBudgetSoft）MUST 排在 Objective 之後。</summary>
         public void CreateModel(OptEngine engine)
         {
-            Logging.Info("【建構目標式】");
             new ObjectiveFunction(_d, engine).Build();
 
-            Logging.Info("【建構限制式】");
             new Constraint_Capacity(_d.PRODUCT, _d.MACHINE, _d.DATE, _d.SHIFT,
                 _d.parameter_MachineHours, _d.parameter_Capacity, engine).Build();          // ≤
             new Constraint_Demand(_d.PRODUCT, _d.DATE, _d.SHIFT,

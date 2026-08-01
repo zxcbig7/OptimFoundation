@@ -33,10 +33,8 @@ namespace SandBox.Constraints
                 weekends.ForEach(d =>
                     _engine.AddRHS(-1, new VariableB_ShiftAssign { Date = d, Employee = e, Group = "O" }));
                 _engine.CreateGreatEqual($"{ConstraintName}@{e}");
-                ConstraintCount++;
             });
 
-            Logging.Info($"[{ConstraintName}] {ConstraintCount}");
         }
     }
 }

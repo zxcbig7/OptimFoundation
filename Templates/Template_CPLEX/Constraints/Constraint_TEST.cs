@@ -32,10 +32,8 @@ namespace SandBox.Constraints
                     _engine.AddLHS(1, new VariableB_ShiftAssign { Date = d, Employee = e, Group = "O" }));
                 _engine.AddRHS(-1);
                 _engine.CreateLessEqual($"{ConstraintName}@{e}");
-                ConstraintCount++;
             });
 
-            Logging.Info($"[{ConstraintName}] {ConstraintCount}");
         }
     }
 }

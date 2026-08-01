@@ -62,7 +62,6 @@ namespace SandBox.Constraints
             });
 
             _engine.CreateMinimize();
-            Logging.Info("完成");
         }
     }
 }

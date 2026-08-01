@@ -41,10 +41,8 @@ namespace Tutorial.Constraint
                     var req = _demand.First(d => d.Product == product && d.Date == date).QTY;
                     _engine.AddRHS(req);
                     _engine.CreateGreatEqual($"{ConstraintName}@{product}@{date:yyyy-MM-dd}");
-                    ConstraintCount++;
                 }
 
-            Logging.Info($"[{ConstraintName}] {ConstraintCount}");
         }
     }
 }

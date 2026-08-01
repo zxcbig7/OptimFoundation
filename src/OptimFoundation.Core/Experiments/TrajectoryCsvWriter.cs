@@ -11,8 +11,13 @@ namespace OptimFoundation.Core
     /// </summary>
     public sealed class TrajectoryCsvWriter : IExperimentWriter
     {
+        /// <summary>輸出格式為 CSV。</summary>
         public ExpWriterType Extension => ExpWriterType.CSV;
 
+        /// <summary>
+        /// 把所有 Trial 的收斂軌跡攤平成長格式 CSV（欄位 RunAt, Label, PointIndex, TimeMs, Objective, Bound, Gap）。
+        /// 沒有軌跡的 Trial 直接跳過；NaN / Infinity 寫成空白，畫圖時自然斷點。
+        /// </summary>
         public void Write(Experiment experiment, string path)
         {
             var sb = new StringBuilder();
@@ -45,7 +50,7 @@ namespace OptimFoundation.Core
             File.WriteAllText(path, sb.ToString(), new UTF8Encoding(true));
         }
 
-        // 軌跡以 JSON 為權威來源做累積，此處不回讀。
+        /// <summary>恆回 null：軌跡的累積以 JSON 為權威來源，本 writer 只寫不讀。</summary>
         public Experiment Read(string path) => null;
 
         private static string Num(double v)

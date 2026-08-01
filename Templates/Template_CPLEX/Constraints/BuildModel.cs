@@ -17,7 +17,6 @@ namespace SandBox.Constraints
 
         public void Build()
         {
-            Logging.Info("【建構目標式】");
             new ObjectiveFunction(
                 _data.Date, _data.Employee,
                 _data.Penalty_OffOneDay,
@@ -29,7 +28,6 @@ namespace SandBox.Constraints
                 _data.Penalty_Weekend4Day,
                 _engine).Build();
 
-            Logging.Info("【建構限制式】");
             new Constraint_FullfillDemand(_data.Date, _data.Employee, _data.Group, _data.parameter_ShiftDemand, _engine).Build();
             new Constraint_OneGroup(_data.Date, _data.Employee, _data.Group, _engine).Build();
             new Constraint_PreAssign(_data.parameter_PreAssign, _engine).Build();

@@ -21,6 +21,7 @@ namespace OptimFoundation.Core
         /// <summary>本實驗累積的所有 Trial（每次求解一筆）。</summary>
         public List<Trial> Trials { get; set; }
 
+        /// <summary>建立實驗。name 決定輸出檔名，同名等於接續同一份歷史（Save 會 append）。</summary>
         public Experiment(string name, string description)
         {
             Name = name;

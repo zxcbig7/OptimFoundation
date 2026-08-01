@@ -50,10 +50,8 @@ namespace Tutorial.Constraint
                         var cap = _capacity.First(c => c.Machine == machine && c.Date == date && c.Shift == shift).QTY;
                         _engine.AddRHS(cap);
                         _engine.CreateLessEqual($"{ConstraintName}@{machine}@{date:yyyy-MM-dd}@{shift}");
-                        ConstraintCount++;
                     }
 
-            Logging.Info($"[{ConstraintName}] {ConstraintCount}");
         }
     }
 }

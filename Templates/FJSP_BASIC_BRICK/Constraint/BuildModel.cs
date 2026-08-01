@@ -17,10 +17,8 @@ namespace FJSP_BASIC_BRICK.Constraint
 
         public void Build()
         {
-            Logging.Info("【建構目標式】");
             new ObjectiveFunction(_engine).Build();
 
-            Logging.Info("【建構限制式】");
             new Constraint_AssignOneEqp(_data.LOT, _data.OPERATION, _data.EQP, _engine).Build();
             new Constraint_CompleteDef(_data.LOT, _data.OPERATION, _data.EQP, _data.parameter_ProcessTime, _engine).Build();
             new Constraint_RoutePrecedence(_data.LOT, _data.OPERATION, _engine).Build();

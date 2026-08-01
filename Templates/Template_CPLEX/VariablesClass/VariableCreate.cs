@@ -10,8 +10,6 @@ namespace SandBox.VariablesClass
     {
         private OptEngine optEngine;
         private Dataload dataload;
-        private int varCount { get { return optEngine.varCount; } }
-
         public VariableCreate(Dataload dataload, OptEngine engine)
         {
             optEngine = engine;
@@ -33,7 +31,6 @@ namespace SandBox.VariablesClass
                 optEngine.BuildCVs<VariableX_BelowAVG>(dataload.Employee);
                 optEngine.BuildCVs<VariableX_WeekendLT4>(dataload.Employee);
 
-                Logging.Info($"Variables created: {varCount}");
             }
             catch (Exception)
             {

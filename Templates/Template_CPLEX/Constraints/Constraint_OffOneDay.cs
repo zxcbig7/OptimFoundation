@@ -45,11 +45,9 @@ namespace SandBox.Constraints
                     _engine.AddRHS(-(duration - 1));
 
                     _engine.CreateGreatEqual($"{ConstraintName}@{d:yyyy_MM_dd}@{e}");
-                    ConstraintCount++;
                 });
             });
 
-            Logging.Info($"{ConstraintName} ，共：{ConstraintCount}條");
         }
     }
 }

@@ -15,14 +15,19 @@ namespace OptimFoundation.Core
         private static readonly ConcurrentDictionary<Type, PropertyInfo[]> _propsCache
             = new ConcurrentDictionary<Type, PropertyInfo[]>();
 
+        /// <summary>實際子類別的型別（用它取 property 清單，不是 base 的型別）。</summary>
         protected Type ElemType => GetType();
+
+        /// <summary>實際子類別的名稱，也是變數 key 的前綴與 VariableSets 的分組 key。</summary>
         protected string ElemName => ElemType.Name;
 
         private static PropertyInfo[] GetCachedProps(Type t)
             => _propsCache.GetOrAdd(t, type => type.GetProperties());
 
+        /// <summary>空建構：各 property 以物件初始式個別指定（查變數時最常用的寫法）。</summary>
         protected ModelElementBase() { }
 
+        /// <summary>依 property 宣告順序填值的建構；等同 new + <see cref="InitClassBySets"/>。</summary>
         protected ModelElementBase(params object[] sets)
         {
             InitClassBySets(sets);
@@ -75,19 +80,25 @@ namespace OptimFoundation.Core
     /// <summary>限制式基底（前綴慣例 Constraint_）。ConstraintName = 類別名，供組限制式名稱用。</summary>
     public abstract class ConstraintBase : ModelElementBase
     {
-        protected int ConstraintCount { get; set; } // 本類別已送出的限制式條數（供 log）
+        /// <summary>已廢棄：限制式計數改由 EngineBase 自動統計（見 ConstraintBuildCounts）。</summary>
+        [Obsolete("Constraint counts are tracked automatically by EngineBase.")]
+        protected int ConstraintCount { get; set; }
+
+        /// <summary>限制式名稱 = 類別名；建限制式時常用它當名稱前綴再串索引。</summary>
         protected string ConstraintName => ElemName;
     }
 
     /// <summary>參數基底（前綴慣例 Parameter_，值放 QTY 欄）。</summary>
     public abstract class ParameterBase : ModelElementBase
     {
+        /// <summary>參數名稱 = 類別名。</summary>
         protected string ParameterName => ElemName;
     }
 
     /// <summary>變數基底（前綴慣例 VariableB_/X_/I_ 對應 Binary/Continuous/Integer）。</summary>
     public abstract class VariableBase : ModelElementBase
     {
+        /// <summary>變數名稱 = 類別名；前綴決定變數型別（見 BuildVars 的命名天條）。</summary>
         protected string VariableName => ElemName;
     }
 }

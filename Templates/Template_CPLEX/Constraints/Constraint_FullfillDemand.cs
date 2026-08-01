@@ -39,11 +39,9 @@ namespace SandBox.Constraints
                     double demand = _shiftDemand.FirstOrDefault(x => x.Date == d && x.Group == g)?.QTY ?? 0;
                     _engine.AddRHS(demand);
                     _engine.CreateEqual($"{ConstraintName}@{d:yyyy_MM_dd}@{g}");
-                    ConstraintCount++;
                 });
             });
 
-            Logging.Info($"[{ConstraintName}] {ConstraintCount}");
         }
     }
 }

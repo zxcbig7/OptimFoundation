@@ -31,11 +31,9 @@ namespace FJSP_BASIC_BRICK.Constraint
 
                     _engine.AddRHS(1.0);
                     _engine.CreateEqual($"{ConstraintName}@{lot}@{op}");
-                    ConstraintCount++;
                 }
             }
 
-            Logging.Info($"[{ConstraintName}] {ConstraintCount}");
         }
     }
 }

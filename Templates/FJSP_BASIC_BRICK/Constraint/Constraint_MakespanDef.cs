@@ -27,10 +27,8 @@ namespace FJSP_BASIC_BRICK.Constraint
                 _engine.AddLHS(1.0, new VariableX_Makespan());
                 _engine.AddRHS(1.0, new VariableX_Complete { Lot = lot, Operation = lastOp });
                 _engine.CreateGreatEqual($"{ConstraintName}@{lot}");
-                ConstraintCount++;
             }
 
-            Logging.Info($"[{ConstraintName}] {ConstraintCount}");
         }
     }
 }

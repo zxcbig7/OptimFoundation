@@ -9,8 +9,13 @@ namespace OptimFoundation.Core
     /// </summary>
     public sealed class ConfigSnapshot
     {
+        /// <summary>求解器名稱，取自 config 型別的 namespace 末段（OptimFoundation.Cplex → "Cplex"）。</summary>
         public string Solver { get; set; }
+
+        /// <summary>跨 solver 的抽象控制項目（TimeLimit / MipGap / Threads / Seed / Emphasis …），未設定的值為 null。</summary>
         public Dictionary<string, object> Tunable { get; set; } = new Dictionary<string, object>();
+
+        /// <summary>reflection 抓到的 solver 專屬設定全集（含與 Tunable 重疊的部分），確保沒有設定漏記。</summary>
         public Dictionary<string, object> SolverSpecific { get; set; } = new Dictionary<string, object>();
 
         /// <summary>
@@ -52,7 +57,10 @@ namespace OptimFoundation.Core
             {
                 if (!p.CanRead || p.GetIndexParameters().Length > 0) continue;
                 try { snapshot.SolverSpecific[p.Name] = p.GetValue(config); }
-                catch { /* 跳過讀取會丟例外的 property */ }
+                catch (System.Exception ex)
+                {
+                    Logging.Warn($"[CONFIG_SNAPSHOT_SKIPPED] 設定快照略過屬性 | property={p.Name} type={type.FullName} reason={ex.GetBaseException().Message} result=omitted");
+                }
             }
             return snapshot;
         }

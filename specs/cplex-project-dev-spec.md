@@ -203,11 +203,13 @@ public class VariableCreate
 
         // Integer（含自訂界限）
         // optEngine.BuildIVs<VariableI_WorkCount>(0, 30, dataload.Employee);
-
-        Logging.Info($"Variables created: {optEngine.varCount}");
     }
 }
 ```
+
+每次 `Build*Vs<TVariable>` 會自動輸出該型別的
+`[變數建立完成] type=... count=<實際建立>/<預期建立>`；呼叫 `Solve()` 前還會輸出總摘要，
+不需要由 Template 手動讀取或累加變數數量。
 
 | 方法 | 預設 LB | 預設 UB |
 |------|---------|---------|
@@ -261,10 +263,8 @@ public class Constraint_FullfillDemand : ConstraintBase
                     .FirstOrDefault(x => x.Date == d && x.Group == g)?.QTY ?? 0;
                 optEngine.AddRHS(demand);
                 optEngine.CreateEqual($"{ConstraintName}@{d:yyyy_MM_dd}@{g}");
-                ConstraintCount++;
             });
         });
-        Logging.Info($"[{ConstraintName}] {ConstraintCount}");
     }
 }
 ```
@@ -288,13 +288,15 @@ public void Build()
                 optEngine.AddRHS(1, new VariableB_ShiftAssign { Date = d,    Employee = e, Group = rule.Group });
                 optEngine.AddRHS(-1);
                 optEngine.CreateGreatEqual($"{ConstraintName}@{d:yyyy_MM_dd}@{e}");
-                ConstraintCount++;
             });
         });
     });
-    Logging.Info($"[{ConstraintName}] {ConstraintCount}");
 }
 ```
+
+每次 `CreateEqual/CreateLessEqual/CreateGreatEqual/CreateRange` 都會由核心自動記錄一次預期建立；
+只有實際加入 Solver 的限制式才計入實際建立。`Solve()` 前會依名稱中第一個 `@` 前的前綴分組，
+輸出 `[限制式建立完成] group=... count=<實際建立>/<預期建立>`。
 
 ### LINQ 讀取 Parameter 的正確寫法
 
@@ -363,10 +365,8 @@ public class BuildModel
 
     public void Build()
     {
-        Logging.Info("【建構目標式】");
         new ObjectiveFunction(dataload, engine).Build();
 
-        Logging.Info("【建構限制式】");
         new Constraint_FullfillDemand(dataload, engine).Build();
         new Constraint_OneGroup      (dataload, engine).Build();
         new Constraint_PreAssign     (dataload, engine).Build();
@@ -514,7 +514,7 @@ internal class Program
 □  5. 建立 VariablesClass/Variable[B|I|X]_Xxx.cs（properties only）
 □  6. 建立 VariablesClass/VariableCreate.cs（Build*Vs，順序對應 properties）
 □  7. 建立 Constraints/ObjectiveFunction.cs（AddLHS + CreateMinimize/Maximize）
-□  8. 建立 Constraints/Constraint_Xxx.cs（AddLHS + AddRHS + Create* + ConstraintCount++）
+□  8. 建立 Constraints/Constraint_Xxx.cs（AddLHS + AddRHS + Create*；數量由核心自動統計）
 □  9. 建立 Constraints/BuildModel.cs（依序呼叫所有 Build()）
 □ 10. 建立 ProblemName.cs（CplexConfig → Build → VariableCreate → BuildModel → Solve）
 □ 11. 建立 Program.cs
@@ -586,7 +586,6 @@ public class BuildModel
 
     public void Build()
     {
-        Logging.Info("【建構目標式】");
         new ObjectiveFunction(
             _data.Date, _data.Employee,
             _data.Penalty_SixDay, _data.Penalty_GroupMismatch,
@@ -594,7 +593,6 @@ public class BuildModel
             _data.Penalty_BelowAVG, _data.Penalty_Weekend4Day,
             _data.Penalty_OffOneDay, _engine).Build();
 
-        Logging.Info("【建構限制式】");
         new Constraint_FullfillDemand(
             _data.Date, _data.Employee, _data.Group,
             _data.parameter_ShiftDemand, _engine).Build();

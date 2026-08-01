@@ -18,7 +18,6 @@ namespace FJSP_BASIC_BRICK.Constraint
         {
             _engine.AddLHS(1.0, new VariableX_Makespan());
             _engine.CreateMinimize();
-            Logging.Info("[Objective] min Makespan");
         }
     }
 }

@@ -37,7 +37,6 @@ namespace SandBox.Constraints
                         _engine.AddRHS(1);
                         _engine.AddRHS(-1, new VariableB_ShiftAssign { Date = sd, Employee = e, Group = "O" });
                         _engine.CreateLessEqual($"{ConstraintName}@{d:yyyy_MM_dd}@{e}");
-                        ConstraintCount++;
                     });
 
                     _engine.AddLHS(1, new VariableB_SixDayWork { Date = d, Employee = e });
@@ -45,11 +44,9 @@ namespace SandBox.Constraints
                     dates.ForEach(sd =>
                         _engine.AddRHS(-1, new VariableB_ShiftAssign { Date = sd, Employee = e, Group = "O" }));
                     _engine.CreateGreatEqual($"{ConstraintName}@{d:yyyy_MM_dd}@{e}");
-                    ConstraintCount++;
                 });
             });
 
-            Logging.Info($"[{ConstraintName}] {ConstraintCount}");
         }
     }
 }

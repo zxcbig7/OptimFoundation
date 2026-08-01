@@ -43,10 +43,8 @@ namespace Tutorial.Constraint
                     var size = _batchSize.First(b => b.Product == product).QTY;
                     _engine.AddRHS(size, new VariableI_Batch { Product = product, Date = date });
                     _engine.CreateEqual($"{ConstraintName}@{product}@{date:yyyy-MM-dd}");
-                    ConstraintCount++;
                 }
 
-            Logging.Info($"[{ConstraintName}] {ConstraintCount}");
         }
     }
 }

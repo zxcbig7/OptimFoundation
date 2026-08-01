@@ -7,10 +7,19 @@ namespace OptimFoundation.Core
     /// </summary>
     public sealed class Trial
     {
+        /// <summary>這次求解的標籤，例 "emphasis=2"；與 RunAt 一起當 append 去重的鍵。</summary>
         public string Label { get; set; }
+
+        /// <summary>求解記錄的建立時間（Capture 當下）。</summary>
         public DateTime RunAt { get; set; }
+
+        /// <summary>求解前的設定快照，供事後重現這次結果。</summary>
         public ConfigSnapshot Config { get; set; }
+
+        /// <summary>求解結果指標（狀態、目標值、gap、耗時、節點數、收斂軌跡）。</summary>
         public SolveMetrics Metrics { get; set; }
+
+        /// <summary>自由備註，寫進 CSV / JSON 供日後辨識。</summary>
         public string Note { get; set; }
 
         /// <summary>

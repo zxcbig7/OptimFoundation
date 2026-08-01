@@ -37,12 +37,10 @@ namespace SandBox.Constraints
                         _engine.AddLHS(1, new VariableB_ShiftAssign { Date = d, Employee = e, Group = g.Group });
                         _engine.AddRHS(1, new VariableB_GroupMismatch { Date = d, Employee = e });
                         _engine.CreateLessEqual($"{ConstraintName}@{d:yyyy_MM_dd}@{e}s");
-                        ConstraintCount++;
                     });
                 });
             });
 
-            Logging.Info($"[{ConstraintName}] {ConstraintCount}");
         }
     }
 }

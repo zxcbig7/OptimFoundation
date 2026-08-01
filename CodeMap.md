@@ -18,7 +18,7 @@ toc:
 
 !!! note 目錄結構前提
     本檔位於 git repo 根（`OptimizationFramework/OptimFoundation/OptimFoundation/`）。其外層 `OptimFoundation/` 僅為資料夾外殼、非 repo。
-    `Templates/` 與 `tests/` 已收進 git repo、sln 含全部 8 專案（4 src + 3 Templates + 1 tests）。
+    `Templates/` 與 `tests/` 已收進 git repo、sln 含全部 9 專案（4 src + 4 Templates + 1 tests）。
     下表路徑一律相對 **git repo 根**（`src/...`、`Templates/...`、`tests/...`）。
 
 ## File Index
@@ -31,7 +31,7 @@ toc:
 | `src/OptimFoundation.Core/SetBase.cs` | 146 | Core | `ISetBrick`（marker）, `SetBase<T>`（`IReadOnlyList<T>`；`Load(IDataSource, name=null)` paved path、`LoadInline/LoadFrom/LoadCsv`、四道防呆） |
 | `src/OptimFoundation.Core/IO/IDataSource.cs` | 31 | Core | `IDataSource`（名稱可定址：`LoadParam<T>(file=null)`/`LoadSet`；CSV/InMemory）, `ISolutionSink` |
 | `src/OptimFoundation.Core/IO/SetNaming.cs` | 32 | Core | `SetNaming`（internal；set 名慣例單一真相：`Logical`/`File`——三來源用檔名形式 `Set_{X}`，邊界轉位址） |
-| `src/OptimFoundation.Core/IO/CsvDataSource.cs` | 43 | Core | `CsvDataSource : IDataSource`（ctor 建 Data/、set 走 `SetNaming.File`、`LoadTable`→raw DataTable）, `CsvSolutionSink : ISolutionSink` |
+| `src/OptimFoundation.Core/IO/CsvDataSource.cs` | 73 | Core | `CsvDataSource : IDataSource`（ctor 建 Data/、set 走 `SetNaming.File`、`LoadTable`→raw DataTable）, `CsvSolutionSink : ISolutionSink` |
 | `src/OptimFoundation.Core/IO/DbDataSource.cs` | 82 | Core | `DbDataSource`（**query-only，不實作 IDataSource**）：`LoadParam`/`LoadSet`/`LoadTable`(raw DataTable) 皆明寫 SQL；無 tablePrefix/dataId/resolver |
 | `src/OptimFoundation.Core/IO/InMemoryDataSource.cs` | 47 | Core | `InMemoryDataSource : IDataSource`（demo / 測試用，`AddParameters`/`AddSet` 鏈式；set key 走 `SetNaming.Logical`） |
 | `src/OptimFoundation.Core/EngineBase.cs` | 468 | Core | `EngineBase<TModel,TVar,TExpr,TConstr>`（`ISolverEngine`, `ITrajectorySource`）— 三引擎共同父類 |
@@ -41,7 +41,7 @@ toc:
 | `src/OptimFoundation.Core/ITrajectorySource.cs` | 15 | Core | `ITrajectorySource` |
 | `src/OptimFoundation.Core/ITunableConfig.cs` | 18 | Core | `ITunableConfig`（跨引擎 tuning 旋鈕抽象） |
 | `src/OptimFoundation.Core/VariableBuilder.cs` | 129 | Core | `VariableBuilder`（`GenVarCombinations`, `ConvertSetsToStringLists`, `GetVarNames<T>`, `BuildVars<T>`） |
-| `src/OptimFoundation.Core/IO/CsvCtrl.cs` | 204 | Core | `CsvCtrl`（`BuildParameter<T>(fileName=null)`（預設檔名 = 型別名）, `ReadIntSet/ReadDoubleSet/ReadStrSet/ReadDateSet`, `ReadTable`→DataTable, `ReadMatrixCsv`, `WriteSolution`） |
+| `src/OptimFoundation.Core/IO/CsvCtrl.cs` | 333 | Core | `CsvCtrl`（`BuildParameter<T>(fileName=null)`（預設檔名 = 型別名）, `ReadIntSet/ReadDoubleSet/ReadStrSet/ReadDateSet`, `ReadTable`→DataTable, `ReadMatrixCsv`, `WriteSolution`, `WriteSet`/`WriteParam<T>`→Data/（讀寫對稱，兩階段資料流的輸出端）） |
 | `src/OptimFoundation.Core/IO/DBCtrlBase.cs` | 29 | Core | `DBCtrlBase : IDbCtrl`（abstract；`NonQuery` 預設委派 `Execute`） |
 | `src/OptimFoundation.Core/IO/IDbCtrl.cs` | 37 | Core | `IDbCtrl : IDisposable`（含 `NonQuery`；亂碼註解已修復為完整中文 doc comment） |
 | `src/OptimFoundation.Core/Experiments/ConfigSnapshot.cs` | 60 | Core | `ConfigSnapshot`（`From(ISolverConfig)`） |
@@ -67,14 +67,14 @@ toc:
 
 | 檔案 | 專案 | 關鍵設定 |
 |------|------|----------|
-| `OptimFoundation.sln` | — | 全部 8 專案：`Core`/`Cplex`/`Gurobi`/`Generators` + `Tutorial`/`FJSP_BASIC_BRICK`/`Template_CPLEX` + `OptimFoundation.Cplex.Tests`（`dotnet build` 全綠是基準） |
+| `OptimFoundation.sln` | — | 全部 9 專案：`Core`/`Cplex`/`Gurobi`/`Generators` + `Tutorial`/`FJSP_BASIC_BRICK`/`Template_CPLEX`/`Sudoku_SHC279` + `OptimFoundation.Cplex.Tests`（`dotnet build` 全綠是基準） |
 | `src/OptimFoundation.Core/OptimFoundation.Core.csproj` | Core | `net8.0`；`PackageReference` NLog 5.3.4、Oracle.ManagedDataAccess.Core 23.9.1、System.Text.Json 8.0.5 |
 | `src/OptimFoundation.Cplex/OptimFoundation.Cplex.csproj` | Cplex | `net8.0`；`ProjectReference` → Core；ILOG 走 `$(CplexDir)` property（預設 `C:\IBM\ILOG\CPLEX_Studio2211`） |
-| `src/OptimFoundation.Generators/OptimFoundation.Generators.csproj` | Generators | `netstandard2.0`；`IsRoslynComponent`；`PackageReference` Microsoft.CodeAnalysis.CSharp 4.8.0；消費者：三個 Templates（`Templates/dlls/` Analyzer DLL）+ AI-Modeling |
+| `src/OptimFoundation.Generators/OptimFoundation.Generators.csproj` | Generators | `netstandard2.0`；`IsRoslynComponent`；`PackageReference` Microsoft.CodeAnalysis.CSharp 4.8.0；消費者：三個既有 Templates（`Templates/dlls/` Analyzer DLL）+ Sudoku（Analyzer ProjectReference）+ AI-Modeling |
 | `src/OptimFoundation.Gurobi/OptimFoundation.Gurobi.csproj` | Gurobi | `net8.0`；`ProjectReference` → Core；`Reference` 條件式 `Exists('$(GUROBI_HOME)\bin\Gurobi110.NET.dll')` |
 | `Templates/Tutorial/Tutorial.csproj` | Tutorial（已入 sln） | ★ 權威教學範本（未來開發照此模式）：Model.md → 積木 → Dataload 顯式 ctor（逐行讀檔）→ 解驗證協定；三模式 CSV / inmemory / experiment；吃 `Templates/dlls/` |
 
-### tests（repo `tests/`，已入 sln；137 tests 全綠，2026-07-19 `dotnet test` 實測）
+### tests（repo `tests/`，已入 sln；157 tests 全綠，2026-08-01 `dotnet test` 實測）
 
 | 檔案 | 專案 | 關鍵 Symbol |
 |------|------|-------------|
@@ -83,26 +83,30 @@ toc:
 | `tests/.../Unit/ModelElementBaseTests.cs` | Tests | `ModelElementBaseTests`（8 tests：`ToString`/`InitClassBySets`） |
 | `tests/.../Unit/VariableBuilderTests.cs` | Tests | `VariableBuilderTests`（10 tests） |
 | `tests/.../Unit/CsvCtrlTests.cs` | Tests | `CsvCtrlTests`（7 tests：CSV 讀寫） |
+| `tests/.../Unit/CsvWriteRoundTripTests.cs` | Tests | `CsvWriteRoundTripTests`（15 tests：WriteSet/WriteParam ↔ 讀取端 round-trip、DateTime 防呆、GetProperties 對位） |
 | `tests/.../Unit/DataSourceTests.cs` | Tests | `DataSourceTests`（10 tests：DbDataSource 按名對位） |
 | `tests/.../Integration/ExperimentIntegrationTests.cs` | Tests | `ExperimentIntegrationTests`（2 tests：CSV/JSON 落地、Trajectory） |
-| `tests/.../Integration/OptEngineIntegrationTests.cs` | Tests | `OptEngineIntegrationTests`（9 tests：實跑 CPLEX LP/MILP） |
+| `tests/.../Integration/OptEngineIntegrationTests.cs` | Tests | `OptEngineIntegrationTests`（含 CPLEX file-only solver log 持久化驗證） |
+| `tests/.../Unit/ObservabilityTests.cs` | Tests | fallback event、設定快照與 Oracle fail-fast 回歸測試 |
 | `tests/.../Integration/SolverParamCoverageTests.cs` | Tests | `SolverParamCoverageTests`（1 test：逐一 tuning 參數覆蓋率） |
 | `tests/.../Mocks/MockEngine.cs` | Tests | `MockEngine`（測試替身） |
 | `tests/.../Mocks/TestModels.cs` | Tests | 測試用 Variable/Parameter 類別 |
 
 > 測試覆蓋 `Core` + `Cplex`；`Gurobi`／`Generators` 與 `OracleDBCtrl`（真 Oracle 連線）**無任何測試**。
 
-### Templates（repo `Templates/`；全部 net8.0，皆已入 sln；**三者皆套用 `DataContext` 資料防護**）
+### Templates（repo `Templates/`；全部 net8.0，皆已入 sln）
 
-三個範本的 `Dataload` 一律是 `partial class ... : DataContext`，建構走 `OptData.Load(() => new Dataload(...))`，載入後框架自動驗資料（參照完整性 / key 唯一性 / 數值 sanity / opt-in `[FullGrid]`）。讀檔仍是顯式 `.Load(...)` 逐行寫。
+四個 Templates 都使用 `DataContext` 資料防護。Sudoku 以 `Parameter_Given.csv` 儲存三維純 key parameter（Row/Column/Digit），解答再以一般 C# 規則獨立驗證。
 
 | Template | 結構 | 依賴模式 | 備註 |
 |------|------|------|------|
 | `Templates/Tutorial/` | `Program.cs` + `Model/` + `Data/` + `SetClass/` + `ParameterClass/` + `VariableClass/` + `Constraint/` + `Generated/` | **HintPath → `Templates/dlls/`** | ★ **權威教學範本，新題目從這裡複製起手**；三模式 CSV / inmemory / experiment；`Parameter_Demand` 掛 `[FullGrid]` 作示範 |
 | `Templates/FJSP_BASIC_BRICK/` | `Program.cs` + `Model/` + `Constraint/` + `Data/` + `SetClass/` + `ParameterClass/` + `VariableClass/` + `Generated/` | **HintPath → `Templates/dlls/`** + AutoSetsGenerator Analyzer DLL | FJSP 題（積木式）；`timeLimit=90` 為實測可穩定達 `Optimal` 的最小值（30/60 秒只到 `Feasible` 且解會浮動） |
 | `Templates/Template_CPLEX/` | `Program.cs` + `RosteringProblem.cs` + `ExperimentDemo.cs` + `CrossExperiment.cs` + `Constraints/`×12 + `Data/` + `SetClass/` + `VariablesClass/`×11 | `ProjectReference` → Core+Cplex；ILOG → `$(CplexDir)`；Generators 走 repo 內 `Templates/dlls/` | 排班題完整範本；`Random(42)` 固定種子以求可重現；`Data/*.csv` 有 `CopyToOutputDirectory` |
+| `Templates/Sudoku_SHC279/` | `Program.cs` + `Data/*.csv` + `SetClass/` + `ParameterClass/` + `VariableClass/` + `Constraint/`×5 + `Solution/` | `ProjectReference` → Core+Cplex；Generators → Analyzer ProjectReference；ILOG → `$(CplexDir)` | `Parameter_Given` 純 key 資料；Program 在單一 `AddModel` callback 依序建立變數、目標式與五種 constraint；729 個 Binary 變數、351 條限制式；CPLEX 實跑 `Optimal` |
 
-> **2026-07-19 收斂**：`FJSP_BASIC`（非積木舊式）、`FeatureTest`、`Template_Gurobi`、`Template_ThreadTest` 已刪除，Templates 收斂為上述三個並全部現代化。
+> **2026-08-01**：新增 `Sudoku_SHC279`，直接以 ProjectReference 驗證目前工作樹的 Core/Cplex。
+> **2026-07-19 收斂**：`FJSP_BASIC`（非積木舊式）、`FeatureTest`、`Template_Gurobi`、`Template_ThreadTest` 已刪除。
 > `Template_Solver` 已於 2026-07-10 刪除（依賴跨 repo Solver.dll，無法建置）；其拆檔結構已由 Template_CPLEX 繼承。
 
 ### specs / README（git repo `OptimFoundation/OptimFoundation/`）
@@ -129,7 +133,7 @@ flowchart TD
         Generators["OptimFoundation.Generators<br/>(source generator)"]
     end
 
-    subgraph TESTS["tests/（已入 sln，137 tests）"]
+    subgraph TESTS["tests/（已入 sln，157 tests）"]
         CplexTests["OptimFoundation.Cplex.Tests"]
     end
 
@@ -137,6 +141,7 @@ flowchart TD
         TplTutorial["Tutorial<br/>★ 權威範本<br/>(HintPath → Templates/dlls/)"]
         TplFjsp["FJSP_BASIC_BRICK<br/>(HintPath → Templates/dlls/)"]
         TplCplex["Template_CPLEX<br/>(ProjectReference)"]
+        TplSudoku["Sudoku_SHC279<br/>(ProjectReference)"]
     end
 
     subgraph EXT["外部依賴"]
@@ -157,6 +162,9 @@ flowchart TD
     TplFjsp -.->|"HintPath Templates/dlls/"| Core
     TplFjsp -.->|"HintPath Templates/dlls/"| Cplex
     TplFjsp -.->|"Analyzer DLL"| Generators
+    TplSudoku --> Core
+    TplSudoku --> Cplex
+    TplSudoku --> Generators
     Cplex --> ILOG
     Gurobi -.->|條件式 Exists check| GRB
     Generators --> Roslyn
@@ -198,25 +206,23 @@ flowchart TD
 
 | Symbol | 種類 | 行號 | 說明 |
 |---|---|---|---|
-| `EngineBase<TModel,TVar,TExpr,TConstr>` | class (abstract) | 7 | 三個引擎（Cplex/Gurobi/Solver）共同父類 |
-| `Config` | property | 14 | |
-| `Status` | property | 15 | |
-| `BestObjValue` | property | 16 | |
-| `MIPGap` | property | 17 | |
-| `LastMetrics` | property | 20 | |
-| `TryInvokeLong` | method | 29 | |
-| `EnableTrajectory` | method | 44 | virtual no-op，CPLEX override |
-| `AddVariables` | method | 117 | protected virtual |
-| `ReadVar` | method | 157 | |
-| `GetAllVarNames` | method | 175 | |
-| `SetVarLB`/`SetVarUB`/`SetVarRange` | method | 213/216/219 | |
-| `VarSetsReset` | method | 226 | |
-| `ClearPool` | method | 240 | |
-| `AddLHS`（雙多載）/`AddRHS`（雙多載） | method | 262/272/278/288 | |
-| `CreateGreatEqual`/`CreateLessEqual`/`CreateEqual`（各雙多載）/`CreateRange` | method | 298-355 | |
-| `CreateMinimize`/`CreateMaximize` | method | 367/369 | |
-| `CreateLeSoft`/`CreateGeSoft`/`CreateEqSoft` | method | 399/403/407 | virtual，軟約束 |
-| `AddObjectiveTerm` | method | 460 | protected virtual |
+| `EngineBase<TModel,TVar,TExpr,TConstr>` | class (abstract) | 14 | Cplex/Gurobi/Solver 共同父類；集中建模統計與 log |
+| `Config`/`Status`/`BestObjValue`/`MIPGap` | property | 21-24 | |
+| `LastMetrics` | property | 27 | |
+| `BuildCount` | class (private) | 32 | 變數/限制式的實際與預期計數 |
+| `TryInvokeLong` | method | 46 | telemetry 反射失敗記錄 `TELEMETRY_READ_FAILED` |
+| `EnableTrajectory` | method | 65 | virtual no-op，CPLEX override |
+| `AddVariables`/`BatchBuild` | method | 162/171 | batch 後自動記錄每個變數型別 `count=實際/預期` |
+| `ReadVar`/`GetAllVarNames` | method | 246/264 | |
+| `SetVarLB`/`SetVarUB`/`SetVarRange` | method | 304/307/310 | |
+| `VarSetsReset` | method | 317 | 同步重設變數統計 |
+| `RecordVariableBuild`/`RecordConstraintBuild`/`LogBuildSummary` | method (private) | 339/351/376 | `Solve()` 前自動輸出變數與 constraint group 的實際/預期摘要 |
+| `ClearPool` | method | 398 | |
+| `AddLHS`（雙多載）/`AddRHS`（雙多載） | method | 427/441/447/461 | null term 記錄 `VARIABLE_NULL` |
+| `CreateGreatEqual`/`CreateLessEqual`/`CreateEqual`（各雙多載）/`CreateRange` | method | 471-571 | 自動累計 actual/expected；empty/duplicate 不算 actual |
+| `CreateMinimize`/`CreateMaximize` | method | 598/601 | 自動輸出統一的目標式開始/完成事件 |
+| `CreateLeSoft`/`CreateGeSoft`/`CreateEqSoft` | method | 646/650/654 | virtual；soft constraint 與彈性變數納入自動統計 |
+| `AddObjectiveTerm` | method | 727 | protected virtual |
 
 #### `src/OptimFoundation.Core/Enums.cs`
 
@@ -280,7 +286,7 @@ flowchart TD
 | Symbol | 種類 | 行號 | 檔案 | 說明 |
 |---|---|---|---|---|
 | `ConfigSnapshot` | class (sealed) | 10 | ConfigSnapshot.cs | `Solver`/`Tunable`/`SolverSpecific` |
-| `ConfigSnapshot.From` | method (static) | 19 | ConfigSnapshot.cs | reflection 抓 concrete config 專屬欄位 |
+| `ConfigSnapshot.From` | method (static) | 19 | ConfigSnapshot.cs | reflection 抓 concrete config 專屬欄位；getter 失敗時記錄 `CONFIG_SNAPSHOT_SKIPPED` |
 | `CsvExperimentWriter` | class (sealed) | 11 | CsvExperimentWriter.cs | `: IExperimentWriter`；輸出 UTF-8 **with BOM**（供 Excel zh-TW，見說明） |
 | `Write`/`Read` | method | 22/67 | CsvExperimentWriter.cs | `Read` 恆回 null（CSV 非權威來源，只寫不讀） |
 | `IExperimentWriter` | interface | 14 | IExperimentWriter.cs | |
@@ -299,7 +305,7 @@ flowchart TD
 | `FolderDir` | class | 6 | FolderDir.cs | 靜態 `ProjFolder` 實例：Data/Solution/Log/Model/IIS/Sol/Experiment |
 | `FolderDir.PurgeOutputs` | method (static) | 20 | FolderDir.cs | 清各輸出資料夾（不含 Data）超過 N 天舊檔；`retentionDays<=0` 關閉。OptModel ctor 每次 run 自動呼叫（預設 30） |
 | `FolderDir.ProjFolder` | class (nested) | 28 | FolderDir.cs | `ProjectPath` 綁 `AppDomain.CurrentDomain.BaseDirectory` |
-| `FolderDir.ProjFolder.PurgeOlderThan` | method | 71 | FolderDir.cs | 刪本資料夾中 LastWriteTime 早於 N 天前的檔；使用中/無權限跳過 |
+| `FolderDir.ProjFolder.PurgeOlderThan` | method | 72 | FolderDir.cs | 刪本資料夾中 LastWriteTime 早於 N 天前的檔；使用中/無權限會彙總記錄 `OUTPUT_PURGE_SKIPPED` |
 | `ReflectionHelper` | class (static) | 11 | ReflectionHelper.cs | `OracleTypeMap` 私有對照表；`GetMemberNames`/`GetMemberTypes`/`GenerateSQLCols` |
 
 #### `src/OptimFoundation.Core/Logging/Logging.cs`
@@ -308,10 +314,11 @@ flowchart TD
 |---|---|---|---|
 | `Logging` | class (static) | 8 | **全域可變靜態狀態**：`_fileWriter`/`_logFile` 可變且無 DI，多執行緒（如 Template_ThreadTest）共用同一個 log 檔／`Console.OutputEncoding` |
 | `FileWriter` | property (static, private) | 27 | lazy：首次寫入才開檔，避免孤兒 log；呼叫端須持有 `_lock` |
-| `Info`/`Debug`/`Warn`/`Error` | method (static) | 52-55 | |
-| `SetLogFileName` | method (static) | 64 | sanitize 非法檔名字元後換 log 檔路徑（lazy，寫入時才開檔） |
-| `WriteToFile` | method (static) | 77 | |
-| `ClearLogs` | method (static) | 83 | 先 dispose 目前 writer 再刪檔 |
+| `Write` | method (static, private) | 40 | `yyyy-MM-dd HH:mm:ss \| LEVEL \| message`；秒精度，不自動附 namespace |
+| `Info`/`Debug`/`Warn`/`Error` | method (static) | 51-54 | |
+| `SetLogFileName` | method (static) | 63 | sanitize 非法檔名字元後換 log 檔路徑（lazy，寫入時才開檔） |
+| `WriteToFile` | method (static) | 76 | |
+| `ClearLogs` | method (static) | 82 | 先 dispose 目前 writer 再刪檔 |
 
 ### OptimFoundation.Cplex
 
@@ -337,7 +344,7 @@ flowchart TD
 | `SetModelName` | method | 541 | |
 | `AddVariable`/`AddVariables` | method | 552/565 | override |
 | `LinearExpr`/`AddConstraint`/`AddRangeConstraint`/`SetObjective`/`SetVariableBounds` | method | 593-636 | override |
-| `Build`/`Solve`/`GetObjectiveValue`/`GetVariableValue`/`Dispose` | method | 650/652/747/749/751 | |
+| `BuildCore`/`SolveCore`/`FlushSolverLog`/`GetObjectiveValue`/`GetVariableValue`/`Dispose` | method | 652/654/737/753/755/757 | solver log 無論 Console 設定皆持久化；例外先記錄再重拋 |
 | `CreateVar`/`Expr`/`AddLE`/`AddGE`/`AddEQ`/`Minimize`/`Maximize` | method | 763-780 | |
 | `ResetConstraint` | method | 789 | |
 | `CreateGreatEqualThread`/`CreateLessEqualThread`/`CreateEqualThread`/`ResetThreadConstraint` | method | 843-861 | **跨引擎執行緒同步約束**，高複雜度／高風險（見 Review Scope Notes） |
@@ -392,6 +399,7 @@ flowchart TD
 | `BuildConnectionString` | method (static) | 72 | |
 | `CheckHasTable`/`DropTable`/`DeleteTable`/`TruncateTable` | method | 86/117/129/140 | |
 | `ReadStrSet`/`ReadDoubleSet`/`ReadIntSet`/`ReadDateSet`/`LoadSet` | method | 147-152 | |
+| `ConvertToDbType` | method (static, internal) | 330 | 無效或不支援的轉型記錄 `ORACLE_CONVERSION_FAILED` 並 fail fast，禁止靜默寫入 `NULL` |
 
 ### OptimFoundation.Generators
 

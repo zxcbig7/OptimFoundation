@@ -40,8 +40,7 @@ namespace OptimFoundation.Core
         /// <summary>
         /// 對class 反射取得 Type 的 public field/property 名稱與型別（不含 method）。用於 SQL 欄位定義、CSV 標頭等。
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
+        /// <returns>成員名稱，順序為反射回傳順序（實務上等同宣告順序，全框架的欄位對位都靠它）。</returns>
         public static string[] GetMemberNames(Type type)
         {
             return type.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
@@ -50,6 +49,7 @@ namespace OptimFoundation.Core
                        .ToArray();
         }
 
+        /// <summary>取 public field / property 的型別，順序與 <see cref="GetMemberNames"/> 一一對應。</summary>
         public static Type[] GetMemberTypes(Type type)
         {
             return type.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
@@ -60,6 +60,10 @@ namespace OptimFoundation.Core
                        .ToArray();
         }
 
+        /// <summary>
+        /// 產生 CREATE TABLE 的欄位定義片段（每欄前置逗號、全大寫），供 <see cref="ClassInfo"/> 拼接建表語句。
+        /// Nullable&lt;T&gt; 取底層型別、enum 以底層整數型存；對應不到 Oracle 型別的成員直接跳過（不會產生欄位）。
+        /// </summary>
         public static string GenerateSQLCols(Type type)
         {
             string[] names = GetMemberNames(type);

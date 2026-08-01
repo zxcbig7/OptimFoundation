@@ -395,6 +395,66 @@ public Dataload(CsvDataSource csv, DbDataSource db)
 
 **set 名統一（`Core/IO/SetNaming.cs`）**：使用端一律用檔名形式 `Set_{X}`（= 磁碟 `Set_X.csv`、Set 積木類名），各來源在邊界自動轉位址——CSV 讀 `Set_X.csv`、DB 交 resolver 邏輯名 `X`、InMemory 當 key。`"Product"` 與 `"Set_Product"` 經此一律等價，三來源不再各行其是。
 
+### 兩階段：不規則來源解析一次，之後全走標準接口（`WriteSet` / `WriteParam`）
+
+原始資料格式不合框架（要 pivot / join / 去重 / 算衍生欄）時，**整理邏輯只寫一次**：第一階段自寫 parse，把積木輸出成標準 CSV；之後每次計算走 `IDataSource`，不再碰那堆 parse code。
+
+```text
+第一階段  不規則來源 → 專案自寫 parse → 積木 → CsvCtrl.WriteSet / WriteParam → Data/*.csv
+第二階段  Data/*.csv → new CsvDataSource() → 同一組積木
+```
+
+輸出位置就是 `CsvCtrl` 所有讀取方法的來源位置（`Data/`），所以第二階段**不需要任何新參數**。
+
+```csharp
+public partial class Dataload : DataContext
+{
+    // 第一階段：吃不規則來源（rawFile 相對於 Data/）
+    public Dataload(string rawFile)
+    {
+        var grid = CsvCtrl.ReadMatrixCsv(rawFile);
+        ROW.LoadFrom(Enumerable.Range(1, grid.GetLength(0)));
+        for (int r = 0; r < grid.GetLength(0); r++)
+            for (int c = 0; c < grid.GetLength(1); c++)
+                if (grid[r, c] > 0)
+                    parameter_Given.Add(new Parameter_Given(r + 1, c + 1, (int)grid[r, c]));
+    }
+
+    // 第二階段：標準接口
+    public Dataload(IDataSource source)
+    {
+        ROW.Load(source, "Set_Row");
+        parameter_Given = source.LoadParam<Parameter_Given>("Parameter_Given");
+    }
+
+    // 中間那個箭頭。檔名 MUST 與第二階段 ctor 讀取時用的名稱一致，否則下次讀不到
+    public void Export()
+    {
+        CsvCtrl.WriteSet(ROW, "Set_Row");
+        CsvCtrl.WriteParam(parameter_Given, "Parameter_Given");
+    }
+}
+```
+
+```csharp
+var data = OptData.Load(() => new Dataload("raw/Puzzle_SHC279"));   // 第一次
+data.Export();
+var data2 = OptData.Load(() => new Dataload(new CsvDataSource()));  // 之後每次
+```
+
+| 項目 | 行為 |
+| --- | --- |
+| 檔名預設 | set → `Set_{類名去前綴}`；parameter → 型別名（與讀取端慣例一致） |
+| 表頭 | set 無表頭單欄；parameter 第一列 = property 名大寫（`BuildParameter` 按名對位、大小寫不敏感） |
+| 數值 | `double` 走 `"R"` + InvariantCulture，read-back 不失真 |
+| `DateTime` | 固定 `yyyy-MM-dd`（與變數 key 格式一致）；**帶時分秒直接丟例外**，NEVER 靜默截斷 |
+| 欄位來源 | `typeof(T).GetProperties()`——與 `BuildParameter` / `InitClassBySets` 同一來源 |
+| 覆寫 | 同名檔直接覆寫（輸出位置就是讀取位置），log 印 `overwritten=True` |
+
+**保證的是「用同一份資料」，不是「偵測資料變了」**——沒有 hash / manifest / 比對擋下。要確保資料不變就讀輸出的那份。
+
+> **`PreserveNewest` 會咬人**：專案 csproj 的 `<None Update="Data\**\*.csv" CopyToOutputDirectory="PreserveNewest" />` 依時間戳決定是否複製。`Export()` 寫出的檔較新 → 下次 build 不會被專案原始 `Data/` 蓋掉；但手改了專案原始 CSV（變更新）→ build 時會蓋掉輸出。手改優先是合理的，但踩到會困惑。
+
 ### 失同步驗證——已收進框架，NEVER 專案端手寫
 
 > **舊版**曾教在 ctor 尾端手寫 `ValidateSetsCoverParameters()`（逐 parameter 手動比對 set），**此寫法已過時**：這類「set 若改由檔案 / 資料表定義，可能與 parameter 失同步」的檢查，連同重複 key、缺格、數值 sanity 等機械邏輯，**2026-07-18 起集中到框架的 `DataContext`/`DataValidator`（見 §4.6）**，`Dataload` 繼承 `DataContext` 並透過 `OptData.Load` 建構即自動取得，涵蓋範圍比手寫版更完整（dangling / type mismatch / duplicate key / missing cell / numeric sanity 一次全報）。**專案端 NEVER 再手寫這類驗證方法。**
@@ -581,9 +641,19 @@ public void Build()
     // Integer：指定 LB / UB
     optEngine.BuildIVs<VariableI_WorkCount>(0, 30, dataload.Employee);
 
-    Logging.Info($"Variables created: {optEngine.varCount}");
 }
 ```
+
+`BuildVars`/`BuildBVs`/`BuildCVs`/`BuildIVs` 會由 Core 自動統計，不需手動寫 log。
+每個型別建立後會輸出 `count=實際/預期`，`Solve()` 前再輸出總摘要：
+
+```text
+[變數建立完成] type=VariableB_ShiftAssign count=372/372
+[變數建立摘要] count=744/744 types=3
+```
+
+預期值是輸入 sets 的笛卡兒積所產生的變數名稱數；實際值是 solver 建立後真正新增到
+變數索引的數量，因此重複名稱或部分建立失敗不會被誤報為成功。
 
 ### 完整 Build 方法列表
 
@@ -627,6 +697,25 @@ AddRHS(double constant)                // RHS 加入：常數
 
 送出後 Pool 自動清空，不需手動呼叫 `ClearPool()`。
 
+框架不會再靜默忽略未建立的限制式：Pool 為空時方法回傳 `false` 並記錄
+`CONSTRAINT_EMPTY`；名稱重複時保留第一條限制式、清空 Pool，並記錄
+`CONSTRAINT_DUPLICATE`。`AddLHS`/`AddRHS` 收到 `null` 變數時則記錄
+`VARIABLE_NULL`。Event ID 只保留可搜尋的關鍵字；每筆診斷接一段簡短說明，再附上
+`name`、`reason`、`result` 等定位問題需要的欄位，不能只留下看不出影響的代碼。
+
+限制式數量由 Core 自動累計，不再使用 `ConstraintBase.ConstraintCount`。每次呼叫
+`CreateEqual`/`CreateLessEqual`/`CreateGreatEqual`/`CreateRange` 或 soft constraint 都算一筆
+預期；只有真正加入 solver model 才算實際。`Solve()` 前依 constraint 名稱第一個 `@`
+之前的部分分組輸出：
+
+```text
+[限制式建立完成] group=Demand count=48/50
+[限制式建立完成] group=Capacity count=20/20
+[限制式建立摘要] count=68/70 groups=2 solverTotal=68
+```
+
+因此 constraint 名稱應遵守 `Group@索引...`，讓自動分組穩定。
+
 ### 範例：等號限制式
 
 ```csharp
@@ -637,7 +726,6 @@ dataload.Group.ForEach(g =>
 
 engine.AddRHS(1);
 engine.CreateEqual($"OneGroup@{d:yyyy_MM_dd}@{e}");
-ConstraintCount++;
 ```
 
 ### 範例：不等號，含 RHS 變數
@@ -703,6 +791,17 @@ public void Build()
 
 > **規則**：目標式只能呼叫 `AddLHS`，不能使用 `AddRHS`。
 
+`CreateMinimize`/`CreateMaximize` 會自動記錄統一的開始與完成事件，不需在
+`ObjectiveFunction` 或 `BuildModel` 手動輸出：
+
+```text
+[目標式建構開始] sense=Minimize terms=120
+[目標式建構完成] sense=Minimize terms=120 result=success
+```
+
+空目標式會以 `result=skipped reason=no_terms` 完成；建構例外則以
+`result=failed` 記錄後重新拋出。
+
 ---
 
 ## 8. BuildModel — 組裝模型
@@ -734,20 +833,10 @@ public class BuildModel
 
     public void Build()
     {
-        try
-        {
-            Logging.Info("【建構目標式】");
-            new ObjectiveFunction { Engine = engine, Data = dataload }.Build();
-
-            Logging.Info("【建構限制式】");
-            new Constraint_OneGroup   { Engine = engine, Data = dataload }.Build();
-            new Constraint_SixDayWork { Engine = engine, Data = dataload }.Build();
-            // ... 其他限制式
-        }
-        catch (Exception)
-        {
-            throw;
-        }
+        new ObjectiveFunction { Engine = engine, Data = dataload }.Build();
+        new Constraint_OneGroup   { Engine = engine, Data = dataload }.Build();
+        new Constraint_SixDayWork { Engine = engine, Data = dataload }.Build();
+        // ... 其他限制式；建模 log 由 Core 自動產生
     }
 }
 ```
@@ -800,7 +889,11 @@ var config = new CplexConfig
 | `enableLog` | Console | Log 檔 |
 | --- | --- | --- |
 | `true` | 即時顯示 CPLEX solver progress（node、gap、iteration） | 完整 CPLEX log + 框架 log |
-| `false` | 只顯示框架 log（ObjVal、Status 等） | 只有框架 log |
+| `false` | 只顯示框架 log（ObjVal、Status 等） | 完整 CPLEX log + 框架 log |
+
+`enableLog` 現在只控制 Console 顯示，不會再丟棄 solver 診斷資料。若 solver
+拋出例外，框架會先記錄 `SOLVER_EXCEPTION`、保存已捕捉的 solver log，然後
+將原例外重新拋出。
 
 ### Scale Guard：`Solve()` 前的變數規模警告
 
@@ -1140,11 +1233,25 @@ Variable class 的 property 宣告順序與 `BuildBVs` 傳入 sets 順序不一�
 
 1. 啟用 `exportLP = true`，用 CPLEX Interactive Optimizer 或 CPLEX Studio 開啟 `.lp` 確認模型結構
 2. 狀態為 `Infeasible` 時框架自動計算 IIS 並輸出到 `Output/IIS/*.ilp`，開啟即可看到衝突的限制式
-3. 啟用 `enableLog = true` 觀察 CPLEX 求解過程
+3. 開啟該次 framework log 檔查看完整 CPLEX 輸出；需要即時觀察時再設 `enableLog = true`
 
 ---
 
 ### Q：CPLEX log 顯示亂碼
+
+Framework log 固定格式為：
+
+```text
+yyyy-MM-dd HH:mm:ss | LEVEL | message
+```
+
+時間精度到秒；診斷事件使用 `CONSTRAINT_EMPTY`、`SOLVER_EXCEPTION` 這類純關鍵字，
+不加 framework 前綴，也不自動附加 namespace。Event ID 後必須有簡短的人類可讀說明，
+再以 `key=value` 記錄發生原因與處理結果，例如：
+
+```text
+2026-08-01 14:32:10 | WARN  | [CONSTRAINT_EMPTY] 未建立限制式 | name=Demand@D1 reason=pool_empty result=skipped
+```
 
 啟動前確認 Console 的 encoding：
 

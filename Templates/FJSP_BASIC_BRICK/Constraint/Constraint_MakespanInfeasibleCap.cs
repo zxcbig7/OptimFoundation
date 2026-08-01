@@ -24,9 +24,7 @@ namespace FJSP_BASIC_BRICK.Constraint
             _engine.AddLHS(1.0, new VariableX_Makespan());
             _engine.AddRHS(_cap);
             _engine.CreateLessEqual(ConstraintName);
-            ConstraintCount++;
-
-            Logging.Info($"[{ConstraintName}] {ConstraintCount}  Makespan ≤ {_cap}（保證 infeasible）");
+            Logging.Info($"[限制式設定] group={ConstraintName} cap={_cap} expectedStatus=Infeasible");
         }
     }
 }
