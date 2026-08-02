@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace OptimFoundation.Core
 {
 
-    /// <summary>跨引擎共通的基本求解設定（時間上限 / gap / 執行緒 / log）；各 solver 的 config 實作此介面。</summary>
+    /// <summary>跨引擎共通的基本求解設定（時間上限 / gap / 執行緒）；各 solver 的 config 實作此介面。</summary>
     public interface ISolverConfig
     {
         /// <summary>求解時間上限（秒）；null = 不限制。</summary>
@@ -15,12 +15,6 @@ namespace OptimFoundation.Core
 
         /// <summary>可用執行緒數；null = 由 solver 自行決定。</summary>
         int? Threads { get; set; }
-
-        /// <summary>solver log 是否印到 Console（不影響寫入框架 log 檔）。</summary>
-        bool LogToConsole { get; set; }
-
-        /// <summary>solver log 檔路徑；未使用此欄位的實作可留 null。</summary>
-        string LogFilePath { get; set; }
 
         /// <summary>Solve 前 scale guard 門檻：TotalVarCount 超過此值 → PreSolveGuard 只 Warn 不阻擋。預設值 default interface member，不破壞既有實作者。</summary>
         int ScaleWarnThreshold => 10_000_000;

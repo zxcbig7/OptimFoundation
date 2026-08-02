@@ -1,141 +1,136 @@
-﻿
 using OptimFoundation.Core;
 using OptimFoundation.Cplex;
 
-using SandBox;
-using SandBox.Data;
-using SandBox.Constraints;
-using SandBox.VariableClass;
-using SandBox.VariablesClass;
-using static System.Runtime.InteropServices.JavaScript.JSType;
-
-namespace MyApp
+namespace RosteringProblem
 {
-    internal class Program
+    /// <summary>RosteringProblem 的三態入口：import、experiment 與正式求解。</summary>
+    internal static class Program
     {
-
-        static void Main(string[] args)
+        private static int Main(string[] args)
         {
-            // Model1 vs Model2 交叉實驗：dotnet run -- cross
-            if (args.Length > 0 && args[0] == "cross")
+            // 模式 1：import——本專案沒有不規則外部來源，import 改為以固定種子重新生成範例排班資料
+            // 並攤平成標準 CSV（見 Data/Dataload.cs 的 Dataload(string) 建構子）。
+            if (args.Length >= 2 && args[0] == "import")
             {
-                CrossExperiment.Run();
-                return;
+                OptData.Load(() => new Dataload(args[1])).Export();
+                return 0;
             }
 
-            // tuning 實驗環境示範：dotnet run -- experiment
-            if (args.Length > 0 && args[0] == "experiment")
+            // exp 的 log 檔名 MUST 在第一次寫入前設定，整次執行才收在同一包
+            bool isExperiment = args.Any(arg => string.Equals(arg, "exp", StringComparison.OrdinalIgnoreCase));
+            if (isExperiment)
+                Logging.SetLogFileName("RosteringProblem_exp");
+
+            // ── 1. 材料 ────────────────────────────────────────────
+            var data = OptData.Load(() => new Dataload());
+
+            double one = data.parameter_One.Single().QTY;
+            double sixDayWindow = data.parameter_SixDayWindow.Single().QTY;
+            double nightToDayWindow = data.parameter_NightToDayWindow.Single().QTY;
+            double offOneDayWindow = data.parameter_OffOneDayWindow.Single().QTY;
+            double doubleOffWindow = data.parameter_DoubleOffWindow.Single().QTY;
+            double doubleOffThreshold = data.parameter_DoubleOffThreshold.Single().QTY;
+            double weekendOffThreshold = data.parameter_WeekendOffThreshold.Single().QTY;
+
+            double offOneDayPenalty = data.parameter_OffOneDayPenalty.Single().QTY;
+            double sixDayPenalty = data.parameter_SixDayPenalty.Single().QTY;
+            double groupMismatchPenalty = data.parameter_GroupMismatchPenalty.Single().QTY;
+            double nightToDayPenalty = data.parameter_NightToDayPenalty.Single().QTY;
+            double doubleOffLT2Penalty = data.parameter_DoubleOffLT2Penalty.Single().QTY;
+            double belowAvgPenalty = data.parameter_BelowAVGPenalty.Single().QTY;
+            double weekend4DayPenalty = data.parameter_Weekend4DayPenalty.Single().QTY;
+
+            var projectConfig = new ProjectConfig
             {
-                ExperimentDemo.Run();
-                return;
+                ProjectName = "RosteringProblem",
+                EnableSolverLog = true,
+                ExportSol = true,
+                ExportLP = true,
+                ExportMPS = true,
+            };
+            // 唯一 production baseline/champion；experiment clone 它，prod 直接使用它。
+            // Provenance：沿用原始 Template_CPLEX 的手動設定（epGap=0.03, timeLimit=100, workThreads=10），
+            // 尚未經過 §8 Tuning 流程重新驗證；日後 promotion 時同步更新本註解與 TuningHistory.md。
+            var productionBaseline = new CplexConfig
+            {
+                epGap = 0.03,
+                timeLimit = 100,
+                workThreads = 10,
+            };
+
+            // ── 2. 模型 ────────────────────────────────────────────
+            var model = new OptModel("Canonical")
+                .AddVariables(engine => engine.BuildVars<VariableB_ShiftAssign>(data.set_Date, data.set_Employee, data.set_Group))
+                .AddVariables(engine => engine.BuildVars<VariableB_GroupMismatch>(data.set_Date, data.set_Employee))
+                .AddVariables(engine => engine.BuildVars<VariableB_NightToDay>(data.set_Date, data.set_Employee))
+                .AddVariables(engine => engine.BuildVars<VariableB_DoubleOffFlag>(data.set_Date, data.set_Employee))
+                .AddVariables(engine => engine.BuildVars<VariableB_DoubleOffLT2>(data.set_Employee))
+                .AddVariables(engine => engine.BuildVars<VariableB_Off1Day>(data.set_Date, data.set_Employee))
+                .AddVariables(engine => engine.BuildVars<VariableB_SixDayWork>(data.set_Date, data.set_Employee))
+                .AddVariables(engine => engine.BuildVars<VariableX_BelowAVG>(data.set_Employee))
+                .AddVariables(engine => engine.BuildVars<VariableX_WeekendLT4>(data.set_Employee))
+                .AddObjective(engine => new ObjectiveFunction(
+                    data.set_Date,
+                    data.set_Employee,
+                    offOneDayPenalty,
+                    sixDayPenalty,
+                    groupMismatchPenalty,
+                    nightToDayPenalty,
+                    doubleOffLT2Penalty,
+                    belowAvgPenalty,
+                    weekend4DayPenalty).Build(engine))
+                .AddConstraints(engine => new Constraint_FullfillDemand(
+                    data.set_Date, data.set_Employee, data.set_Group, data.parameter_ShiftDemand).Build(engine))
+                .AddConstraints(engine => new Constraint_OneGroup(
+                    data.set_Date, data.set_Employee, data.set_Group, one).Build(engine))
+                .AddConstraints(engine => new Constraint_PreAssign(
+                    data.parameter_PreAssign, one).Build(engine))
+                .AddConstraints(engine => new Constraint_SixDayWork(
+                    data.set_Date, data.set_Employee, sixDayWindow, one).Build(engine))
+                .AddConstraints(engine => new Constraint_NightToDay(
+                    data.set_Date, data.set_Employee, data.parameter_NightToDay, nightToDayWindow, one).Build(engine))
+                .AddConstraints(engine => new Constraint_OffOneDay(
+                    data.set_Date, data.set_Employee, offOneDayWindow, one).Build(engine))
+                .AddConstraints(engine => new Constraint_CrossGroup(
+                    data.set_Date, data.set_Employee, data.parameter_CrossGroup).Build(engine))
+                .AddConstraints(engine => new Constraint_BelowAVG(
+                    data.set_Date, data.set_Employee, data.parameter_ShiftDemand).Build(engine))
+                .AddConstraints(engine => new Constraint_WeekendLT4(
+                    data.set_Date, data.set_Employee, weekendOffThreshold).Build(engine))
+                .AddConstraints(engine => new Constraint_DoubleOffLT2(
+                    data.set_Date, data.set_Employee, doubleOffWindow, doubleOffThreshold, one).Build(engine));
+
+            // ── 3. 環境 ────────────────────────────────────────────
+            // 模式 2：exp——掃 solver 設定，不做正式求解
+            if (isExperiment)
+            {
+                var baseline = productionBaseline.Clone();
+                var feasible = baseline.Clone();
+                feasible.Emphasis = 1;
+                var optimal = baseline.Clone();
+                optimal.Emphasis = 2;
+
+                var result = new OptExperiment("RosteringProblem-tuning-r1", "baseline vs emphasis=feasible vs emphasis=optimal")
+                    .AddModel(model)
+                    .AddConfig("r1-baseline", baseline)
+                    .AddConfig("r1-emphasis=feasible", feasible)
+                    .AddConfig("r1-emphasis=optimal", optimal)
+                    .Run();
+
+                foreach (var trial in result.Trials)
+                    Logging.Info($"[Experiment] {trial.Label} status={trial.Metrics.Status} " +
+                                 $"obj={trial.Metrics.ObjectiveValue:G6} gap={trial.Metrics.MipGap:P2} runTimeMs={trial.Metrics.RunTimeMs:F0}");
+                return 0;
             }
 
+            // 模式 3（預設）：正式求解
+            using var project = new OptProject(model)
+                .UseConfig(() => projectConfig)
+                .UseConfig(() => productionBaseline)
+                .OnSolved(engine => RosteringProblemSolution.ReadAndValidate(engine, data).Print());
 
-            // OptModel（Fluent 管線）打包版：dotnet run -- optmodel
-            if (args.Length > 0 && args[0] == "optmodel")
-            {
-                var dataload = OptData.Load(() => new Dataload());
-
-                var Model1 = new OptModel("RosteringProblem")
-                    .UseConfig(() => new CplexConfig
-                    {
-                        epGap = 0.03,
-                        timeLimit = 100,
-                        workThreads = 10,
-                        enableLog = true,
-                        exportSol = true,
-                        exportLP = true,
-                        exportMPS = true
-                    })
-                    .AddVariables(e => new VariableCreate(dataload, e).Build())
-                    .AddModel(e => new BuildModel(dataload, e).Build())
-                    .OnSolved(e => dataload.WriteToCSV(e));
-
-
-                var Model2 = new OptModel("RosteringProblem")
-                .UseConfig(() => new CplexConfig
-                {
-                    epGap = 0.03,
-                    timeLimit = 100,
-                    workThreads = 10,
-                    enableLog = true,
-                    exportSol = true,
-                    exportLP = true,
-                    exportMPS = true
-                })
-                .AddVariables(e => new VariableCreate(dataload, e).Build())
-                .AddModel(e => new BuildModel(dataload, e).Build())
-
-                .AddModel(e => new Constraint_TEST(dataload.Date, dataload.Employee, dataload.parameter_ShiftDemand, e).Build())
-
-                .OnSolved(e => dataload.WriteToCSV(e));
-
-                Model1.Execute();
-                Logging.Info($"整體運作時間:", Model1.totalTimer);
-
-                return;
-            }
-
-            // OptModel 拆開版（不經 VariableCreate / BuildModel，逐一註冊變數與約束）：dotnet run -- optmodel-expanded
-            if (args.Length > 0 && args[0] == "optmodel-expanded")
-            {
-                var dataload = OptData.Load(() => new Dataload());
-                using (var m = new OptModel("RosteringProblem")
-                    .UseConfig(() => new CplexConfig
-                    {
-                        epGap = 0.03,
-                        timeLimit = 100,
-                        workThreads = 10,
-                        enableLog = true,
-                        exportSol = true,
-                        exportLP = true,
-                        exportMPS = true
-                    })
-                    // 變數（原 VariableCreate 內容）
-                    .AddVariables(e => e.BuildBVs<VariableB_ShiftAssign>(dataload.Date, dataload.Employee, dataload.Group))
-                    .AddVariables(e => e.BuildBVs<VariableB_GroupMismatch>(dataload.Date, dataload.Employee))
-                    .AddVariables(e => e.BuildBVs<VariableB_NightToDay>(dataload.Date, dataload.Employee))
-                    .AddVariables(e => e.BuildBVs<VariableB_DoubleOffFlag>(dataload.Date, dataload.Employee))
-                    .AddVariables(e => e.BuildBVs<VariableB_DoubleOffLT2>(dataload.Employee))
-                    .AddVariables(e => e.BuildBVs<VariableB_Off1Day>(dataload.Date, dataload.Employee))
-                    .AddVariables(e => e.BuildBVs<VariableB_SixDayWork>(dataload.Date, dataload.Employee))
-                    .AddVariables(e => e.BuildCVs<VariableX_BelowAVG>(dataload.Employee))
-                    .AddVariables(e => e.BuildCVs<VariableX_WeekendLT4>(dataload.Employee))
-                    // 目標式（原 BuildModel 內容）
-                    .AddModel(e => new ObjectiveFunction(
-                        dataload.Date, dataload.Employee,
-                        dataload.Penalty_OffOneDay,
-                        dataload.Penalty_SixDay,
-                        dataload.Penalty_GroupMismatch,
-                        dataload.Penalty_NightToDay,
-                        dataload.Penalty_DoubleOffLT2,
-                        dataload.Penalty_BelowAVG,
-                        dataload.Penalty_Weekend4Day,
-                        e).Build())
-                    // 限制式
-                    .AddModel(e => new Constraint_FullfillDemand(dataload.Date, dataload.Employee, dataload.Group, dataload.parameter_ShiftDemand, e).Build())
-                    .AddModel(e => new Constraint_OneGroup(dataload.Date, dataload.Employee, dataload.Group, e).Build())
-                    .AddModel(e => new Constraint_PreAssign(dataload.parameter_PreAssign, e).Build())
-                    .AddModel(e => new Constraint_SixDayWork(dataload.Date, dataload.Employee, e).Build())
-                    .AddModel(e => new Constraint_NightToDay(dataload.Date, dataload.Employee, dataload.parameter_NightToDay, e).Build())
-                    .AddModel(e => new Constraint_OffOneDay(dataload.Date, dataload.Employee, e).Build())
-                    .AddModel(e => new Constraint_CrossGroup(dataload.Date, dataload.Employee, dataload.parameter_CrossGroup, e).Build())
-                    .AddModel(e => new Constraint_BelowAVG(dataload.Date, dataload.Employee, dataload.parameter_ShiftDemand, e).Build())
-                    .AddModel(e => new Constraint_WeekendLT4(dataload.Date, dataload.Employee, e).Build())
-                    .AddModel(e => new Constraint_DoubleOffLT2(dataload.Date, dataload.Employee, e).Build())
-                    .OnSolved(e => dataload.WriteToCSV(e)))
-                {
-                    m.Execute();
-                    Logging.Info($"整體運作時間:", m.totalTimer);
-                }
-                return;
-            }
-
-            using (RosteringProblem project = new RosteringProblem())
-            {
-                project.Execute();
-                Logging.Info($"整體運作時間:", project.totalTimer);
-            }
+            bool solved = project.Execute();
+            return solved ? 0 : 1;
         }
     }
 }

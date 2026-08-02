@@ -32,19 +32,16 @@
 |------|--------|------|
 | Variable class | `VariableBase` | properties only，無建構子 |
 | Parameter class | `ParameterBase` | properties only，無建構子 |
-| Constraint class | `ConstraintBase` | properties only + `override void Build()` |
+| Constraint class | 可繼承 `ConstraintBase` 或一般 class | ctor 只收實際需要的 Set / Parameter / 界限與 engine；`Build()` 只含本條公式 |
 
 **零建構子原則（Zero-Constructor）：**  
-所有 Variable、Parameter、Constraint class 只需宣告 properties，不寫任何建構子。  
-呼叫端一律使用 object initializer：
+只適用於 Variable / Parameter class；它們只宣告 properties，不寫任何建構子。Constraint / Objective 反而 MUST 用顯式 ctor 列出所需資料，避免耦合整包 Dataload。
 
 ```csharp
 // Variable / Parameter
 new VariableB_ShiftAssign { Date = d, Employee = e, Group = g }
 new Parameter_ShiftDemand { Date = d, Group = "D", QTY = 5 }
 
-// Constraint（屬性由 project base class 注入）
-new Constraint_OneGroup { Engine = engine, Data = data }
 ```
 
 ---
@@ -124,7 +121,8 @@ CreateEqual / CreateLessEqual / CreateGreatEqual / CreateRange (name)
 ### CPLEX — OptimFoundation.Cplex
 
 - `OptEngine : EngineBase<Cplex, INumVar, ILinearNumExpr, IRange>`
-- Config: `CplexConfig`（`epGap`、`timeLimit`、`workThreads`、`enableLog`、`exportLP`、`exportMPS`、`exportSol`、`projectName`）
+- Solver config: `CplexConfig`（`epGap`、`timeLimit`、`workThreads`、cuts、emphasis 等純 CPLEX 旋鈕）
+- Project config: `ProjectConfig`（`ProjectName`、`RetentionDays`、`EnableSolverLog`、`ExportLP/MPS/Sol`、輸出身分）
 - `AddVariables` override：`Model.NumVarArray(n, lbs, ubs, types, names)`，一次 interop 建立 N 個變數
 - `Solve()` 完整流程：輸出 LP/MPS → 求解 → 判斷狀態 → 輸出 Sol → Infeasible 時計算 IIS
 
@@ -141,18 +139,13 @@ CreateEqual / CreateLessEqual / CreateGreatEqual / CreateRange (name)
 
 ```
 ProjectName/
-├── Data/
-│   ├── Dataload.cs              資料載入、Sets、Parameters 初始化
-│   └── Parameter_Xxx.cs         parameters (properties only)
-├── VariablesClass/
-│   ├── VariableCreate.cs        呼叫 BuildBVs/BuildIVs/BuildCVs
-│   └── Variable{B|I|X}_Xxx.cs  變數 (properties only)
-├── Constraints/
-│   ├── XxxConstraintBase.cs     project 中介 base（注入 Engine + Data）
-│   ├── BuildModel.cs            依序呼叫所有限制式的 Build()
-│   ├── ObjectiveFunction.cs     目標式
-│   └── Constraint_Xxx.cs        各限制式
-└── ProblemName.cs               Execute() 入口
+├── Program.cs                   唯一組裝點：模型三階段 + project / experiment runners
+├── Model/                       數學模型
+├── Set/Dataload.cs              資料載入、Sets、Parameters、輸出
+├── Parameter/Parameter_Xxx.cs   parameters (properties only)
+├── Variable/Variable{B|I|X}_Xxx.cs 變數 (properties only)
+├── Objective/ObjectiveFunction.cs   目標式
+└── Constraint/Constraint_Xxx.cs     各限制式
 ```
 
 ### 4.1 Variable class
@@ -185,44 +178,51 @@ public class Parameter_ShiftDemand : ParameterBase
 
 **規則：同 Variable class，繼承 `ParameterBase`，不寫建構子。**
 
-### 4.3 VariableCreate
+### 4.3 Program.cs 的變數階段
 
 ```csharp
-public void Build()
-{
-    optEngine.BuildBVs<VariableB_ShiftAssign>(dataload.Date, dataload.Employee, dataload.Group);
-    optEngine.BuildCVs<VariableX_BelowAVG>(dataload.Employee);
-}
+var model = new OptModel("baseline-model")
+    .AddVariables(e =>
+    {
+        e.BuildBVs<VariableB_ShiftAssign>(data.Date, data.Employee, data.Group);
+        e.BuildCVs<VariableX_BelowAVG>(data.Employee);
+    });
 ```
 
 ### 4.4 Constraint class
 
-**Step 1 — 定義 project 中介 base（每個 project 一個）：**
+Constraint class 只收本條公式需要的積木，不注入整包 data：
 
 ```csharp
-public abstract class RosterConstraintBase : ConstraintBase
+public sealed class Constraint_OneGroup
 {
-    protected OptEngine Engine { get; set; }
-    protected Dataload   Data   { get; set; }
-    public abstract void Build();
-}
-```
+    private readonly List<DateTime> _dates;
+    private readonly List<string> _employees;
+    private readonly List<string> _groups;
+    private readonly OptEngine _engine;
 
-**Step 2 — Constraint class 只剩邏輯：**
-
-```csharp
-public class Constraint_OneGroup : RosterConstraintBase
-{
-    public override void Build()
+    public Constraint_OneGroup(
+        List<DateTime> dates,
+        List<string> employees,
+        List<string> groups,
+        OptEngine engine)
     {
-        Data.Date.ForEach(d =>
+        _dates = dates;
+        _employees = employees;
+        _groups = groups;
+        _engine = engine;
+    }
+
+    public void Build()
+    {
+        _dates.ForEach(d =>
         {
-            Data.Employee.ForEach(e =>
+            _employees.ForEach(e =>
             {
-                Data.Group.ForEach(g =>
-                    Engine.AddLHS(1, new VariableB_ShiftAssign { Date = d, Employee = e, Group = g }));
-                Engine.AddRHS(1);
-                Engine.CreateEqual($"{ConstraintName}@{d:yyyy_MM_dd}@{e}");
+                _groups.ForEach(g =>
+                    _engine.AddLHS(1, new VariableB_ShiftAssign { Date = d, Employee = e, Group = g }));
+                _engine.AddRHS(1);
+                _engine.CreateEqual($"Constraint_OneGroup@{d:yyyy_MM_dd}@{e}");
             });
         });
     }
@@ -233,33 +233,49 @@ public class Constraint_OneGroup : RosterConstraintBase
 `ConstraintName@識別欄位` 的名稱前綴輸出 `[限制式建立完成]`，格式為
 `count=<實際建立>/<預期建立>`。
 
-### 4.5 BuildModel
+### 4.5 Program.cs 的目標式與限制式階段
 
 ```csharp
-var constraints = new List<RosterConstraintBase>
+model
+    .AddObjective(e => new ObjectiveFunction(
+        data.Date, data.Employee, data.Penalties, e).Build())
+    .AddConstraints(e =>
+    {
+        new Constraint_FullfillDemand(
+            data.Date, data.Employee, data.Group, data.ShiftDemand, e).Build();
+        new Constraint_OneGroup(data.Date, data.Employee, data.Group, e).Build();
+    });
+```
+
+### 4.6 兩種 Execute 環境
+
+```csharp
+var projectConfig = new ProjectConfig
 {
-    new Constraint_FullfillDemand { Engine = engine, Data = dataload },
-    new Constraint_OneGroup       { Engine = engine, Data = dataload },
-    // ...
+    ProjectName = "ProjectName",
+    EnableSolverLog = true,
+    ExportSol = true,
 };
-constraints.ForEach(c => c.Build());
+var baseline = new CplexConfig { epGap = 0.03, timeLimit = 100 };
+
+using var project = new OptProject(model)
+    .UseConfig(() => projectConfig)
+    .UseConfig(() => baseline)
+    .OnSolved(e => data.WriteToCSV(e));
+bool ok = project.Execute();
+
+var emphasis = baseline.Clone();
+emphasis.Emphasis = 2;
+var result = new OptExperiment("project-tuning", "baseline vs emphasis")
+    .AddModel(model)
+    .AddConfig("baseline", baseline)
+    .AddConfig("emphasis", emphasis)
+    .Run();
 ```
 
-### 4.6 Execute 入口
+`OptModel` 是不持有 engine 的純定義，固定套用 variables → objective → constraints。`OptProject` 負責單次執行、housekeeping 與 `OnSolved`；`OptExperiment` 負責 m×n 序列實驗，預設 solver log / 匯出 OFF 且沒有 `OnSolved`。
 
-```csharp
-public bool Execute()
-{
-    var config = new CplexConfig { epGap = 0.03, timeLimit = 100, ... };
-    optEngine = new OptEngine(config);
-    optEngine.Build();
-
-    new VariableCreate(dataload, optEngine).Build();
-    new BuildModel(dataload, optEngine).Build();
-
-    return optEngine.Solve();
-}
-```
+`OptData.Load` 完成註冊與驗證後會凍結 framework-controlled mutation API；基底類別無法攔截既有 public fields 或可變 `List` 的直接寫入，建模階段仍 MUST 視 data 為唯讀。
 
 ---
 
@@ -293,12 +309,12 @@ public bool Execute()
 ## 7. 新增最佳化問題步驟
 
 1. 新增 project，加入 solver 參考
-2. 建立 `Data/` — `Dataload` + `Parameter_Xxx`（properties only）
-3. 建立 `VariablesClass/` — `Variable{B|I|X}_Xxx`（properties only）
-4. 建立 `Constraints/XxxConstraintBase`（注入 Engine + Data）
-5. 每個限制式繼承中介 base，只寫 `Build()` 邏輯
-6. `BuildModel.cs` 組裝所有 constraint，統一 `ForEach(c => c.Build())`
-7. `ProblemName.cs` 的 `Execute()` 串接 Build → Solve → 輸出
+2. 建立 `Set/` 與 `Parameter/`；`Dataload : DataContext` 只透過 `OptData.Load` 建構
+3. 建立 `Variable/` 的 `Variable{B|I|X}_Xxx`（properties only）
+4. 建立 `Objective/ObjectiveFunction.cs` 與各 `Constraint/Constraint_Xxx.cs`；ctor 只收自己需要的資料
+5. 在 `Program.cs` 直接註冊 `AddVariables` / `AddObjective` / `AddConstraints`
+6. 建立 `ProjectConfig` 與 `CplexConfig`，不可混放專案輸出與 solver 旋鈕
+7. 同一個 `OptModel` 視需求交給 `OptProject` 或 `OptExperiment`
 
 ---
 

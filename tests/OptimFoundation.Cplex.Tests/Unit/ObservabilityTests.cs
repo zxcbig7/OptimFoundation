@@ -90,6 +90,27 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         [Fact]
+        public void NamedSoftConstraint_LogsConfigurationAfterSuccessfulBuild()
+        {
+            string tag = StartLog("NamedSoftConstraint");
+            var engine = new MockEngine();
+            engine.Build();
+            engine.BuildCVs<VarS>(new[] { "X" });
+            engine.AddLHS(1.0, new VarS { S = "X" });
+
+            bool created = engine.CreateLeSoft(12.5, 3.0, "SetupBudget");
+
+            Assert.True(created);
+            string log = ReadLog(tag);
+            Assert.Contains("[軟性限制式建立完成]", log);
+            Assert.Contains("name=SetupBudget", log);
+            Assert.Contains("sense=LessEqual", log);
+            Assert.Contains("rhs=12.5", log);
+            Assert.Contains("penalty=3", log);
+            Assert.Contains("result=success", log);
+        }
+
+        [Fact]
         public void Solve_LogsAutomaticBuildActualExpectedCounts()
         {
             string tag = StartLog("AutomaticBuildSummary");
@@ -109,12 +130,12 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             string log = ReadLog(tag);
             Assert.Contains("[變數建立完成] type=VarS count=2/2", log);
-            Assert.Contains("[變數建立摘要] count=2/2", log);
+            Assert.Contains("[變數建立摘要] 總數=2/2 類別數=1", log);
             Assert.Contains("[目標式建構開始] sense=Minimize terms=1", log);
             Assert.Contains("[目標式建構完成] sense=Minimize terms=1 result=success", log);
             Assert.Contains("[限制式建立完成] group=Demand count=1/2", log);
             Assert.Contains("[限制式建立完成] group=Capacity count=0/1", log);
-            Assert.Contains("[限制式建立摘要] count=1/3", log);
+            Assert.Contains("[限制式建立摘要] 總數=1/3 群組數=2", log);
         }
 
         [Fact]

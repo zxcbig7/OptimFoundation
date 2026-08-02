@@ -1,60 +1,93 @@
 using OptimFoundation.Core;
 using OptimFoundation.Core.IO;
-using Sudoku_SHC279.ParameterClass;
-using Sudoku_SHC279.SetClass;
 
-namespace Sudoku_SHC279.Data;
-
-/// <summary>Sudoku 資料唯一入口：Set 與 Given 都從 Data/*.csv 載入，再由 DataContext 驗證。</summary>
-public partial class Dataload : DataContext
+namespace Sudoku_SHC279
 {
-    public const string PuzzleName = "Sudoku_SHC279";
-
-    public Set_Row ROW = new();
-    public Set_Column COLUMN = new();
-    public Set_Digit DIGIT = new();
-    public List<Parameter_Given> parameter_Given = new();
-
-    public Dataload() : this(new CsvDataSource()) { }
-
-    /// <summary>
-    /// 第一階段：吃不規則來源——9x9 題盤矩陣（0 = 空格），格式與框架要的三欄長格式不同，這裡把它攤平。
-    /// rawFile 相對於 Data/（ReadMatrixCsv 的位址慣例），例：raw/Puzzle_SHC279。
-    /// </summary>
-    public Dataload(string rawFile)
+    /// <summary>Sudoku 資料唯一入口；求解時只讀標準 CSV，import 時才展開原始矩陣。</summary>
+    public sealed partial class Dataload : DataContext
     {
-        var grid = CsvCtrl.ReadMatrixCsv(rawFile);
-        int rows = grid.GetLength(0);
-        int cols = grid.GetLength(1);
+        public const string PuzzleName = "Sudoku_SHC279";
 
-        ROW.LoadFrom(Enumerable.Range(1, rows));
-        COLUMN.LoadFrom(Enumerable.Range(1, cols));
-        DIGIT.LoadFrom(Enumerable.Range(1, rows));
+        public Set_Row set_Row = new();
+        public Set_Column set_Column = new();
+        public Set_Digit set_Digit = new();
+        public Set_Block set_Block = new();
+        public List<Parameter_Given> parameter_Given = new();
+        public List<Parameter_BlockCell> parameter_BlockCell = new();
+        public List<Parameter_ExactlyOne> parameter_ExactlyOne = new();
+        public List<Parameter_ObjCoef> parameter_ObjCoef = new();
 
-        for (int r = 0; r < rows; r++)
-            for (int c = 0; c < cols; c++)
-                if (grid[r, c] > 0)
-                    parameter_Given.Add(new Parameter_Given(r + 1, c + 1, (int)grid[r, c]));
-    }
+        public Dataload() : this(new CsvDataSource()) { }
 
-    /// <summary>第二階段：標準接口。</summary>
-    public Dataload(IDataSource source)
-    {
-        ROW.Load(source, "Set_Row");
-        COLUMN.Load(source, "Set_Column");
-        DIGIT.Load(source, "Set_Digit");
-        parameter_Given = source.LoadParam<Parameter_Given>("Parameter_Given");
-    }
+        /// <summary>讀取已就位的 canonical CSV；此建構子只做資料載入。</summary>
+        public Dataload(IDataSource source)
+        {
+            set_Row.Load(source, "Set_Row");
+            set_Column.Load(source, "Set_Column");
+            set_Digit.Load(source, "Set_Digit");
+            set_Block.Load(source, "Set_Block");
+            parameter_Given = source.LoadParam<Parameter_Given>("Parameter_Given");
+            parameter_BlockCell = source.LoadParam<Parameter_BlockCell>("Parameter_BlockCell");
+            parameter_ExactlyOne = source.LoadParam<Parameter_ExactlyOne>("Parameter_ExactlyOne");
+            parameter_ObjCoef = source.LoadParam<Parameter_ObjCoef>("Parameter_ObjCoef");
+        }
 
-    /// <summary>
-    /// 中間那個箭頭：把積木寫回 Data/，成為第二階段的輸入。
-    /// 檔名 MUST 與上面 IDataSource ctor 讀取時用的名稱一致，否則下次讀不到。
-    /// </summary>
-    public void Export()
-    {
-        CsvCtrl.WriteSet(ROW, "Set_Row");
-        CsvCtrl.WriteSet(COLUMN, "Set_Column");
-        CsvCtrl.WriteSet(DIGIT, "Set_Digit");
-        CsvCtrl.WriteParam(parameter_Given, "Parameter_Given");
+        /// <summary>把方形原始題盤展開成 sets、givens、宮格對應與模型常數。</summary>
+        public Dataload(string rawFile)
+        {
+            var grid = CsvCtrl.ReadMatrixCsv(rawFile);
+            int rowCount = grid.GetLength(0);
+            int columnCount = grid.GetLength(1);
+            int blockSide = (int)Math.Sqrt(rowCount);
+
+            if (rowCount != columnCount || blockSide * blockSide != rowCount)
+                throw new InvalidDataException("Sudoku 題盤必須是邊長為完全平方數的正方形。");
+
+            set_Row.LoadFrom(Enumerable.Range(1, rowCount));
+            set_Column.LoadFrom(Enumerable.Range(1, columnCount));
+            set_Digit.LoadFrom(Enumerable.Range(1, rowCount));
+            set_Block.LoadFrom(Enumerable.Range(1, rowCount));
+
+            parameter_ExactlyOne.Add(new Parameter_ExactlyOne { QTY = 1.0 });
+
+            foreach (int digit in set_Digit)
+                parameter_ObjCoef.Add(new Parameter_ObjCoef { Digit = digit, QTY = 0.0 });
+
+            for (int rowIndex = 0; rowIndex < rowCount; rowIndex++)
+                for (int columnIndex = 0; columnIndex < columnCount; columnIndex++)
+                {
+                    int row = rowIndex + 1;
+                    int column = columnIndex + 1;
+                    int block = rowIndex / blockSide * blockSide + columnIndex / blockSide + 1;
+
+                    parameter_BlockCell.Add(new Parameter_BlockCell
+                    {
+                        Block = block,
+                        Row = row,
+                        Column = column,
+                    });
+
+                    if (grid[rowIndex, columnIndex] > 0)
+                        parameter_Given.Add(new Parameter_Given
+                        {
+                            Row = row,
+                            Column = column,
+                            Digit = (int)grid[rowIndex, columnIndex],
+                        });
+                }
+        }
+
+        /// <summary>把 import ctor 產生的資料輸出成求解流程使用的 canonical CSV。</summary>
+        public void Export()
+        {
+            CsvCtrl.WriteSet(set_Row, "Set_Row");
+            CsvCtrl.WriteSet(set_Column, "Set_Column");
+            CsvCtrl.WriteSet(set_Digit, "Set_Digit");
+            CsvCtrl.WriteSet(set_Block, "Set_Block");
+            CsvCtrl.WriteParam(parameter_Given, "Parameter_Given");
+            CsvCtrl.WriteParam(parameter_BlockCell, "Parameter_BlockCell");
+            CsvCtrl.WriteParam(parameter_ExactlyOne, "Parameter_ExactlyOne");
+            CsvCtrl.WriteParam(parameter_ObjCoef, "Parameter_ObjCoef");
+        }
     }
 }

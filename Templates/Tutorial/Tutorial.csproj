@@ -18,17 +18,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\OptimFoundation.Core\OptimFoundation.Core.csproj" />
+    <ProjectReference Include="..\..\src\OptimFoundation.Cplex\OptimFoundation.Cplex.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="ILOG.Concert">
       <HintPath>..\dlls\ILOG.Concert.dll</HintPath>
     </Reference>
     <Reference Include="ILOG.CPLEX">
       <HintPath>..\dlls\ILOG.CPLEX.dll</HintPath>
-    </Reference>
-    <Reference Include="OptimFoundation.Core">
-      <HintPath>..\dlls\OptimFoundation.Core.dll</HintPath>
-    </Reference>
-    <Reference Include="OptimFoundation.Cplex">
-      <HintPath>..\dlls\OptimFoundation.Cplex.dll</HintPath>
     </Reference>
 
     <Analyzer Include="..\dlls\OptimFoundation.Generators.dll" />

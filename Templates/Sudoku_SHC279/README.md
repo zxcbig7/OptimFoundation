@@ -1,42 +1,60 @@
-# Sudoku SHC 279 — CPLEX Template
+# Sudoku SHC 279 — OptimFoundation CPLEX Template
 
-這個範例把標準 9×9 Sudoku 建成 Binary MILP，並求解 Smart Hobbies 影片中的 SHC 279 題盤。
-題目由 Pretzaal 設計；來源：[This AMAZING Trick Can Solve Extreme Sudoku](https://www.youtube.com/watch?v=m9Xaa4GXs9I)。
+這個 template 以 Binary MILP 求解 9×9 Sudoku。題盤來自 Smart Hobbies 的 SHC 279，完整集合、參數、變數、限制式與目標式定義見 [`Model/Sudoku_SHC279_Model.md`](Model/Sudoku_SHC279_Model.md)。
+
+## 架構
+
+專案採 canonical 積木結構與單一 `Sudoku_SHC279` namespace：
+
+- `Set/`：ROW、COLUMN、DIGIT、BLOCK，一個 generator 型別一檔。
+- `Parameter/`：Given、BlockCell、ExactlyOne、ObjCoef。
+- `Variable/`：`VariableB_CellDigit{Row,Column,Digit}`。
+- `Objective/`：逐項套用 `ObjCoef`；目前全為零，因此是純可行性問題。
+- `Constraint/`：CellValue、RowDigit、ColumnDigit、BlockDigit、Given 五組限制式。
+- `Data/`：canonical CSV 與唯一資料入口 `Dataload`；`raw/` 保留原始矩陣供 import。
+- `Solution/`：讀解後逐條驗證 givens、列、欄與宮規則。
+- `Program.cs`：唯一組裝點，依序建立材料、`OptModel("Canonical")` 與執行環境。
+
+宮的結構不寫死在限制式或解驗證中。`Parameter_BlockCell.csv` 明確列出每個 BLOCK 所含的 `(Row,Column)`；`Parameter_ExactlyOne.csv` 提供所有等式右側；`Parameter_ObjCoef.csv` 提供目標係數。換成其他完全平方邊長的標準 Sudoku 時，求解程式不必修改。
 
 ## 資料
 
-- `Data/Set_Row.csv`、`Set_Column.csv`、`Set_Digit.csv`：三個索引集合，各為 1..9。
-- `Data/Parameter_Given.csv`：題目的 27 個已知數字，欄位為 `Row,Column,Digit`。
-- `Parameter_Given` 使用 `[OptParam(HasValue=false)]`，是沒有 QTY 的純 key parameter。
-- `Dataload` 透過 `CsvDataSource` 載入，再由 `OptData.Load`／`DataContext` 驗證 set 參照、型別與重複 key。
+求解模式只讀以下已就位的 canonical CSV：
 
-題盤沒有硬編碼在模型中；更換 `Parameter_Given.csv` 就能求解另一題標準 9×9 Sudoku。
+- `Set_Row.csv`、`Set_Column.csv`、`Set_Digit.csv`、`Set_Block.csv`
+- `Parameter_Given.csv`
+- `Parameter_BlockCell.csv`
+- `Parameter_ExactlyOne.csv`
+- `Parameter_ObjCoef.csv`
 
-## 模型
-
-- `x[row,column,digit] ∈ {0,1}`：該格是否填入該數字，共 `9×9×9 = 729` 個變數。
-- 每格恰好一個數字：81 條。
-- 每列的每個數字恰好一次：81 條。
-- 每欄的每個數字恰好一次：81 條。
-- 每個 3×3 宮的每個數字恰好一次：81 條。
-- 題目 givens：27 條。
-- 限制式合計：351 條。
-
-`Program` 是唯一組裝點：變數、目標式與五種限制式直接在同一條 `OptModel` fluent chain 中建立並呼叫 `Build(engine)`；沒有額外的 `SudokuModel`、預先宣告的 builder 變數或集中 constraints class。
-所有元件由單一 `AddModel(...)` callback 依序建立：變數 → 目標式 → 限制式；不再額外使用 `AddVariables(...)` 或 `VariableCreate` 包裝。
-限制式不依賴 `Dataload`；建構子只接收各限制式實際需要的 Row、Column、Digit Set 或 Given Parameter。
-
-Sudoku 是可行性問題，範例使用零係數的最小化目標式。求解後會另外用一般 C# 程式驗證 givens、9 列、9 欄與 9 個宮，避免只依賴 Solver status。
+`Parameter_Given` 與 `Parameter_BlockCell` 是純 key parameter，沒有 `QTY`。`Parameter_ExactlyOne` 是恰好一列的 scalar；`Parameter_ObjCoef` 依 DIGIT 各有一列。
 
 ## 執行
 
+在 `OptimFoundation/OptimFoundation` repo 根目錄執行：
+
 ```powershell
+# 正式求解與解驗證
 dotnet run --project Templates\Sudoku_SHC279\Sudoku_SHC279.csproj
+
+# r2：warm-up 後比較 baseline / feasibility emphasis / aggressive probe（3 seeds、輪替順序）
+dotnet run --project Templates\Sudoku_SHC279\Sudoku_SHC279.csproj -- exp
+
+# 將 Data/raw/Puzzle_SHC279.csv 展開並 Export 成 canonical CSV
+dotnet run --project Templates\Sudoku_SHC279\Sudoku_SHC279.csproj -- import raw/Puzzle_SHC279
 ```
 
-需要本機安裝 IBM ILOG CPLEX Studio 22.1.1；若安裝位置不同，建置時覆寫 `CplexDir`。
+`exp` 會從 `Program.cs` 的 `productionBaseline` clone baseline 與 variants，輸出 Trial 設定快照及 metrics。AI 完成 tuning 時必須讀取本輪結果，只有在 champion 通過解品質、穩健效能與 production 驗證 gate 後，才把勝出設定寫回 `productionBaseline`。因此後續無參數命令直接使用已 promotion 的設定；`OptExperiment` 本身不會自動修改 config 或 source。若沒有 variant 能可靠勝過 baseline，production 保留原設定。
 
-本範例實際求得並驗證的解：
+每輪 promotion 或 retain 決策記錄在 [`TuningHistory.md`](TuningHistory.md)。若修改 `productionBaseline`，該筆紀錄必須包含來源 experiment、勝出 Trial label、before/after config diff、比較證據及 production 驗證結果；`Program.cs` baseline 上方的 provenance 也必須同步更新。
+
+預設需要 IBM ILOG CPLEX Studio 22.1.1；可用 MSBuild property `CplexDir` 覆寫安裝位置。
+
+本專案位於 OptimFoundation framework repo 的 `Templates/`，因此刻意保留對 framework source 與 generator 的 `ProjectReference`，讓 template 隨框架一起建置並即時反映 API 變更。這是 framework repo 內 template 的限定例外；移到 `$OPT/AI-Modeling/Projects/` 的專案仍必須改用 `..\..\dlls\` HintPath。
+
+## 預期結果
+
+求解狀態應為 `Optimal`、目標值為 `0`，且驗證後盤面為：
 
 ```text
 6 1 5 | 2 8 4 | 7 9 3
@@ -51,3 +69,5 @@ dotnet run --project Templates\Sudoku_SHC279\Sudoku_SHC279.csproj
 8 4 7 | 1 5 9 | 6 3 2
 5 9 3 | 6 2 7 | 8 4 1
 ```
+
+模型規模為 729 個 binary variables、351 條 constraints（81×4 + 27）。

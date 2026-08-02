@@ -1,31 +1,34 @@
 using OptimFoundation.Core;
 using OptimFoundation.Cplex;
-using Sudoku_SHC279.ParameterClass;
-using Sudoku_SHC279.VariableClass;
 
-namespace Sudoku_SHC279.Constraint;
-
-/// <summary>∀ given(row,column,digit)：x[row,column,digit] = 1。</summary>
-public sealed class Constraint_Given : ConstraintBase
+namespace Sudoku_SHC279
 {
-    private readonly IReadOnlyList<Parameter_Given> _givens;
-
-    public Constraint_Given(IReadOnlyList<Parameter_Given> givens) => _givens = givens;
-
-    public void Build(OptEngine engine)
+    /// <summary>把題盤的每個已知格固定為指定數字；對應 Model.md 的 Given。</summary>
+    public sealed class Constraint_Given : ConstraintBase
     {
-        foreach (var given in _givens)
-        {
-            engine.AddLHS(1.0, new VariableB_CellDigit
-            {
-                Row = given.Row,
-                Column = given.Column,
-                Digit = given.Digit,
-            });
+        private readonly List<Parameter_Given> _givens;
+        private readonly double _exactlyOne;
 
-            engine.CreateEqual(
-                1.0,
-                $"{ConstraintName}@{given.Row}@{given.Column}@{given.Digit}");
+        public Constraint_Given(List<Parameter_Given> givens, double exactlyOne)
+        {
+            _givens = givens;
+            _exactlyOne = exactlyOne;
+        }
+
+        public void Build(OptEngine engine)
+        {
+            foreach (var given in _givens)
+            {
+                engine.AddLHS(1.0, new VariableB_CellDigit
+                {
+                    Row = given.Row,
+                    Column = given.Column,
+                    Digit = given.Digit,
+                });
+
+                engine.AddRHS(_exactlyOne);
+                engine.CreateEqual($"{ConstraintName}@{given.Row}@{given.Column}@{given.Digit}");
+            }
         }
     }
 }

@@ -18,15 +18,50 @@ namespace OptimFoundation.Cplex.Tests.Integration
         {
             var config = new CplexConfig
             {
-                timeLimit  = timeLimit,
-                enableLog  = false,
-                exportLP   = false,
-                exportSol  = false,
-                exportMPS  = false,
+                timeLimit = timeLimit,
             };
-            var engine = new OptEngine(config);
+            var projectConfig = new ProjectConfig { EnableSolverLog = false };
+            var engine = new OptEngine(config, projectConfig);
             engine.Build();
             return engine;
+        }
+
+        [Fact(DisplayName = "OptModel 設定解析：ctor 專案名與保留天數優先於 ProjectConfig")]
+        public void OptModel_CtorProjectNameAndRetentionDays_TakePrecedenceOverProjectConfig()
+        {
+            if (!CplexAvailable) return;
+
+            string projectName = "CtorPriority_" + Guid.NewGuid().ToString("N");
+            var projectConfig = new ProjectConfig
+            {
+                ProjectName = "ConfigName",
+                RetentionDays = 9999,
+                EnableSolverLog = false,
+            };
+
+            var model = new OptModel(projectName)
+                .AddVariables(engine => engine.BuildBVs<VarS>(new[] { "x" }))
+                .AddObjective(engine =>
+                {
+                    engine.AddLHS(1.0, new VarS { S = "x" });
+                    engine.CreateMinimize();
+                });
+            using var project = new OptProject(model, projectName, retentionDays: 0)
+                .UseConfig(() => new CplexConfig { timeLimit = 30 })
+                .UseConfig(() => projectConfig);
+
+            Assert.True(project.Execute());
+            Assert.Equal(projectName, project.optEngine.ModelName);
+
+            string logFile = Directory.GetFiles(FolderDir.Log.GetPath(), $"{projectName}_*.txt")
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .First();
+            using var stream = new FileStream(logFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(stream);
+            Assert.Contains(
+                $"[EffectiveConfig] ProjectName={projectName}(ctor) RetentionDays=0* " +
+                "SolverLog=OFF* ExportLP=OFF ExportMPS=OFF ExportSol=OFF",
+                reader.ReadToEnd());
         }
 
         // ── 基本求解 ────────────────────────────────────────────────────────
@@ -224,6 +259,106 @@ namespace OptimFoundation.Cplex.Tests.Integration
             var values = engine.GetSetVarValues<VarS>();
             Assert.Equal(2, values.Count);
             Assert.Equal(1.0, values.Values.Sum(), precision: 5);  // 最優解總和 = 1
+        }
+
+        [Fact]
+        public void OptProject_OnSolved_RunsExactlyOnceAfterSuccessfulSolve()
+        {
+            if (!CplexAvailable) return;
+            int calls = 0;
+            var model = new OptModel("on-solved-success")
+                .AddVariables(e => e.BuildCVs<VarS>(new[] { "x" }))
+                .AddObjective(e =>
+                {
+                    e.AddLHS(1.0, new VarS { S = "x" });
+                    e.CreateMinimize();
+                });
+
+            using var project = new OptProject(model, retentionDays: 0)
+                .UseConfig(() => new ProjectConfig { EnableSolverLog = false })
+                .OnSolved(_ => calls++);
+
+            Assert.True(project.Execute());
+            Assert.Equal(1, calls);
+        }
+
+        [Fact]
+        public void OptProject_OnSolved_DoesNotRunAfterFailedSolve()
+        {
+            if (!CplexAvailable) return;
+            int calls = 0;
+            var model = new OptModel("on-solved-failure")
+                .AddVariables(e => e.BuildCVs<VarS>(new[] { "x" }))
+                .AddObjective(e =>
+                {
+                    e.AddLHS(1.0, new VarS { S = "x" });
+                    e.CreateMinimize();
+                })
+                .AddConstraints(e =>
+                {
+                    e.AddLHS(1.0, new VarS { S = "x" });
+                    e.CreateGreatEqual(1.0, "LB");
+                    e.AddLHS(1.0, new VarS { S = "x" });
+                    e.CreateLessEqual(0.0, "UB");
+                });
+
+            using var project = new OptProject(model, retentionDays: 0)
+                .UseConfig(() => new ProjectConfig { EnableSolverLog = false })
+                .OnSolved(_ => calls++);
+
+            Assert.False(project.Execute());
+            Assert.Equal(SolveStatus.Infeasible, project.optEngine.Status);
+            Assert.Equal(0, calls);
+        }
+
+        [Fact]
+        public void EmptyOptModel_Execute_WarnsAndStillSolves()
+        {
+            if (!CplexAvailable) return;
+            string tag = "empty-execute-" + Guid.NewGuid().ToString("N");
+            using var project = new OptProject(new OptModel(tag), tag, retentionDays: 0)
+                .UseConfig(() => new ProjectConfig { EnableSolverLog = false });
+
+            Assert.True(project.Execute());
+            Assert.Equal(SolveStatus.Optimal, project.optEngine.Status);
+            Assert.Contains("[MODEL_EMPTY]", ReadLatestLog(tag));
+        }
+
+        [Fact]
+        public void EmptyOptModel_Run_WarnsAndStillSolves()
+        {
+            if (!CplexAvailable) return;
+            string tag = "empty-run-" + Guid.NewGuid().ToString("N");
+            Logging.SetLogFileName(tag);
+
+            try
+            {
+                Experiment result = new OptExperiment(tag, "empty model")
+                    .AddTrial(new OptModel("Empty"), "default", new CplexConfig { timeLimit = 30 })
+                    .Run();
+
+                Trial trial = Assert.Single(result.Trials);
+                Assert.Equal(SolveStatus.Optimal, trial.Metrics.Status);
+                Assert.Contains("[MODEL_EMPTY]", ReadLatestLog(tag));
+            }
+            finally
+            {
+                foreach (string suffix in new[] { ".csv", ".json", "-trajectory.csv" })
+                {
+                    string path = FolderDir.Experiment.GetFilePath(tag + suffix);
+                    if (File.Exists(path)) File.Delete(path);
+                }
+            }
+        }
+
+        private static string ReadLatestLog(string tag)
+        {
+            string path = Directory.GetFiles(FolderDir.Log.GetPath(), $"{tag}_*.txt")
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .First();
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd();
         }
     }
 }

@@ -1,30 +1,27 @@
-using FJSP_BASIC_BRICK.VariableClass;
 using OptimFoundation.Core;
 using OptimFoundation.Cplex;
 
-namespace FJSP_BASIC_BRICK.Constraint
+namespace FJSP_BASIC_BRICK
 {
     /// <summary>
-    /// [LE] 保證 infeasible 的 Makespan 硬上限：Makespan ≤ InfeasibleMakespanCap（= 理論下界 - 1）。
-    /// 只給模型 C 用，目的是觸發 CPLEX conflict 分析、示範 IIS 輸出（IISs/*.ilp），不是真實業務限制。
+    /// [UB] Phase 3 demo variant 專用：Makespan ≤ InfeasibleMakespanCap（= 理論下界 − 1）。
+    /// 上限嚴格低於任何可行 makespan，保證 Infeasible，用來觸發 CPLEX conflict 分析並輸出 IIS（IISs/*.ilp）。
+    /// 非業務限制，NEVER 進 canonical production 組裝。
     /// </summary>
-    public class Constraint_MakespanInfeasibleCap : ConstraintBase
+    public sealed class Constraint_MakespanInfeasibleCap : ConstraintBase
     {
-        private readonly OptEngine _engine;
         private readonly double _cap;
 
-        public Constraint_MakespanInfeasibleCap(double cap, OptEngine engine)
+        public Constraint_MakespanInfeasibleCap(double cap)
         {
             _cap = cap;
-            _engine = engine;
         }
 
-        public void Build()
+        public void Build(OptEngine engine)
         {
-            _engine.AddLHS(1.0, new VariableX_Makespan());
-            _engine.AddRHS(_cap);
-            _engine.CreateLessEqual(ConstraintName);
-            Logging.Info($"[限制式設定] group={ConstraintName} cap={_cap} expectedStatus=Infeasible");
+            engine.AddLHS(1.0, new VariableX_Makespan());
+            engine.AddRHS(_cap);
+            engine.CreateLessEqual(ConstraintName);
         }
     }
 }

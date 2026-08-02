@@ -275,6 +275,36 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         [Fact]
+        public void CreateLeSoft_WithName_UsesProvidedName()
+        {
+            var engine = NewEngine();
+            engine.BuildCVs<VarS>(new List<string> { "x" });
+            engine.AddLHS(1.0, new VarS { S = "x" });
+
+            bool ok = engine.CreateLeSoft(5.0, 1.0, "CapacitySoft");
+
+            Assert.True(ok);
+            Assert.Single(engine.BuiltConstraints);
+            Assert.Equal("CapacitySoft", engine.BuiltConstraints[0]);
+            Assert.Contains(engine.BuiltVars, v => v.Name == "Surplus_CapacitySoft");
+        }
+
+        [Fact]
+        public void CreateGeSoft_WithName_UsesProvidedName()
+        {
+            var engine = NewEngine();
+            engine.BuildCVs<VarS>(new List<string> { "x" });
+            engine.AddLHS(1.0, new VarS { S = "x" });
+
+            bool ok = engine.CreateGeSoft(5.0, 1.0, "DemandSoft");
+
+            Assert.True(ok);
+            Assert.Single(engine.BuiltConstraints);
+            Assert.Equal("DemandSoft", engine.BuiltConstraints[0]);
+            Assert.Contains(engine.BuiltVars, v => v.Name == "Deficit_DemandSoft");
+        }
+
+        [Fact]
         public void CreateEqSoft_AddsTwoElasticVars()
         {
             var engine = NewEngine();

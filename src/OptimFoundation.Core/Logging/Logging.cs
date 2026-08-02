@@ -79,7 +79,7 @@ namespace OptimFoundation.Core
         /// <summary>
         /// 改用新的 log 檔名（實際檔名為 {name}_{時間戳}.txt，非法字元會被換成 '-'）。
         /// 會關掉目前的 log 檔並在下次寫入時開新檔；已寫入舊檔的內容留在原檔。
-        /// OptModel 建構時會自動以專案名呼叫，一般不需自己叫。
+        /// OptProject 執行時會自動以專案名呼叫，一般不需自己叫。
         /// </summary>
         public static void SetLogFileName(string name)
         {
@@ -102,7 +102,7 @@ namespace OptimFoundation.Core
 
         /// <summary>
         /// ⚠ 破壞性：刪掉 Logs 資料夾內的<b>所有</b>檔案（含本次執行正在寫的），不可回復。
-        /// 例行清理 ALWAYS 改用 OptModel 建構時的 retentionDays 保留期機制，只清超過天數的舊檔。
+        /// 例行清理 ALWAYS 改用 OptProject 的 retentionDays 保留期機制，只清超過天數的舊檔。
         /// </summary>
         public static void ClearLogs()
         {

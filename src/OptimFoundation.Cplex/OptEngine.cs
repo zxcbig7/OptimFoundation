@@ -24,6 +24,7 @@ namespace OptimFoundation.Cplex
         private bool _exportMps;
         private bool _exportSol;
         private bool _enableLog;
+        private readonly ProjectConfig _projectConfig;
         private readonly List<IRange> _constraints = new List<IRange>();
         private readonly string _startTime = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
         private MemoryStream _solverLogStream;
@@ -38,10 +39,16 @@ namespace OptimFoundation.Cplex
         private List<string> _conflictConstraints = null;
 
         /// <summary>以指定組態建立引擎。此時還沒碰 CPLEX，模型物件要等 Build() 才生出來。</summary>
-        public OptEngine(CplexConfig config) : base(config) { }
+        public OptEngine(CplexConfig config) : this(config, new ProjectConfig()) { }
+
+        /// <summary>以指定求解器組態與專案組態建立引擎。此時還沒碰 CPLEX，模型物件要等 Build() 才生出來。</summary>
+        public OptEngine(CplexConfig config, ProjectConfig project) : base(config)
+        {
+            _projectConfig = project;
+        }
 
         /// <summary>以 CplexConfig 預設值建立引擎（32 threads、2GB WorkMem、MIPGap 1e-4、無時限）。</summary>
-        public OptEngine() : base(new CplexConfig()) { }
+        public OptEngine() : this(new CplexConfig(), new ProjectConfig()) { }
 
         /// <summary>本引擎已建立的限制式條數（不含尚未併入 model 的 thread 約束）。</summary>
         public override int ConstraintCount => _constraints.Count;
@@ -117,7 +124,7 @@ namespace OptimFoundation.Cplex
         #region Configuration
 
         /// <summary>
-        /// 建立 CPLEX 模型物件並逐項套用組態，每套用一項就寫一行 [Environment Setting] log。
+        /// 建立 CPLEX 模型物件並逐項套用組態，每套用一項就寫一行 [Solver Setting] log。
         /// 重複呼叫等同重新開一個空模型：限制式清單、目標式、conflict 結果、限制式名稱去重集合全部重置（變數索引不動）。
         /// </summary>
         /// <param name="cfg">MUST 為 <see cref="CplexConfig"/>，傳其他型別會在後續存取時 NullReferenceException。</param>
@@ -133,14 +140,14 @@ namespace OptimFoundation.Cplex
             CplexConfig config = cfg as CplexConfig;
 
             // Solver log 路由：無論是否顯示 Console，都會捕捉並保存到 framework log。
-            //   enableLog = true  → Console + framework log
-            //   enableLog = false → framework log only
+            //   EnableSolverLog = true  → Console + framework log
+            //   EnableSolverLog = false → framework log only
             _solverLogStream?.Dispose();
             _solverLogWriter?.Dispose();
             _solverLogStream = new MemoryStream();
             _solverLogWriter = new StreamWriter(_solverLogStream) { AutoFlush = true };
 
-            if (config.enableLog == true)
+            if (_projectConfig.EnableSolverLog)
             {
                 _enableLog = true;
                 // TeeWriter：即時寫 Console + 同時捕捉到 MemoryStream（供事後存 log 檔）
@@ -155,12 +162,36 @@ namespace OptimFoundation.Cplex
                 Model.SetWarning(_solverLogWriter);
             }
 
+            #region ProjectConfig — 輸出與 log 路由（與「solver 怎麼解」無關，先印成獨立一群）
+            Logging.Info(_enableLog
+                ? "[Project Setting] CPLEX Log → Console (real-time)"
+                : "[Project Setting] CPLEX Log → framework log file only");
+
+            if (_projectConfig.ExportLP)
+            {
+                _exportLp = true;
+                Logging.Info("[Project Setting] Enabled LP File (.lp) Output");
+            }
+
+            if (_projectConfig.ExportMPS)
+            {
+                _exportMps = true;
+                Logging.Info("[Project Setting] Enabled Model File (.mps) Output");
+            }
+
+            if (_projectConfig.ExportSol)
+            {
+                _exportSol = true;
+                Logging.Info("[Project Setting] Enabled Solution File (.sol) Output");
+            }
+            #endregion
+
             #region 設定執行緒上限
             // CPLEX求解設定 - 工作執行緒上限 (預設: 32)
             if (config.workThreads.HasValue)
             {
                 Model.SetParam(Param.Threads, config.workThreads.Value);
-                Logging.Info($"[Environment Setting] Threads={config.workThreads.Value}");
+                Logging.Info($"[Solver Setting] Threads={config.workThreads.Value}");
             }
             #endregion
 
@@ -169,7 +200,7 @@ namespace OptimFoundation.Cplex
             if (config.rowRead.HasValue)
             {
                 Model.SetParam(Param.Read.Constraints, config.rowRead.Value);
-                Logging.Info($"[Environment Setting] RowReadLim={config.rowRead.Value}");
+                Logging.Info($"[Solver Setting] RowReadLim={config.rowRead.Value}");
             }
             #endregion
 
@@ -180,7 +211,7 @@ namespace OptimFoundation.Cplex
             {
                 Model.SetParam(IntParam.WorkMem, config.workMemory.Value);
                 Model.SetParam(Param.MIP.Strategy.File, 0);
-                Logging.Info($"[Environment Setting] WorkMem={config.workMemory.Value} MB (NodeFileInd=0)");
+                Logging.Info($"[Solver Setting] WorkMem={config.workMemory.Value} MB (NodeFileInd=0)");
             }
             #endregion
 
@@ -189,7 +220,7 @@ namespace OptimFoundation.Cplex
             if (config.epGap.HasValue)
             {
                 Model.SetParam(Param.MIP.Tolerances.MIPGap, config.epGap.Value);
-                Logging.Info($"[Environment Setting] EpGap={config.epGap.Value}");
+                Logging.Info($"[Solver Setting] EpGap={config.epGap.Value}");
             }
             #endregion
 
@@ -206,7 +237,7 @@ namespace OptimFoundation.Cplex
                     3 => "交替最佳估計值搜尋",
                     _ => "最佳界限搜尋 (預設)"
                 };
-                Logging.Info($"[Environment Setting] NodeSelect={config.nodeSelect.Value} ({nodeSelectDescription})");
+                Logging.Info($"[Solver Setting] NodeSelect={config.nodeSelect.Value} ({nodeSelectDescription})");
             }
             #endregion
 
@@ -215,38 +246,7 @@ namespace OptimFoundation.Cplex
             if (config.randomSeed.HasValue)
             {
                 Model.SetParam(Param.RandomSeed, config.randomSeed.Value);
-                Logging.Info($"[Environment Setting] RandomSeed={config.randomSeed.Value}");
-            }
-            #endregion
-
-            #region 是否紀錄LOG
-            if (_enableLog)
-                Logging.Info($"[Environment Setting] CPLEX Log → Console (real-time)");
-            else
-                Logging.Info("[Environment Setting] CPLEX Log → framework log file only");
-            #endregion
-
-            #region 是否輸出 LP 檔案
-            if (config.exportLP == true)
-            {
-                _exportLp = true;
-                Logging.Info($"[Environment Setting] Enabled LP File (.lp) Output");
-            }
-            #endregion
-
-            #region 是否輸出 Model 檔案
-            if (config.exportMPS == true)
-            {
-                _exportMps = true;
-                Logging.Info($"[Environment Setting] Enabled Model File (.mps) Output");
-            }
-            #endregion
-
-            #region 是否輸出 sol 檔案
-            if (config.exportSol == true)
-            {
-                _exportSol = true;
-                Logging.Info($"[Environment Setting] Enabled Solution File (.sol) Output");
+                Logging.Info($"[Solver Setting] RandomSeed={config.randomSeed.Value}");
             }
             #endregion
 
@@ -264,7 +264,7 @@ namespace OptimFoundation.Cplex
             if (config.epOpt.HasValue)
             {
                 Model.SetParam(Param.Simplex.Tolerances.Optimality, config.epOpt.Value);
-                Logging.Info($"[Environment Setting] EpOpt={config.epOpt.Value}");
+                Logging.Info($"[Solver Setting] EpOpt={config.epOpt.Value}");
             }
             #endregion
 
@@ -273,7 +273,7 @@ namespace OptimFoundation.Cplex
             if (config.epRHS.HasValue)
             {
                 Model.SetParam(Param.Simplex.Tolerances.Feasibility, config.epRHS.Value);
-                Logging.Info($"[Environment Setting] EpRHS={config.epRHS.Value}");
+                Logging.Info($"[Solver Setting] EpRHS={config.epRHS.Value}");
             }
             #endregion
 
@@ -282,7 +282,7 @@ namespace OptimFoundation.Cplex
             if (config.timeLimit.HasValue)
             {
                 Model.SetParam(Param.TimeLimit, config.timeLimit.Value);
-                Logging.Info($"[Environment Setting] TiLim={config.timeLimit.Value} 秒");
+                Logging.Info($"[Solver Setting] TiLim={config.timeLimit.Value} 秒");
             }
             #endregion
 
@@ -291,7 +291,7 @@ namespace OptimFoundation.Cplex
             if (config.polishAfterTime.HasValue)
             {
                 Model.SetParam(Param.MIP.PolishAfter.Time, config.polishAfterTime.Value);
-                Logging.Info($"[Environment Setting] PolishAfterTime={config.polishAfterTime.Value} 秒");
+                Logging.Info($"[Solver Setting] PolishAfterTime={config.polishAfterTime.Value} 秒");
             }
             #endregion
 
@@ -309,7 +309,7 @@ namespace OptimFoundation.Cplex
                     4 => "強調尋找隱藏可行解",
                     _ => "平衡最佳可行解 (預設)"
                 };
-                Logging.Info($"[Environment Setting] MIPEmphasis={config.mipEmphasis.Value} ({mipEmphasisDescription})");
+                Logging.Info($"[Solver Setting] MIPEmphasis={config.mipEmphasis.Value} ({mipEmphasisDescription})");
             }
             #endregion
 
@@ -328,7 +328,7 @@ namespace OptimFoundation.Cplex
                     4 => "以假定降低成本選擇分支",
                     _ => "自動選擇變數分支 (預設)"
                 };
-                Logging.Info($"[Environment Setting] VarSel={config.varSel.Value} ({varSelDescription})");
+                Logging.Info($"[Solver Setting] VarSel={config.varSel.Value} ({varSelDescription})");
             }
             #endregion
 
@@ -363,7 +363,7 @@ namespace OptimFoundation.Cplex
                         algorithmDescription = "自動選擇 (預設)";
                         break;
                 }
-                Logging.Info($"[Environment Setting] RootAlgorithm={config.algorithm.Value} ({algorithmDescription})");
+                Logging.Info($"[Solver Setting] RootAlgorithm={config.algorithm.Value} ({algorithmDescription})");
             }
             #endregion
 
@@ -389,7 +389,7 @@ namespace OptimFoundation.Cplex
                         nodeFileIndDescription = "節點資訊壓縮存放於記憶體 (預設)";
                         break;
                 }
-                Logging.Info($"[Environment Setting] NodeFileInd={config.nodeFileInd.Value} ({nodeFileIndDescription})");
+                Logging.Info($"[Solver Setting] NodeFileInd={config.nodeFileInd.Value} ({nodeFileIndDescription})");
             }
             #endregion
 
@@ -398,7 +398,7 @@ namespace OptimFoundation.Cplex
             if (config.PreIndicator.HasValue)
             {
                 Model.SetParam(Param.Preprocessing.Presolve, config.PreIndicator.Value);
-                Logging.Info($"[Environment Setting] Presolve={(config.PreIndicator.Value ? "on" : "off")}");
+                Logging.Info($"[Solver Setting] Presolve={(config.PreIndicator.Value ? "on" : "off")}");
             }
             #endregion
 
@@ -407,7 +407,7 @@ namespace OptimFoundation.Cplex
             if (config.NodeAlgorithm.HasValue)
             {
                 Model.SetParam(IntParam.NodeAlg, config.NodeAlgorithm.Value);  // 此版本無 Param.* 對應，沿用 flat（obsolete warning 可接受）
-                Logging.Info($"[Environment Setting] NodeAlg={config.NodeAlgorithm.Value}");
+                Logging.Info($"[Solver Setting] NodeAlg={config.NodeAlgorithm.Value}");
             }
             #endregion
 
@@ -416,7 +416,7 @@ namespace OptimFoundation.Cplex
             if (config.HeuristicEffort.HasValue)
             {
                 Model.SetParam(Param.MIP.Strategy.HeuristicEffort, config.HeuristicEffort.Value);
-                Logging.Info($"[Environment Setting] HeuristicEffort={config.HeuristicEffort.Value}");
+                Logging.Info($"[Solver Setting] HeuristicEffort={config.HeuristicEffort.Value}");
             }
             #endregion
 
@@ -431,26 +431,26 @@ namespace OptimFoundation.Cplex
                     1 => "決定論",
                     _ => "自動 (預設)"
                 };
-                Logging.Info($"[Environment Setting] Parallel={config.parallelMode.Value} ({parallelDescription})");
+                Logging.Info($"[Solver Setting] Parallel={config.parallelMode.Value} ({parallelDescription})");
             }
             // 決定論時間上限（ticks）
             if (config.detTimeLimit.HasValue)
             {
                 Model.SetParam(Param.DetTimeLimit, config.detTimeLimit.Value);
-                Logging.Info($"[Environment Setting] DetTimeLimit={config.detTimeLimit.Value} ticks");
+                Logging.Info($"[Solver Setting] DetTimeLimit={config.detTimeLimit.Value} ticks");
             }
             // 計時方式：1 CPU, 2 wall-clock
             if (config.clockType.HasValue)
             {
                 Model.SetParam(Param.ClockType, config.clockType.Value);
                 string clockDescription = config.clockType.Value == 1 ? "CPU 時間" : "wall-clock 時間";
-                Logging.Info($"[Environment Setting] ClockType={config.clockType.Value} ({clockDescription})");
+                Logging.Info($"[Solver Setting] ClockType={config.clockType.Value} ({clockDescription})");
             }
             // 數值穩定優先
             if (config.numericalEmphasis.HasValue)
             {
                 Model.SetParam(Param.Emphasis.Numerical, config.numericalEmphasis.Value);
-                Logging.Info($"[Environment Setting] NumericalEmphasis={config.numericalEmphasis.Value}");
+                Logging.Info($"[Solver Setting] NumericalEmphasis={config.numericalEmphasis.Value}");
             }
             #endregion
 
@@ -458,12 +458,12 @@ namespace OptimFoundation.Cplex
             if (config.epInt.HasValue)
             {
                 Model.SetParam(Param.MIP.Tolerances.Integrality, config.epInt.Value);
-                Logging.Info($"[Environment Setting] Integrality={config.epInt.Value}");
+                Logging.Info($"[Solver Setting] Integrality={config.epInt.Value}");
             }
             if (config.epAGap.HasValue)
             {
                 Model.SetParam(Param.MIP.Tolerances.AbsMIPGap, config.epAGap.Value);
-                Logging.Info($"[Environment Setting] AbsMIPGap={config.epAGap.Value}");
+                Logging.Info($"[Solver Setting] AbsMIPGap={config.epAGap.Value}");
             }
             #endregion
 
@@ -471,17 +471,17 @@ namespace OptimFoundation.Cplex
             if (config.nodeLimit.HasValue)
             {
                 Model.SetParam(Param.MIP.Limits.Nodes, config.nodeLimit.Value);
-                Logging.Info($"[Environment Setting] Nodes={config.nodeLimit.Value}");
+                Logging.Info($"[Solver Setting] Nodes={config.nodeLimit.Value}");
             }
             if (config.treeMemoryLimit.HasValue)
             {
                 Model.SetParam(Param.MIP.Limits.TreeMemory, config.treeMemoryLimit.Value);
-                Logging.Info($"[Environment Setting] TreeMemory={config.treeMemoryLimit.Value} MB");
+                Logging.Info($"[Solver Setting] TreeMemory={config.treeMemoryLimit.Value} MB");
             }
             if (config.intSolLimit.HasValue)
             {
                 Model.SetParam(Param.MIP.Limits.Solutions, config.intSolLimit.Value);
-                Logging.Info($"[Environment Setting] Solutions={config.intSolLimit.Value}");
+                Logging.Info($"[Solver Setting] Solutions={config.intSolLimit.Value}");
             }
             #endregion
 
@@ -489,27 +489,27 @@ namespace OptimFoundation.Cplex
             if (config.probe.HasValue)
             {
                 Model.SetParam(Param.MIP.Strategy.Probe, config.probe.Value);
-                Logging.Info($"[Environment Setting] Probe={config.probe.Value}");
+                Logging.Info($"[Solver Setting] Probe={config.probe.Value}");
             }
             if (config.rinsHeur.HasValue)
             {
                 Model.SetParam(Param.MIP.Strategy.RINSHeur, config.rinsHeur.Value);
-                Logging.Info($"[Environment Setting] RINSHeur={config.rinsHeur.Value}");
+                Logging.Info($"[Solver Setting] RINSHeur={config.rinsHeur.Value}");
             }
             if (config.mipSearch.HasValue)
             {
                 Model.SetParam(Param.MIP.Strategy.Search, config.mipSearch.Value);
-                Logging.Info($"[Environment Setting] Search={config.mipSearch.Value}");
+                Logging.Info($"[Solver Setting] Search={config.mipSearch.Value}");
             }
             if (config.diveType.HasValue)
             {
                 Model.SetParam(Param.MIP.Strategy.Dive, config.diveType.Value);
-                Logging.Info($"[Environment Setting] Dive={config.diveType.Value}");
+                Logging.Info($"[Solver Setting] Dive={config.diveType.Value}");
             }
             if (config.branchDir.HasValue)
             {
                 Model.SetParam(Param.MIP.Strategy.Branch, config.branchDir.Value);
-                Logging.Info($"[Environment Setting] Branch={config.branchDir.Value}");
+                Logging.Info($"[Solver Setting] Branch={config.branchDir.Value}");
             }
             #endregion
 
@@ -517,37 +517,37 @@ namespace OptimFoundation.Cplex
             if (config.cutsFactor.HasValue)
             {
                 Model.SetParam(Param.MIP.Limits.CutsFactor, config.cutsFactor.Value);
-                Logging.Info($"[Environment Setting] CutsFactor={config.cutsFactor.Value}");
+                Logging.Info($"[Solver Setting] CutsFactor={config.cutsFactor.Value}");
             }
             if (config.cutPasses.HasValue)
             {
                 Model.SetParam(Param.MIP.Limits.CutPasses, config.cutPasses.Value);
-                Logging.Info($"[Environment Setting] CutPasses={config.cutPasses.Value}");
+                Logging.Info($"[Solver Setting] CutPasses={config.cutPasses.Value}");
             }
             if (config.gomoryCuts.HasValue)
             {
                 Model.SetParam(Param.MIP.Cuts.Gomory, config.gomoryCuts.Value);
-                Logging.Info($"[Environment Setting] GomoryCuts={config.gomoryCuts.Value}");
+                Logging.Info($"[Solver Setting] GomoryCuts={config.gomoryCuts.Value}");
             }
             if (config.coverCuts.HasValue)
             {
                 Model.SetParam(Param.MIP.Cuts.Covers, config.coverCuts.Value);
-                Logging.Info($"[Environment Setting] CoverCuts={config.coverCuts.Value}");
+                Logging.Info($"[Solver Setting] CoverCuts={config.coverCuts.Value}");
             }
             if (config.cliqueCuts.HasValue)
             {
                 Model.SetParam(Param.MIP.Cuts.Cliques, config.cliqueCuts.Value);
-                Logging.Info($"[Environment Setting] CliqueCuts={config.cliqueCuts.Value}");
+                Logging.Info($"[Solver Setting] CliqueCuts={config.cliqueCuts.Value}");
             }
             if (config.mirCuts.HasValue)
             {
                 Model.SetParam(Param.MIP.Cuts.MIRCut, config.mirCuts.Value);
-                Logging.Info($"[Environment Setting] MIRCuts={config.mirCuts.Value}");
+                Logging.Info($"[Solver Setting] MIRCuts={config.mirCuts.Value}");
             }
             if (config.flowCoverCuts.HasValue)
             {
                 Model.SetParam(Param.MIP.Cuts.FlowCovers, config.flowCoverCuts.Value);
-                Logging.Info($"[Environment Setting] FlowCoverCuts={config.flowCoverCuts.Value}");
+                Logging.Info($"[Solver Setting] FlowCoverCuts={config.flowCoverCuts.Value}");
             }
             #endregion
 
@@ -555,12 +555,12 @@ namespace OptimFoundation.Cplex
             if (config.simplexIterLimit.HasValue)
             {
                 Model.SetParam(Param.Simplex.Limits.Iterations, config.simplexIterLimit.Value);
-                Logging.Info($"[Environment Setting] SimplexIterations={config.simplexIterLimit.Value}");
+                Logging.Info($"[Solver Setting] SimplexIterations={config.simplexIterLimit.Value}");
             }
             if (config.barrierAlgorithm.HasValue)
             {
                 Model.SetParam(Param.Barrier.Algorithm, config.barrierAlgorithm.Value);
-                Logging.Info($"[Environment Setting] BarrierAlgorithm={config.barrierAlgorithm.Value}");
+                Logging.Info($"[Solver Setting] BarrierAlgorithm={config.barrierAlgorithm.Value}");
             }
             #endregion
 
@@ -780,7 +780,7 @@ namespace OptimFoundation.Cplex
 
         /// <summary>
         /// 將 CPLEX solver log 從 MemoryStream 寫入 framework log。
-        /// enableLog 只控制 Console；檔案診斷資料一律保留。
+        /// EnableSolverLog 只控制 Console；檔案診斷資料一律保留。
         /// </summary>
         private void FlushSolverLog()
         {

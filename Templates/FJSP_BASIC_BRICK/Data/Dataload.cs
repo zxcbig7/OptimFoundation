@@ -1,181 +1,116 @@
-using FJSP_BASIC_BRICK.ParameterClass;
-using FJSP_BASIC_BRICK.SetClass;
-using FJSP_BASIC_BRICK.VariableClass;
+using System.Globalization;
 using OptimFoundation.Core;
 using OptimFoundation.Core.IO;
-using OptimFoundation.Cplex;
 
-namespace FJSP_BASIC_BRICK.Data
+namespace FJSP_BASIC_BRICK
 {
-    // 資料層唯一入口：ctor 就是「寫讀檔的家」——每行一句、顯式，特例就地指定檔名。
-    // 換來源：CSV↔InMemory 只換傳入的 IDataSource（DB query-only 用型別化 DbDataSource，見 Tutorial 範本）。
-    public partial class Dataload : DataContext
+    /// <summary>資料唯一入口：把 Data/*.csv 讀成積木，再由 DataContext 驗證。</summary>
+    public sealed partial class Dataload : DataContext
     {
-        // Set 積木（[OptSet<T>]）：就是 Set，可直接 [i] / Count / foreach / LINQ / 餵 BuildVars
-        public Set_Lot LOT = new();
-        public Set_Operation OPERATION = new();   // 行序 = 加工順序（RoutePrecedence 依此索引）
-        public Set_Eqp EQP = new();
+        public Set_Lot set_Lot = new();
+        public Set_Operation set_Operation = new();   // 行序＝加工順序（RoutePrecedence／MakespanDef 依此索引）
+        public Set_Eqp set_Eqp = new();
 
         public List<Parameter_ProcessTime> parameter_ProcessTime = new();
+        public List<Parameter_ExactlyOne> parameter_ExactlyOne = new();
+        public List<Parameter_MakespanFloor> parameter_MakespanFloor = new();
+        public List<Parameter_SoftMakespanTarget> parameter_SoftMakespanTarget = new();
+        public List<Parameter_MakespanPenalty> parameter_MakespanPenalty = new();
+        public List<Parameter_NoOverlapForwardOffset> parameter_NoOverlapForwardOffset = new();
+        public List<Parameter_NoOverlapBackwardOffset> parameter_NoOverlapBackwardOffset = new();
 
-        // BigM = Σ_{lot,op} max_eqp ProcessTime（最壞情況全序列排程長度），由數據推導、NEVER 寫死
+        /// <summary>BigM＝Σ_{lot,op} max_eqp ProcessTime（最壞情況全序列排程長度上界）；純粹 max/min 彙總，由數據推導、NEVER 寫死。</summary>
         public double BigM => parameter_ProcessTime
             .GroupBy(p => new { p.Lot, p.Operation })
             .Sum(g => g.Max(p => p.QTY));
 
-        // 保證 infeasible 的 Makespan 上限（模型 C 示範 IIS 用）：
-        // 任一 lot 的 makespan 下界 = Σ_op min_eqp ProcessTime（逐道序列、每道取最快機台），
-        // 取所有 lot 下界的最大值再 -1 → 上限嚴格低於理論下界，必定無解；由數據推導、NEVER 寫死
+        /// <summary>Range 規劃窗上界＝最壞情況上界，保證放大實例仍可行；非綁定 demo 值。</summary>
+        public double MakespanDeadline => BigM;
+
+        /// <summary>
+        /// Phase 3 demo variant 專用：保證 infeasible 的 Makespan 上限（＝理論下界 − 1；"− 1" 為 Model.md 定義的結構偏移，非資料）。
+        /// 任一 lot 的 makespan 下界＝Σ_op min_eqp ProcessTime，取所有 lot 下界的最大值再 − 1。
+        /// </summary>
         public double InfeasibleMakespanCap => parameter_ProcessTime
             .GroupBy(p => new { p.Lot, p.Operation })
             .Select(g => new { g.Key.Lot, MinTime = g.Min(p => p.QTY) })
             .GroupBy(x => x.Lot)
             .Max(g => g.Sum(x => x.MinTime)) - 1;
 
-        // 示範用純量參數（Range / Soft demo）；放大實例後 makespan 大很多，Range 上界改用 BigM 保證可行
-        public double MakespanFloor = 0; // Range 下界（非綁定；makespan 天生 ≥ 0）
-        public double MakespanDeadline => BigM; // Range 上界 = 最壞情況上界，保證可行、非綁定
-        public double SoftMakespanTarget = 10; // Soft 目標（放大後很可能被違反 → penalty 現形）
-        public double MakespanPenalty = 2; // Soft 每單位違反的懲罰（進目標式）
-
-        // 預設資料來源＝CSV
         public Dataload() : this(new CsvDataSource()) { }
 
+        /// <summary>讀取已就位的 canonical CSV；此建構子只做資料載入。</summary>
         public Dataload(IDataSource source)
         {
-            LOT.Load(source);
-            OPERATION.Load(source);
-            EQP.Load(source);
-            parameter_ProcessTime = source.LoadParam<Parameter_ProcessTime>();
+            set_Lot.Load(source, "Set_Lot");
+            set_Operation.Load(source, "Set_Operation");
+            set_Eqp.Load(source, "Set_Eqp");
+            parameter_ProcessTime = source.LoadParam<Parameter_ProcessTime>("Parameter_ProcessTime");
+            parameter_ExactlyOne = source.LoadParam<Parameter_ExactlyOne>("Parameter_ExactlyOne");
+            parameter_MakespanFloor = source.LoadParam<Parameter_MakespanFloor>("Parameter_MakespanFloor");
+            parameter_SoftMakespanTarget = source.LoadParam<Parameter_SoftMakespanTarget>("Parameter_SoftMakespanTarget");
+            parameter_MakespanPenalty = source.LoadParam<Parameter_MakespanPenalty>("Parameter_MakespanPenalty");
+            parameter_NoOverlapForwardOffset = source.LoadParam<Parameter_NoOverlapForwardOffset>("Parameter_NoOverlapForwardOffset");
+            parameter_NoOverlapBackwardOffset = source.LoadParam<Parameter_NoOverlapBackwardOffset>("Parameter_NoOverlapBackwardOffset");
         }
 
-        // 生成 N lots × M ops × K machines 的放大版 FJSP 實例（seeded 決定論）。
-        // 用途：Program 的 `gen-csv` 以此產出樣本輸入 Data/Parameter_ProcessTime.csv（要換規模改參數）。
-        public static List<Parameter_ProcessTime> GenerateInstance(int lots, int operations, int eqps, int seed)
+        /// <summary>
+        /// import 模式：把不規則的「實例生成規格」（規模＋seed＋範圍）攤平成 seeded、決定論的標準 CSV。
+        /// rawFile 相對於 Data/、不帶副檔名；內容見 Data/raw/FJSP_Instance.csv（表頭 Lots,Operations,Eqps,Seed,MinHours,MaxHours）。
+        /// 這是全專案唯一允許出現迴圈與 Random 的地方；求解路徑（上面的 IDataSource ctor）只讀已就位的 CSV。
+        /// </summary>
+        public Dataload(string rawFile)
         {
+            var table = CsvCtrl.ReadTable(rawFile);
+            var row = table.Rows[0];
+            int lots = int.Parse((string)row["Lots"], CultureInfo.InvariantCulture);
+            int operations = int.Parse((string)row["Operations"], CultureInfo.InvariantCulture);
+            int eqps = int.Parse((string)row["Eqps"], CultureInfo.InvariantCulture);
+            int seed = int.Parse((string)row["Seed"], CultureInfo.InvariantCulture);
+            int minHours = int.Parse((string)row["MinHours"], CultureInfo.InvariantCulture);
+            int maxHours = int.Parse((string)row["MaxHours"], CultureInfo.InvariantCulture);
+
+            var lotNames = Enumerable.Range(1, lots).Select(l => $"LOT{l}").ToList();
+            var operationNames = Enumerable.Range(1, operations).Select(o => $"OP{o}").ToList();
+            var eqpNames = Enumerable.Range(1, eqps).Select(e => $"EQP{e}").ToList();
+
+            set_Lot.LoadFrom(lotNames);
+            set_Operation.LoadFrom(operationNames);
+            set_Eqp.LoadFrom(eqpNames);
+
             var rng = new Random(seed);
-            var rows = new List<Parameter_ProcessTime>();
-            for (int l = 1; l <= lots; l++)
-                for (int o = 1; o <= operations; o++)
-                    for (int e = 1; e <= eqps; e++)
-                        rows.Add(new Parameter_ProcessTime
+            foreach (var lot in lotNames)
+                foreach (var operation in operationNames)
+                    foreach (var eqp in eqpNames)
+                        parameter_ProcessTime.Add(new Parameter_ProcessTime
                         {
-                            Lot = $"LOT{l}",
-                            Operation = $"OP{o}",
-                            Eqp = $"EQP{e}",
-                            QTY = rng.Next(2, 10)   // 2..9 小時
+                            Lot = lot,
+                            Operation = operation,
+                            Eqp = eqp,
+                            QTY = rng.Next(minHours, maxHours + 1),
                         });
-            return rows;
+
+            parameter_ExactlyOne.Add(new Parameter_ExactlyOne { QTY = 1.0 });
+            parameter_MakespanFloor.Add(new Parameter_MakespanFloor { QTY = 0.0 });
+            parameter_SoftMakespanTarget.Add(new Parameter_SoftMakespanTarget { QTY = 10.0 });
+            parameter_MakespanPenalty.Add(new Parameter_MakespanPenalty { QTY = 2.0 });
+            parameter_NoOverlapForwardOffset.Add(new Parameter_NoOverlapForwardOffset { QTY = 3.0 });
+            parameter_NoOverlapBackwardOffset.Add(new Parameter_NoOverlapBackwardOffset { QTY = 2.0 });
         }
 
-        /// <summary>解出後印出排程 + 依解驗證協定把解代回每條 constraint 檢查。</summary>
-        public void WriteSolution(OptEngine engine)
+        /// <summary>把 import ctor 產生的資料輸出成求解流程使用的 canonical CSV。</summary>
+        public void Export()
         {
-            // 批量取解：一次抓整個型別的解值 Dictionary（key = 完整變數 key），取代逐 key 呼叫
-            var assign = engine.GetSetVarValues<VariableB_Assign>();
-            var start = engine.GetSetVarValues<VariableX_Start>();
-            var complete = engine.GetSetVarValues<VariableX_Complete>();
-            var makespanVar = engine.GetSetVarValues<VariableX_Makespan>();
-
-            // Soft 讓目標式 = Makespan + penalty·違反量，故 makespan 改從變數讀（GetObjectiveValue 已含 penalty）
-            double makespan = makespanVar["VariableX_Makespan"];   // scalar：key 無 @ 索引
-            double objective = engine.GetObjectiveValue();
-            double violation = Math.Max(0, makespan - SoftMakespanTarget);
-            double penaltyCost = violation * MakespanPenalty;
-
-            Logging.Info($"===== FJSP_BASIC_BRICK 解 =====");
-            Logging.Info($"Makespan = {makespan:0.##} 小時（真實排程長度，取自 VariableX_Makespan）");
-            Logging.Info($"Objective = {objective:0.##}（= Makespan {makespan:0.##} + soft penalty {penaltyCost:0.##}）");
-            Logging.Info($"Soft 目標 Makespan ≤ {SoftMakespanTarget:0.##}：違反 {violation:0.##} × penalty {MakespanPenalty:0.##} = {penaltyCost:0.##}");
-            Logging.Info($"Range 窗 [{MakespanFloor:0.##}, {MakespanDeadline:0.##}]：{(makespan >= MakespanFloor - 1e-6 && makespan <= MakespanDeadline + 1e-6 ? "滿足" : "違反")}");
-
-            foreach (var lot in LOT)
-            {
-                foreach (var op in OPERATION)
-                {
-                    string assignedEqp = EQP.FirstOrDefault(e => assign[$"VariableB_Assign@{lot}@{op}@{e}"] > 0.5) ?? "?";
-                    double s = start[$"VariableX_Start@{lot}@{op}"];
-                    double c = complete[$"VariableX_Complete@{lot}@{op}"];
-                    Logging.Info($"{lot} {op} → {assignedEqp}  [{s:0.##}, {c:0.##}]");
-                }
-            }
-
-            VerifySolution(engine, makespan, objective, penaltyCost);
-        }
-
-        /// <summary>可行性代回：逐條 constraint 用解值檢查 LHS op RHS，全過才算會動。</summary>
-        private void VerifySolution(OptEngine engine, double makespan, double objective, double penaltyCost)
-        {
-            const double eps = 1e-6;
-            int failCount = 0;
-            void Check(bool ok, string rule)
-            {
-                if (!ok) { failCount++; Logging.Info($"[VERIFY FAIL] {rule}"); }
-            }
-
-            var assignVals = engine.GetSetVarValues<VariableB_Assign>();
-            var startVals = engine.GetSetVarValues<VariableX_Start>();
-            var completeVals = engine.GetSetVarValues<VariableX_Complete>();
-
-            var start = new Dictionary<(string, string), double>();
-            var complete = new Dictionary<(string, string), double>();
-            var assigned = new Dictionary<(string, string), string>();
-
-            foreach (var lot in LOT)
-            {
-                foreach (var op in OPERATION)
-                {
-                    start[(lot, op)] = startVals[$"VariableX_Start@{lot}@{op}"];
-                    complete[(lot, op)] = completeVals[$"VariableX_Complete@{lot}@{op}"];
-
-                    // AssignOneEqp：恰好指派一台
-                    var eqps = EQP.Where(e => assignVals[$"VariableB_Assign@{lot}@{op}@{e}"] > 0.5).ToList();
-                    Check(eqps.Count == 1, $"AssignOneEqp@{lot}@{op}：指派了 {eqps.Count} 台");
-                    if (eqps.Count == 1) assigned[(lot, op)] = eqps[0];
-
-                    // CompleteDef：Complete = Start + ProcessTime
-                    if (eqps.Count == 1)
-                    {
-                        var procTime = parameter_ProcessTime
-                            .FirstOrDefault(p => p.Lot == lot && p.Operation == op && p.Eqp == eqps[0])?.QTY ?? 0.0;
-                        Check(Math.Abs(complete[(lot, op)] - start[(lot, op)] - procTime) < 1e-4,
-                            $"CompleteDef@{lot}@{op}：{complete[(lot, op)]} ≠ {start[(lot, op)]} + {procTime}");
-                    }
-                }
-
-                // RoutePrecedence：下一道 ≥ 前一道完成
-                for (int i = 0; i + 1 < OPERATION.Count; i++)
-                    Check(start[(lot, OPERATION[i + 1])] >= complete[(lot, OPERATION[i])] - eps,
-                        $"RoutePrecedence@{lot}@{OPERATION[i]}→{OPERATION[i + 1]}");
-
-                // MakespanDef：Makespan ≥ 最後一道完成
-                Check(makespan >= complete[(lot, OPERATION[OPERATION.Count - 1])] - eps, $"MakespanDef@{lot}");
-            }
-
-            // NoOverlap：同機台任兩作業時段不重疊
-            var all = assigned.Keys.ToList();
-            for (int i = 0; i < all.Count; i++)
-                for (int j = i + 1; j < all.Count; j++)
-                {
-                    var opA = all[i]; var opB = all[j];
-                    if (assigned[opA] != assigned[opB]) continue;
-                    bool separated = complete[opA] <= start[opB] + eps || complete[opB] <= start[opA] + eps;
-                    Check(separated,
-                        $"NoOverlap@{opA.Item1}.{opA.Item2}×{opB.Item1}.{opB.Item2}@{assigned[opA]}：" +
-                        $"[{start[opA]},{complete[opA]}] 與 [{start[opB]},{complete[opB]}] 重疊");
-                }
-
-            // MakespanWindow（Range，硬約束）：makespan 必須落在窗內
-            Check(makespan >= MakespanFloor - eps && makespan <= MakespanDeadline + eps,
-                $"MakespanWindow：{makespan} 不在 [{MakespanFloor}, {MakespanDeadline}]");
-
-            // Soft 不判 FAIL（本來就允許違反）；改對帳目標式分解 objective = makespan + penalty·違反量
-            Check(Math.Abs(objective - (makespan + penaltyCost)) < 1e-4,
-                $"ObjectiveDecomp：obj {objective} ≠ makespan {makespan} + penalty {penaltyCost}");
-
-            Logging.Info(failCount == 0
-                ? "[VERIFY] 全部 constraint 代回檢查 PASS（soft 允許違反，僅對帳）"
-                : $"[VERIFY] {failCount} 條 FAIL");
+            CsvCtrl.WriteSet(set_Lot, "Set_Lot");
+            CsvCtrl.WriteSet(set_Operation, "Set_Operation");
+            CsvCtrl.WriteSet(set_Eqp, "Set_Eqp");
+            CsvCtrl.WriteParam(parameter_ProcessTime, "Parameter_ProcessTime");
+            CsvCtrl.WriteParam(parameter_ExactlyOne, "Parameter_ExactlyOne");
+            CsvCtrl.WriteParam(parameter_MakespanFloor, "Parameter_MakespanFloor");
+            CsvCtrl.WriteParam(parameter_SoftMakespanTarget, "Parameter_SoftMakespanTarget");
+            CsvCtrl.WriteParam(parameter_MakespanPenalty, "Parameter_MakespanPenalty");
+            CsvCtrl.WriteParam(parameter_NoOverlapForwardOffset, "Parameter_NoOverlapForwardOffset");
+            CsvCtrl.WriteParam(parameter_NoOverlapBackwardOffset, "Parameter_NoOverlapBackwardOffset");
         }
     }
 }

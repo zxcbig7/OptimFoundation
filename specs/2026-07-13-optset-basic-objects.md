@@ -4,6 +4,7 @@ status: **implemented（core + generator，2026-07-14）** —— 原設計 Vic 
 定位: 本檔為 OptSet 基本物件的權威行為描述；實作見 `src/OptimFoundation.Core/SetBase.cs` + `src/OptimFoundation.Generators/AutoSetsGenerator.cs`
 關聯: 總規格 `LLMDevFramework/specs/2026-07-13-optim-ai-spec-consolidation.md`（D5 段，執行 Phase 1）
 驗證: scratchpad smoke（`[OptSet<DateTime>]`/`[OptVar<>]`/`[OptParam<>]` build 綠 + 生成碼正確 + key 格式 `@2026-08-01@Alice@2` + 未載入防呆）+ `SetBaseTests` 10 例；full sln 0 error、83 tests 全綠
+superseded_by: 2026-08-01-optimfoundation-dual-config.md, 2026-08-01-optimfoundation-runner-symmetry.md, 2026-08-01-optim-docs-and-projects-migration.md
 
 ---
 

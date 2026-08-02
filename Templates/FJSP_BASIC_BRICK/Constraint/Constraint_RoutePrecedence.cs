@@ -1,24 +1,21 @@
-using FJSP_BASIC_BRICK.VariableClass;
 using OptimFoundation.Core;
 using OptimFoundation.Cplex;
 
-namespace FJSP_BASIC_BRICK.Constraint
+namespace FJSP_BASIC_BRICK
 {
-    /// <summary>[LB] ∀ lot, 相鄰道次 (op → nextOp)：Start_{lot,nextOp} ≥ Complete_{lot,op}</summary>
-    public class Constraint_RoutePrecedence : ConstraintBase
+    /// <summary>[LB] ∀ lot ∈ Lot, 相鄰道次 (op → nextOp)：Start_{lot,nextOp} ≥ Complete_{lot,op}</summary>
+    public sealed class Constraint_RoutePrecedence : ConstraintBase
     {
-        private readonly OptEngine _engine;
-        private readonly IReadOnlyList<string> _lots;
-        private readonly IReadOnlyList<string> _operations; // 已依加工順序排序（字典序）
+        private readonly Set_Lot _lots;
+        private readonly Set_Operation _operations; // 行序＝加工順序
 
-        public Constraint_RoutePrecedence(IReadOnlyList<string> lots, IReadOnlyList<string> operations, OptEngine engine)
+        public Constraint_RoutePrecedence(Set_Lot lots, Set_Operation operations)
         {
             _lots = lots;
             _operations = operations;
-            _engine = engine;
         }
 
-        public void Build()
+        public void Build(OptEngine engine)
         {
             foreach (var lot in _lots)
             {
@@ -27,12 +24,11 @@ namespace FJSP_BASIC_BRICK.Constraint
                     var op = _operations[i];
                     var nextOp = _operations[i + 1];
 
-                    _engine.AddLHS(1.0, new VariableX_Start { Lot = lot, Operation = nextOp });
-                    _engine.AddRHS(1.0, new VariableX_Complete { Lot = lot, Operation = op });
-                    _engine.CreateGreatEqual($"{ConstraintName}@{lot}@{op}@{nextOp}");
+                    engine.AddLHS(1.0, new VariableX_Start { Lot = lot, Operation = nextOp });
+                    engine.AddRHS(1.0, new VariableX_Complete { Lot = lot, Operation = op });
+                    engine.CreateGreatEqual($"{ConstraintName}@{lot}@{op}@{nextOp}");
                 }
             }
-
         }
     }
 }

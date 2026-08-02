@@ -1,34 +1,44 @@
 using OptimFoundation.Core;
 using OptimFoundation.Cplex;
-using Sudoku_SHC279.VariableClass;
 
-namespace Sudoku_SHC279.Constraint;
-
-/// <summary>∀ 3×3 block,digit：該宮九格的 x 合計 = 1。</summary>
-public sealed class Constraint_BlockDigit : ConstraintBase
+namespace Sudoku_SHC279
 {
-    private readonly IReadOnlyList<int> _digits;
-
-    public Constraint_BlockDigit(IReadOnlyList<int> digits) => _digits = digits;
-
-    public void Build(OptEngine engine)
+    /// <summary>每宮的每個數字恰好出現一次；宮的格子由 BlockCell 資料定義。</summary>
+    public sealed class Constraint_BlockDigit : ConstraintBase
     {
-        for (int blockRow = 0; blockRow < 3; blockRow++)
-            for (int blockColumn = 0; blockColumn < 3; blockColumn++)
+        private readonly Set_Block _blocks;
+        private readonly Set_Digit _digits;
+        private readonly List<Parameter_BlockCell> _blockCells;
+        private readonly double _exactlyOne;
+
+        public Constraint_BlockDigit(
+            Set_Block blocks,
+            Set_Digit digits,
+            List<Parameter_BlockCell> blockCells,
+            double exactlyOne)
+        {
+            _blocks = blocks;
+            _digits = digits;
+            _blockCells = blockCells;
+            _exactlyOne = exactlyOne;
+        }
+
+        public void Build(OptEngine engine)
+        {
+            foreach (int block in _blocks)
                 foreach (int digit in _digits)
                 {
-                    for (int rowOffset = 1; rowOffset <= 3; rowOffset++)
-                        for (int columnOffset = 1; columnOffset <= 3; columnOffset++)
-                            engine.AddLHS(1.0, new VariableB_CellDigit
-                            {
-                                Row = blockRow * 3 + rowOffset,
-                                Column = blockColumn * 3 + columnOffset,
-                                Digit = digit,
-                            });
+                    foreach (var cell in _blockCells.Where(cell => cell.Block == block))
+                        engine.AddLHS(1.0, new VariableB_CellDigit
+                        {
+                            Row = cell.Row,
+                            Column = cell.Column,
+                            Digit = digit,
+                        });
 
-                    engine.CreateEqual(
-                        1.0,
-                        $"{ConstraintName}@{blockRow + 1}_{blockColumn + 1}@{digit}");
+                    engine.AddRHS(_exactlyOne);
+                    engine.CreateEqual($"{ConstraintName}@{block}@{digit}");
                 }
+        }
     }
 }

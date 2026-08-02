@@ -1,672 +1,295 @@
 # OptimFoundation CPLEX Project 開發說明書
 
-> API 細節請參閱 [developer-guide.md](developer-guide.md)。  
-> 本文件專注於：**新建專案的目錄結構、各類別的完整範本、csproj 設定、開發 Checklist**。
+> API 細節請參閱 [developer-guide.md](developer-guide.md)。本文件定義新題目的 paved path：`OptModel` 模型定義、`OptProject` 單次 runner、`OptExperiment` 實驗 runner，以及 project / solver config 分層。
 
----
+## 1. 標準目錄
 
-## 1. 目錄結構
-
-```
+```text
 ProjectName/
 ├── ProjectName.csproj
-├── Program.cs
-├── ProblemName.cs                  Execute() 主流程
-├── Data/
-│   ├── Dataload.cs                 Sets、Parameters、資料初始化
-│   └── Parameter_Xxx.cs            一個 Parameter 一個檔案
-├── VariablesClass/
-│   ├── VariableCreate.cs           BuildBVs / BuildIVs / BuildCVs
-│   ├── VariableB_Xxx.cs            Binary 變數
-│   ├── VariableI_Xxx.cs            Integer 變數（若有）
-│   └── VariableX_Xxx.cs            Continuous 變數（若有）
-└── Constraints/
-    ├── BuildModel.cs               依序呼叫所有 Build()
-    ├── ObjectiveFunction.cs        目標式
-    └── Constraint_Xxx.cs           各限制式，一個一個檔案
+├── Program.cs                     唯一組裝點
+├── Model/ProjectName_Model.md     可審閱的數學模型
+├── Set/Dataload.cs                Sets、Parameters、輸出
+├── Parameter/Parameter_Xxx.cs     一個 parameter 一個檔案
+├── Variable/VariableB_Xxx.cs      Binary 變數
+├── Variable/VariableI_Xxx.cs      Integer 變數（若有）
+├── Variable/VariableX_Xxx.cs      Continuous 變數（若有）
+├── Objective/ObjectiveFunction.cs 目標式
+└── Constraint/Constraint_Xxx.cs   一條限制式一個檔案
 ```
 
----
+Program.cs 直接呼叫 `.AddVariables(...)`、`.AddObjective(...)`、`.AddConstraints(...)`。不要新增只負責轉呼叫的中介組裝檔；模型只定義一次，兩種 runner 共用。
 
-## 2. csproj 設定
+## 2. csproj 依賴規則
+
+### OptimFoundation repo 內部 Templates
+
+`Templates/Tutorial` 與 `Templates/FJSP_BASIC_BRICK` 已改為直接驗證工作樹 API：
 
 ```xml
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
-
-  <!-- OptimFoundation -->
-  <ItemGroup>
-    <ProjectReference Include="..\..\OptimFoundation\src\OptimFoundation.Core\OptimFoundation.Core.csproj" />
-    <ProjectReference Include="..\..\OptimFoundation\src\OptimFoundation.Cplex\OptimFoundation.Cplex.csproj" />
-  </ItemGroup>
-
-  <!-- IBM CPLEX DLL（路徑依安裝版本調整） -->
-  <ItemGroup>
-    <Reference Include="ILOG.Concert">
-      <HintPath>C:\IBM\ILOG\CPLEX_Studio2211\cplex\bin\x64_win64\ILOG.Concert.dll</HintPath>
-    </Reference>
-    <Reference Include="ILOG.CPLEX">
-      <HintPath>C:\IBM\ILOG\CPLEX_Studio2211\cplex\bin\x64_win64\ILOG.CPLEX.dll</HintPath>
-    </Reference>
-  </ItemGroup>
-
-  <!-- 選用：Oracle 資料來源 -->
-  <ItemGroup>
-    <PackageReference Include="Oracle.ManagedDataAccess.Core" Version="23.6.1" />
-  </ItemGroup>
-</Project>
+<ItemGroup>
+  <ProjectReference Include="..\..\src\OptimFoundation.Core\OptimFoundation.Core.csproj" />
+  <ProjectReference Include="..\..\src\OptimFoundation.Cplex\OptimFoundation.Cplex.csproj" />
+</ItemGroup>
+<ItemGroup>
+  <Reference Include="ILOG.Concert"><HintPath>..\dlls\ILOG.Concert.dll</HintPath></Reference>
+  <Reference Include="ILOG.CPLEX"><HintPath>..\dlls\ILOG.CPLEX.dll</HintPath></Reference>
+  <Analyzer Include="..\dlls\OptimFoundation.Generators.dll" />
+</ItemGroup>
 ```
 
----
+Core / Cplex 使用 `ProjectReference`；ILOG 仍是 binary reference，generator 仍以 analyzer DLL 掛入。`Templates/Template_CPLEX` 與 `Templates/Sudoku_SHC279` 同樣以 project reference 驗證框架 source。
 
-## 3. 命名規則速查
+### AI-Modeling 消費端
+
+AI-Modeling 是發布 DLL 的消費端，必須保留 repo-local `dlls/` 的 `<Reference>` + `HintPath`，generator 用 `<Analyzer Include="...OptimFoundation.Generators.dll" />`；不要跨 repo 改成 project reference。兩套規則用途不同，不可混用。
+
+## 3. 命名與資料類別
 
 | 類別 | 前綴 | 建立方法 | 數值欄位 |
-|------|------|---------|---------|
-| Binary variable | `VariableB_` | `BuildBVs<TVariable>()` | 無 |
-| Integer variable | `VariableI_` | `BuildIVs<TVariable>()` | 無 |
-| Continuous variable | `VariableX_` | `BuildCVs<TVariable>()` | 無 |
-| Parameter | `Parameter_` | — | `QTY`（最後一個） |
-| Constraint | `Constraint_` | — | — |
+|---|---|---|---|
+| Binary variable | `VariableB_` | `BuildBVs<T>()` | 無 |
+| Integer variable | `VariableI_` | `BuildIVs<T>()` | 無 |
+| Continuous variable | `VariableX_` | `BuildCVs<T>()` | 無 |
+| Parameter | `Parameter_` | source / `OptData.Load` | `QTY`（最後一個） |
+| Constraint | `Constraint_` | Pool API | 無 |
 
-**Variable key 格式**：`VariableB_ShiftAssign@2026-01-01@E1@D`（DateTime 固定 `yyyy-MM-dd`）
+Variable / Parameter 採 properties-only，property 宣告順序就是 key 的索引順序。推薦以 `[OptVar]`、`[OptParam]` 與 `[OptDim<TSet>]` 交給 source generator 生成 class body；需要手寫時繼承 `VariableBase` / `ParameterBase` 且保留無參數建構子。
 
----
+Variable key 格式：`VariableB_ShiftAssign@2026-01-01@E1@D`；`DateTime` 固定 `yyyy-MM-dd`。
 
-## 4. Variable 類別範本
-
-```csharp
-// VariablesClass/VariableB_ShiftAssign.cs
-public class VariableB_ShiftAssign : VariableBase
-{
-    public DateTime Date     { get; set; }
-    public string   Employee { get; set; }
-    public string   Group    { get; set; }
-    // ❌ 不寫任何建構子
-}
-
-// VariablesClass/VariableX_BelowAVG.cs
-public class VariableX_BelowAVG : VariableBase
-{
-    public string Employee { get; set; }
-}
-```
-
-**規則：只宣告 properties，property 順序 = `@` 分隔 key 的順序，不寫任何建構子。**
-
----
-
-## 5. Parameter 類別範本
+## 4. Dataload 與資料防護
 
 ```csharp
-// Data/Parameter_ShiftDemand.cs
-public class Parameter_ShiftDemand : ParameterBase
+public partial class Dataload : DataContext
 {
-    public DateTime Date  { get; set; }
-    public string   Group { get; set; }
-    public double   QTY   { get; set; }   // 數值欄位永遠放最後
-    // ❌ 不寫任何建構子
-}
+    public List<DateTime> Date = new();
+    public List<string> Employee = new();
+    public List<string> Group = new();
+    public List<Parameter_ShiftDemand> ShiftDemand = new();
 
-// Data/Parameter_Budget.cs（Scalar：只有一筆）
-public class Parameter_Budget : ParameterBase
-{
-    public double QTY { get; set; }
-}
-```
-
-使用方式（object initializer）：
-```csharp
-new Parameter_ShiftDemand { Date = d, Group = "D", QTY = 5.0 }
-new Parameter_Budget { QTY = 760000.0 }
-```
-
----
-
-## 6. Dataload 類別範本
-
-```csharp
-// Data/Dataload.cs
-public class Dataload
-{
-    // ── Sets ─────────────────────────────────────────────
-    public List<string>   Employee = new List<string>();
-    public List<string>   Group    = new List<string>();
-    public List<DateTime> Date     = new List<DateTime>();
-
-    // ── Parameters ───────────────────────────────────────
-    public List<Parameter_ShiftDemand> parameter_ShiftDemand = new List<Parameter_ShiftDemand>();
-
-    // ── Scalar（罰分、設定常數）──────────────────────────
-    public double Penalty_SixDay = 1.0;
-
-    public Dataload()
+    public Dataload(IDataSource source)
     {
-        // Sets 初始化
-        Group.AddRange(new[] { "O", "D", "E", "N", "C" });
-        for (int i = 1; i <= 16; i++) Employee.Add($"E{i}");
-
-        int year = 2026, month = 1;
-        for (int d = 1; d <= DateTime.DaysInMonth(year, month); d++)
-            Date.Add(new DateTime(year, month, d));
-
-        // Parameters 初始化
-        Date.ForEach(d =>
-        {
-            parameter_ShiftDemand.Add(new Parameter_ShiftDemand { Date = d, Group = "D", QTY = 5 });
-            parameter_ShiftDemand.Add(new Parameter_ShiftDemand { Date = d, Group = "N", QTY = 2 });
-        });
-
-        // 選用：從 CSV 讀取
-        // this.Employee = CSVCtrl.ReadStrSet("Set_Employee.csv");
-        // this.parameter_ShiftDemand = CSVCtrl.BuildParameter<Parameter_ShiftDemand>("Param_ShiftDemand");
+        Date = Set.Load<DateTime, Parameter_ShiftDemand>(source);
+        Employee = Set.Load<string, Parameter_Employee>(source);
+        Group = Set.Load<string, Parameter_ShiftDemand>(source);
+        ShiftDemand = source.LoadParam<Parameter_ShiftDemand>();
     }
 
     public void WriteToCSV(OptEngine engine)
     {
+        FolderDir.Solution.CreateFolder();
         CSVCtrl.SaveToCSV<VariableB_ShiftAssign>(
             engine.GetSetVarSol<VariableB_ShiftAssign>(), DATA_ID: "V1", USER_ID: "USER");
     }
 }
+
+var data = OptData.Load(() => new Dataload(source));
 ```
 
----
+`OptData.Load` 的順序是 factory → generator 註冊 → `DataValidator.Validate` → freeze → 回傳。它會檢查 dangling index、duplicate key、數值 sanity 與 opt-in `[FullGrid]`。
 
-## 7. VariableCreate 類別範本
+Freeze 已降級為保護 framework-controlled mutation API（例如框架註冊入口）。基底類別無法攔截既有 public fields 的直接指定或可變 `List.Add`，因此這些寫入不保證立即拋例外；所有模型 callback 仍 MUST 把 `data` 視為唯讀。
+
+## 5. Variable 階段
+
+直接在 `OptModel.AddVariables` 建立所有變數：
 
 ```csharp
-// VariablesClass/VariableCreate.cs
-public class VariableCreate
+.AddVariables(engine =>
 {
-    private OptEngine optEngine;
-    private Dataload  dataload;
-
-    public VariableCreate(Dataload dataload, OptEngine engine)
-    {
-        this.dataload  = dataload;
-        this.optEngine = engine;
-    }
-
-    public void Build()
-    {
-        // Binary：Set 順序必須對應 Variable class 的 property 宣告順序
-        optEngine.BuildBVs<VariableB_ShiftAssign>(dataload.Date, dataload.Employee, dataload.Group);
-        optEngine.BuildBVs<VariableB_SixDayWork> (dataload.Date, dataload.Employee);
-
-        // Continuous
-        optEngine.BuildCVs<VariableX_BelowAVG>(dataload.Employee);
-
-        // Integer（含自訂界限）
-        // optEngine.BuildIVs<VariableI_WorkCount>(0, 30, dataload.Employee);
-    }
-}
+    engine.BuildBVs<VariableB_ShiftAssign>(data.Date, data.Employee, data.Group);
+    engine.BuildBVs<VariableB_SixDayWork>(data.Date, data.Employee);
+    engine.BuildCVs<VariableX_BelowAVG>(data.Employee);
+    // engine.BuildIVs<VariableI_WorkCount>(0, 30, data.Employee);
+})
 ```
-
-每次 `Build*Vs<TVariable>` 會自動輸出該型別的
-`[變數建立完成] type=... count=<實際建立>/<預期建立>`；呼叫 `Solve()` 前還會輸出總摘要，
-不需要由 Template 手動讀取或累加變數數量。
 
 | 方法 | 預設 LB | 預設 UB |
-|------|---------|---------|
-| `BuildBVs<TVariable>(sets…)` | 0 | 1 |
-| `BuildCVs<TVariable>(sets…)` | 0 | 1E100 |
-| `BuildCVs<TVariable>(lb, ub, sets…)` | 自訂 | 自訂 |
-| `BuildIVs<TVariable>(sets…)` | 0 | 1E100 |
-| `BuildIVs<TVariable>(lb, ub, sets…)` | 自訂 | 自訂 |
+|---|---:|---:|
+| `BuildBVs<T>(sets…)` | 0 | 1 |
+| `BuildCVs<T>(sets…)` | 0 | 1E100 |
+| `BuildCVs<T>(lb, ub, sets…)` | 自訂 | 自訂 |
+| `BuildIVs<T>(sets…)` | 0 | 1E100 |
+| `BuildIVs<T>(lb, ub, sets…)` | 自訂 | 自訂 |
 
----
+Set 傳入順序 MUST 對應 variable properties 順序。框架自行記錄每種變數與總數，不要在專案端手動累加。
 
-## 8. Constraint 類別範本
+## 6. Objective 與 Constraint
 
-### Pool API 建構順序
-
-```
-AddLHS(coef, varObj)   → LHS 變數項
-AddLHS(constant)       → LHS 常數（若有）
-AddRHS(value)          → RHS 常數
-AddRHS(coef, varObj)   → RHS 變數項（若有）
-Create[Equal|LessEqual|GreatEqual](name)  → 送出，Pool 自動清空
-```
-
-**嚴格規則：AML 左側 → `AddLHS`，AML 右側 → `AddRHS`，禁止移項、改號。**
-
-### 等式限制範本
+Objective / Constraint 的建構子只收自己用到的 Set 積木、Parameter 清單、界限值與 engine，不收整包 `Dataload`。
 
 ```csharp
-// Constraints/Constraint_FullfillDemand.cs
-public class Constraint_FullfillDemand : ConstraintBase
+public sealed class Constraint_FullfillDemand
 {
-    private OptEngine optEngine;
-    private Dataload  dataload;
-
-    public Constraint_FullfillDemand(Dataload dataload, OptEngine engine)
-    {
-        this.optEngine = engine;
-        this.dataload  = dataload;
-    }
-
-    public void Build()
-    {
-        dataload.Date.ForEach(d =>
-        {
-            dataload.Group.Where(g => g != "O").ToList().ForEach(g =>
-            {
-                dataload.Employee.ForEach(e =>
-                    optEngine.AddLHS(1, new VariableB_ShiftAssign { Date = d, Employee = e, Group = g }));
-
-                double demand = dataload.parameter_ShiftDemand
-                    .FirstOrDefault(x => x.Date == d && x.Group == g)?.QTY ?? 0;
-                optEngine.AddRHS(demand);
-                optEngine.CreateEqual($"{ConstraintName}@{d:yyyy_MM_dd}@{g}");
-            });
-        });
-    }
-}
-```
-
-### 不等式限制（RHS 含變數）範本
-
-```csharp
-public void Build()
-{
-    dataload.Date.ForEach(d =>
-    {
-        dataload.Employee.ForEach(e =>
-        {
-            dataload.parameter_NightToDay.ForEach(rule =>
-            {
-                var preD = d.AddDays(-1);
-                // LHS: violation[d,e]
-                optEngine.AddLHS(1, new VariableB_NightToDay { Date = d, Employee = e });
-                // RHS: assign[d-1,e,preGroup] + assign[d,e,group] - 1
-                optEngine.AddRHS(1, new VariableB_ShiftAssign { Date = preD, Employee = e, Group = rule.PreGroup });
-                optEngine.AddRHS(1, new VariableB_ShiftAssign { Date = d,    Employee = e, Group = rule.Group });
-                optEngine.AddRHS(-1);
-                optEngine.CreateGreatEqual($"{ConstraintName}@{d:yyyy_MM_dd}@{e}");
-            });
-        });
-    });
-}
-```
-
-每次 `CreateEqual/CreateLessEqual/CreateGreatEqual/CreateRange` 都會由核心自動記錄一次預期建立；
-只有實際加入 Solver 的限制式才計入實際建立。`Solve()` 前會依名稱中第一個 `@` 前的前綴分組，
-輸出 `[限制式建立完成] group=... count=<實際建立>/<預期建立>`。
-
-### LINQ 讀取 Parameter 的正確寫法
-
-```csharp
-// ✅ 先存成變數，再傳入 AddLHS/AddRHS
-var cost = dataload.parameter_Cost
-    .FirstOrDefault(x => x.PRODUCT == p)?.QTY ?? 0.0;
-optEngine.AddLHS(cost, new VariableX_Amount { PRODUCT = p });
-
-// ❌ 禁止：LINQ 直接嵌入 AddLHS 參數
-optEngine.AddLHS(dataload.parameter_Cost.FirstOrDefault(...)?.QTY ?? 0, ...);
-```
-
----
-
-## 9. ObjectiveFunction 類別範本
-
-```csharp
-// Constraints/ObjectiveFunction.cs
-public class ObjectiveFunction
-{
-    private OptEngine optEngine;
-    private Dataload  dataload;
-
-    public ObjectiveFunction(Dataload dataload, OptEngine engine)
-    {
-        this.optEngine = engine;
-        this.dataload  = dataload;
-    }
-
-    public void Build()
-    {
-        dataload.Date.ForEach(d =>
-            dataload.Employee.ForEach(e =>
-            {
-                optEngine.AddLHS(dataload.Penalty_SixDay,        new VariableB_SixDayWork    { Date = d, Employee = e });
-                optEngine.AddLHS(dataload.Penalty_GroupMismatch, new VariableB_GroupMismatch { Date = d, Employee = e });
-            }));
-
-        dataload.Employee.ForEach(e =>
-            optEngine.AddLHS(dataload.Penalty_BelowAVG, new VariableX_BelowAVG { Employee = e }));
-
-        optEngine.CreateMinimize(); // 或 CreateMaximize()
-    }
-}
-```
-
-> 目標式只能呼叫 `AddLHS`，不使用 `AddRHS`。
-
----
-
-## 10. BuildModel 類別範本
-
-```csharp
-// Constraints/BuildModel.cs
-public class BuildModel
-{
-    private OptEngine engine;
-    private Dataload  dataload;
-
-    public BuildModel(Dataload dataload, OptEngine engine)
-    {
-        this.engine   = engine;
-        this.dataload = dataload;
-    }
-
-    public void Build()
-    {
-        new ObjectiveFunction(dataload, engine).Build();
-
-        new Constraint_FullfillDemand(dataload, engine).Build();
-        new Constraint_OneGroup      (dataload, engine).Build();
-        new Constraint_PreAssign     (dataload, engine).Build();
-        new Constraint_SixDayWork    (dataload, engine).Build();
-        new Constraint_NightToDay    (dataload, engine).Build();
-        // 依問題新增其他限制式...
-    }
-}
-```
-
----
-
-## 11. 主專案類別（ProblemName.cs）範本
-
-```csharp
-// ProblemName.cs
-public class ProblemName : IDisposable
-{
-    public OptEngine optEngine;
-    public Dataload  dataload;
-
-    public Stopwatch buildModelTimer = new Stopwatch();
-    public Stopwatch totalTimer      = new Stopwatch();
-    public TimeSpan  totalTimeSpan   = new TimeSpan();
-
-    private string _projectName => GetType().Name;
-
-    public ProblemName()
-    {
-        dataload = new Dataload();
-        Logging.SetLogFileName(_projectName);
-    }
-
-    public bool Execute()
-    {
-        totalTimer.Restart();
-
-        CplexConfig config = new CplexConfig
-        {
-            epGap       = 0.01,
-            timeLimit   = 300,
-            workThreads = 8,
-            enableLog   = true,
-            exportLP    = true,
-            exportSol   = true
-        };
-
-        optEngine = new OptEngine(config);
-        optEngine.Build();
-
-        buildModelTimer.Restart();
-        new VariableCreate(dataload, optEngine).Build();
-        Logging.Info("【建構變數完成】", buildModelTimer);
-
-        new BuildModel(dataload, optEngine).Build();
-        Logging.Info("【建構模型完成】", buildModelTimer);
-        buildModelTimer.Stop();
-
-        bool isSuccess = optEngine.Solve();
-
-        if (isSuccess)
-            dataload.WriteToCSV(optEngine);
-
-        totalTimeSpan = totalTimer.Elapsed;
-        totalTimer.Stop();
-        return isSuccess;
-    }
-
-    public void Dispose()
-    {
-        optEngine?.Dispose();
-    }
-}
-```
-
----
-
-## 12. Program.cs 範本
-
-```csharp
-// Program.cs
-using OptimFoundation.Core;
-using ProjectNamespace;
-
-internal class Program
-{
-    static void Main(string[] args)
-    {
-        using (ProblemName project = new ProblemName())
-        {
-            project.Execute();
-            Logging.Info("整體運作時間:", project.totalTimer);
-        }
-    }
-}
-```
-
----
-
-## 13. CplexConfig 參數說明
-
-| 參數 | 說明 | 建議值 |
-|------|------|--------|
-| `epGap` | MIP gap 容忍度 | LP: `0` / MILP: `0.01`~`0.05` |
-| `timeLimit` | 求解時間上限（秒） | LP: `300` / IP: `1800` / MILP: `3600` |
-| `workThreads` | 平行執行緒數 | `8`~`16` |
-| `mipEmphasis` | MIP 策略 0=平衡 1=可行解 2=最佳解 | LP: `0` / IP: `1` / MILP: `2` |
-| `polishAfterTime` | N 秒後啟動 Solution Polishing | `timeLimit * 0.5` |
-| `enableLog` | 顯示 CPLEX 求解 log | `true` |
-| `exportLP` | 輸出 `.lp` 模型檔（debug 用） | `true` |
-| `exportMPS` | 輸出 `.mps` 模型檔 | 選用 |
-| `exportSol` | 輸出 `.sol` 解答檔 | `true` |
-
-### 輸出目錄
-
-| 目錄 | 內容 |
-|------|------|
-| `Output/Model/` | `.lp`、`.mps` |
-| `Output/Sol/` | `.sol` |
-| `Output/IIS/` | `.ilp`（Infeasible 時自動產生）|
-| `Output/Logs/` | 執行 log |
-
----
-
-## 14. 常見錯誤
-
-| 錯誤 | 原因 | 解法 |
-|------|------|------|
-| `KeyNotFoundException: 找不到變數 'xxx'` | `AddLHS/AddRHS` 的 key 與 `Build*Vs` 建立時的 key 不符 | 確認 property 宣告順序與 `Build*Vs` 傳入 set 順序一致 |
-| `ArgumentException: 期望 N 個參數，收到 0 個` | 用 object initializer 但 Parameter 只有 `params object[]` 建構子 | 移除 `params` 建構子，改用 properties-only |
-| `InvalidOperationException: 缺少建構子` | Variable/Parameter class 有非預設建構子 | 移除所有建構子 |
-| `NullReferenceException` 在 LINQ 查 Parameter | `FirstOrDefault` 返回 `null` | 使用 `?.QTY ?? 0.0` |
-| `Build 後 varCount == 0` | `Build*Vs` 傳入空 List | 確認 Dataload 建構子內 Set 有初始化資料 |
-| Infeasible / 解不到 | LHS/RHS 方向錯誤（移項） | 對照 AML 確認每個 `AddLHS/AddRHS` |
-
----
-
-## 15. 開發 Checklist
-
-```
-□  1. 新建 .csproj，加入 OptimFoundation.Core、OptimFoundation.Cplex 參考
-□  2. 確認 ILOG.Concert.dll / ILOG.CPLEX.dll 路徑正確
-□  3. 建立 Data/Parameter_Xxx.cs（properties only，QTY 最後）
-□  4. 建立 Data/Dataload.cs（Sets 初始化 + Parameters 初始化）
-□  5. 建立 VariablesClass/Variable[B|I|X]_Xxx.cs（properties only）
-□  6. 建立 VariablesClass/VariableCreate.cs（Build*Vs，順序對應 properties）
-□  7. 建立 Constraints/ObjectiveFunction.cs（AddLHS + CreateMinimize/Maximize）
-□  8. 建立 Constraints/Constraint_Xxx.cs（AddLHS + AddRHS + Create*；數量由核心自動統計）
-□  9. 建立 Constraints/BuildModel.cs（依序呼叫所有 Build()）
-□ 10. 建立 ProblemName.cs（CplexConfig → Build → VariableCreate → BuildModel → Solve）
-□ 11. 建立 Program.cs
-□ 12. dotnet build → 確認 0 errors
-□ 13. 執行，確認 CPLEX log 顯示 Optimal 或預期狀態
-□ 14. 開啟 Output/Model/*.lp 確認模型結構正確
-```
-
----
-
-## 16. 模組化架構：Constraint 與 Dataload 解耦
-
-### 核心原則
-
-> **Variable、Parameter、Constraint 不認識 Dataload。**  
-> Dataload 負責裝資料，BuildModel 負責把資料送給 Constraint。
-
-這樣做之後，Variable / Parameter / Constraint 這三類檔案可以直接複製到任何 Project 使用，不需要修改。
-
----
-
-### 各類別的職責
-
-| 類別 | 職責 | 可跨 Project 共用 |
-| ---- | ---- | :-: |
-| `VariableB/I/X_Xxx` | 決策變數的索引結構（properties-only） | ✅ |
-| `Parameter_Xxx` | 輸入資料的欄位結構（properties-only + QTY） | ✅ |
-| `Constraint_Xxx` | 業務規則（只接 `List<T>` + `OptEngine`） | ✅ |
-| `ObjectiveFunction` | 目標式（只接 `List<T>` + 罰分 + `OptEngine`） | ✅ |
-| `Dataload` | 載入並儲存資料（Sets + Parameters） | ❌ project-specific |
-| `BuildModel` | 把 Dataload 資料接線到 Constraint | ❌ project-specific |
-
----
-
-### Constraint 建構子寫法
-
-```csharp
-// ❌ 舊寫法：Constraint 耦合 Dataload，無法搬移
-public Constraint_FullfillDemand(Dataload dataload, OptEngine engine)
-
-// ✅ 新寫法：Constraint 只收它實際需要的資料
-public Constraint_FullfillDemand(
-    List<DateTime>               dates,
-    List<string>                 employees,
-    List<string>                 groups,
-    List<Parameter_ShiftDemand>  shiftDemand,
-    OptEngine                    engine)
-```
-
-原則：建構子參數 = 這個 Constraint 用到的所有 `dataload.Xxx`，逐一列出。
-
----
-
-### BuildModel 的接線責任
-
-解耦後，BuildModel 成為唯一知道 Dataload 的地方：
-
-```csharp
-public class BuildModel
-{
-    private readonly Dataload  _data;
+    private readonly List<DateTime> _dates;
+    private readonly List<string> _employees;
+    private readonly List<string> _groups;
+    private readonly List<Parameter_ShiftDemand> _demand;
     private readonly OptEngine _engine;
 
-    public BuildModel(Dataload data, OptEngine engine)
+    public Constraint_FullfillDemand(
+        List<DateTime> dates,
+        List<string> employees,
+        List<string> groups,
+        List<Parameter_ShiftDemand> demand,
+        OptEngine engine)
     {
-        _data   = data;
+        _dates = dates;
+        _employees = employees;
+        _groups = groups;
+        _demand = demand;
         _engine = engine;
     }
 
     public void Build()
     {
-        new ObjectiveFunction(
-            _data.Date, _data.Employee,
-            _data.Penalty_SixDay, _data.Penalty_GroupMismatch,
-            _data.Penalty_NightToDay, _data.Penalty_DoubleOffLT2,
-            _data.Penalty_BelowAVG, _data.Penalty_Weekend4Day,
-            _data.Penalty_OffOneDay, _engine).Build();
-
-        new Constraint_FullfillDemand(
-            _data.Date, _data.Employee, _data.Group,
-            _data.parameter_ShiftDemand, _engine).Build();
-
-        new Constraint_OneGroup(
-            _data.Date, _data.Employee, _data.Group, _engine).Build();
-
-        new Constraint_SixDayWork(
-            _data.Date, _data.Employee, _engine).Build();
-
-        // ... 其他 Constraint
+        // AML LHS → AddLHS；AML RHS → AddRHS；最後 Create*。
     }
 }
 ```
 
-BuildModel 本來就是 project-specific，由它承擔接線責任是正確的。
-
----
-
-### 罰分與權重的管理
-
-Constraint 需要的是「數值」，不是「Dataload 物件」，直接傳 `double`：
+`Program.cs` 是唯一知道整包 data 且負責接線的地方：
 
 ```csharp
-// ObjectiveFunction 建構子
-public ObjectiveFunction(
-    List<DateTime> dates,
-    List<string>   employees,
-    double penaltySixDay,
-    double penaltyGroupMismatch,
-    // ...
-    OptEngine engine)
-
-// 若罰分很多，可用 record 整理（Parameter Object pattern）
-public record PenaltyConfig(
-    double SixDay,
-    double GroupMismatch,
-    double NightToDay,
-    double DoubleOffLT2,
-    double BelowAVG,
-    double Weekend4Day,
-    double OffOneDay
-);
-
-// 由 Dataload 建立，傳入 ObjectiveFunction
-var penalties = new PenaltyConfig(
-    _data.Penalty_SixDay,
-    _data.Penalty_GroupMismatch,
-    // ...
-);
-new ObjectiveFunction(_data.Date, _data.Employee, penalties, _engine).Build();
+var model = new OptModel("baseline-model")
+    .AddVariables(engine =>
+    {
+        engine.BuildBVs<VariableB_ShiftAssign>(data.Date, data.Employee, data.Group);
+    })
+    .AddObjective(engine => new ObjectiveFunction(
+        data.Date, data.Employee, data.Penalties, engine).Build())
+    .AddConstraints(engine =>
+    {
+        new Constraint_FullfillDemand(
+            data.Date, data.Employee, data.Group, data.ShiftDemand, engine).Build();
+        new Constraint_OneGroup(data.Date, data.Employee, data.Group, engine).Build();
+    });
 ```
 
----
+`OptModel` 只註冊 callback，不建立或持有 engine。框架套用時固定執行 variables → objective → constraints，同一階段內依登記順序執行。
 
-### 可共用資料夾結構（多 Project 情境）
+## 7. Config 分層
 
+```csharp
+var projectConfig = new ProjectConfig
+{
+    ProjectName = "Rostering",
+    RetentionDays = 30,
+    EnableSolverLog = true,
+    ExportLP = true,
+    ExportMPS = false,
+    ExportSol = true,
+};
+
+var solverConfig = new CplexConfig
+{
+    epGap = 0.01,
+    timeLimit = 300,
+    workThreads = 8,
+    randomSeed = 42,
+};
 ```
-Shared/                          ← 放跨 Project 共用的元素
-├── Variables/
-│   ├── VariableB_ShiftAssign.cs
-│   └── VariableX_BelowAVG.cs
-├── Parameters/
-│   └── Parameter_ShiftDemand.cs
-└── Constraints/
-    ├── Constraint_FullfillDemand.cs
-    ├── Constraint_OneGroup.cs
-    └── Constraint_SixDayWork.cs
 
-ProjectA/                        ← project-specific
-├── Data/Dataload.cs
-└── Constraints/BuildModel.cs
+| Config | 只放什麼 | 關鍵預設 |
+|---|---|---|
+| `ProjectConfig` | 專案名、保留期、solver log 呈現、LP/MPS/Sol 匯出、輸出身分 | log ON，三種匯出 OFF |
+| `CplexConfig` | 真正改變 CPLEX 求解行為的旋鈕 | 未指定欄位依各欄位 / CPLEX 預設 |
 
-ProjectB/                        ← 引用 Shared，只寫自己的 Dataload + BuildModel
-├── Data/Dataload.cs
-└── Constraints/BuildModel.cs
+`ConfigSnapshot.From(cplexConfig)` 只會記 solver 設定，不再混入專案輸出策略。兩個 config 都支援 `Clone()`，使用 `MemberwiseClone` 保留所有目前欄位。
+
+## 8. 單次求解：OptProject
+
+```csharp
+using var project = new OptProject(model)
+    .UseConfig(() => projectConfig)
+    .UseConfig(() => solverConfig)
+    .OnSolved(engine => data.WriteToCSV(engine));
+
+bool ok = project.Execute();
 ```
+
+`OptProject.Execute()` 解析有效專案名 / 保留期，設定 log、做 housekeeping、建立 engine、套用模型、求解，再於成功時執行所有 `OnSolved` callback。`OptProject` 持有 native engine，MUST `using` / `Dispose`。
+
+## 9. 實驗：OptExperiment
+
+```csharp
+var baseline = solverConfig.Clone();
+var emphasis = baseline.Clone();
+emphasis.Emphasis = 2;
+var threads = baseline.Clone();
+threads.Threads = 2;
+
+var result = new OptExperiment("rostering-tuning", "baseline × solver variants")
+    .AddModel(model)
+    .AddConfig("baseline", baseline)
+    .AddConfig("emphasis", emphasis)
+    .AddConfig("threads-2", threads)
+    .Run();
+```
+
+`.AddModel` × `.AddConfig` 會展開完整笛卡兒積；label 格式為 `模型名 | 設定名`。也可用 `.AddTrial(model, label, config)` 明列單一 cell。runner 每個 cell 建立 fresh engine、序列執行並自動儲存 `Experiment`。
+
+實驗預設 solver log OFF、LP/MPS/Sol 匯出 OFF、不做 housekeeping，且刻意沒有 `OnSolved`。需要共同專案設定時可 `.UseConfig(() => projectConfig)`，但輸出策略不應污染 solver config。
+
+## 10. 完整 Program.cs 骨架
+
+```csharp
+using OptimFoundation.Core;
+using OptimFoundation.Cplex;
+
+var data = OptData.Load(() => new Dataload(new CsvDataSource()));
+var projectConfig = new ProjectConfig { ProjectName = "ProjectName", ExportSol = true };
+var baseline = new CplexConfig { epGap = 0.01, timeLimit = 300, workThreads = 8 };
+
+var model = new OptModel("baseline-model")
+    .AddVariables(e => CreateVariables(data, e))
+    .AddObjective(e => BuildObjective(data, e))
+    .AddConstraints(e => BuildConstraints(data, e));
+
+if (args.Contains("experiment"))
+{
+    var emphasis = baseline.Clone();
+    emphasis.Emphasis = 2;
+    new OptExperiment("project-tuning", "baseline vs emphasis")
+        .AddModel(model)
+        .AddConfig("baseline", baseline)
+        .AddConfig("emphasis", emphasis)
+        .Run();
+    return;
+}
+
+using var project = new OptProject(model)
+    .UseConfig(() => projectConfig)
+    .UseConfig(() => baseline)
+    .OnSolved(e => data.WriteToCSV(e));
+bool ok = project.Execute();
+```
+
+## 11. Checklist
+
+```text
+□  1. 選對依賴模式：框架 repo template 用 project reference；AI-Modeling 用 repo-local DLL HintPath
+□  2. 完成 Model.md 並通過人工 gate
+□  3. 建立 Parameter / Set / Variable / Objective / Constraint
+□  4. Dataload 繼承 DataContext，只以 OptData.Load 取得實例
+□  5. Objective / Constraint ctor 只收實際需要的資料
+□  6. Program.cs 直接註冊 variables / objective / constraints
+□  7. 專案輸出行為放 ProjectConfig，solver 旋鈕放 CplexConfig
+□  8. 單次求解用 OptProject；多設定比較用 OptExperiment + Clone
+□  9. dotnet build：0 errors
+□ 10. dotnet run：Status / objective / constraint counts 符合 baseline
+□ 11. 開啟輸出的 LP 對照 Model.md；再驗證解的可行性與單位
+```
+
+## 12. 常見錯誤
+
+| 錯誤 | 原因 | 解法 |
+|---|---|---|
+| `KeyNotFoundException: 找不到變數` | Pool 使用的 key 與 `Build*Vs` 的 set 順序不同 | 對齊 variable property 與 set 順序 |
+| 實驗 snapshot 出現輸出策略 | 兩層 config 混用 | 專案輸出欄位移到 `ProjectConfig` |
+| 目標式在 soft constraint 後才建立 | callback 接錯階段 | 目標式只放 `AddObjective`；框架會先於 constraints 執行 |
+| 同一份 data 在實驗間變動 | callback 寫入 public field / `List` | callback 視 data 為唯讀；結果寫到獨立 result 物件 |
+| AI-Modeling 拿到 source 工作樹版本 | 消費端誤用跨 repo project reference | 還原 repo-local DLL / analyzer `HintPath` |
+| OptimFoundation template 看不到新 API | 內部 template 還指 stale Core/Cplex DLL | Core / Cplex 改用 `ProjectReference` |
+| Infeasible / 解不到 | LHS/RHS 移項、改號或方向錯 | 逐式對照 Model.md；使用 IIS 定位 |

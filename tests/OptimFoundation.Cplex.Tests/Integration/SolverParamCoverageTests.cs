@@ -185,13 +185,14 @@ namespace OptimFoundation.Cplex.Tests.Integration
             var exp = new Experiment(expName, "逐一套用每個 CplexConfig solver 旋鈕並記錄一次求解");
 
             var failures = new List<string>();
+            var projectConfig = new ProjectConfig { EnableSolverLog = false };
 
             foreach (var (label, apply) in Knobs)
             {
-                var config = new CplexConfig { enableLog = false };
+                var config = new CplexConfig();
                 apply(config);
 
-                using var engine = new OptEngine(config);
+                using var engine = new OptEngine(config, projectConfig);
                 engine.Build();          // Build → Configuration(config)：在此套用該旋鈕的 SetParam
                 BuildKnapsack(engine);   // 小型 MILP，讓 MIP 類參數真正生效
 

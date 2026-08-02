@@ -18,6 +18,7 @@ namespace OptimFoundation.Core
         {
             var instance = factory();
             instance.Initialize();
+            instance.Freeze();
             return instance;
         }
     }

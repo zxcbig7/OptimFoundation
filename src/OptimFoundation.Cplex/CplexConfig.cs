@@ -8,23 +8,13 @@ namespace OptimFoundation.Cplex
     /// </summary>
     public sealed class CplexConfig : ISolverConfig, ITunableConfig
     {
+        /// <summary>Creates a shallow copy containing every current public setting.</summary>
+        public CplexConfig Clone() => (CplexConfig)MemberwiseClone();
         // ── CPLEX 專屬參數（單一來源，camelCase） ──────────────────────
         // null = 不呼叫 SetParam，交給 CPLEX 自己的預設值；有值才會在 Configuration() 內套用並寫進 log
 
         /// <summary>Param.Threads：求解可用的工作執行緒上限。</summary>
         public int? workThreads = 32;
-
-        /// <summary>CPLEX 求解過程的 log 是否即時印到 Console。false 仍會完整寫進框架 log 檔，只是不洗畫面。</summary>
-        public bool enableLog = true;
-
-        /// <summary>求解前把模型匯出成 .lp（人可讀，對照 Model.md 驗證用），存到 Models/ 資料夾。</summary>
-        public bool exportLP = false;
-
-        /// <summary>求解成功後把解匯出成 .sol，存到 Sols/ 資料夾。</summary>
-        public bool exportSol = false;
-
-        /// <summary>求解前把模型匯出成 .mps（標準交換格式），存到 Models/ 資料夾。</summary>
-        public bool exportMPS = false;
 
         /// <summary>Param.Read.Constraints：讀檔時的限制式數量上限。</summary>
         public int? rowRead = 30000;
@@ -159,12 +149,6 @@ namespace OptimFoundation.Cplex
 
         /// <summary>ISolverConfig 介面名，等同 <see cref="workThreads"/>。</summary>
         public int? Threads { get => workThreads; set => workThreads = value; }
-
-        /// <summary>ISolverConfig 介面名，等同 <see cref="enableLog"/>。</summary>
-        public bool LogToConsole { get => enableLog; set => enableLog = value; }
-
-        /// <summary>ISolverConfig 要求的欄位，CPLEX 這一側未使用（框架 log 路徑由 Logging.SetLogFileName 決定）。</summary>
-        public string LogFilePath { get; set; }
 
         /// <summary>ISolverConfig 介面名，等同 <see cref="algorithm"/>。</summary>
         public int? RootAlgorithm { get => algorithm; set => algorithm = value; }

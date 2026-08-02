@@ -86,6 +86,7 @@ namespace OptimFoundation.Core
     /// </summary>
     public abstract class DataContext
     {
+        private bool _isFrozen;
         private readonly Dictionary<string, ISetBrick> _sets = new Dictionary<string, ISetBrick>();
         private readonly List<(string Name, ISetBrick Set)> _setRegistrationOrder = new List<(string, ISetBrick)>();
         private readonly List<ParamRegistration> _params = new List<ParamRegistration>();
@@ -97,6 +98,7 @@ namespace OptimFoundation.Core
         /// </summary>
         protected void RegisterSet(string name, ISetBrick set)
         {
+            GuardMutation(name);
             _sets[name] = set;
             _setRegistrationOrder.Add((name, set));
         }
@@ -113,6 +115,7 @@ namespace OptimFoundation.Core
             bool fullGrid)
             where T : ModelElementBase
         {
+            GuardMutation(typeof(T).Name);
             var flatRows = new List<ParamRow>(rows.Count);
             foreach (var row in rows)
                 flatRows.Add(new ParamRow(indexOf(row), numbersOf(row)));
@@ -133,6 +136,17 @@ namespace OptimFoundation.Core
         {
             RegisterAll();
             ValidateData();
+        }
+
+        /// <summary>Freezes framework-controlled mutation APIs after loading and validation.</summary>
+        internal void Freeze() => _isFrozen = true;
+
+        /// <summary>Throws when a framework-controlled member is changed after loading.</summary>
+        protected void GuardMutation(string member)
+        {
+            if (_isFrozen)
+                throw new InvalidOperationException(
+                    $"模型建構階段不得修改資料；DataContext member '{member}' is frozen.");
         }
 
         /// <summary>

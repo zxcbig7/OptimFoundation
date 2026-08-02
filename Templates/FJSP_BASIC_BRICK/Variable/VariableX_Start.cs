@@ -1,0 +1,10 @@
+using OptimFoundation.Modeling;
+
+namespace FJSP_BASIC_BRICK
+{
+    /// <summary>作業開始時間（小時）；對應 Model.md 的 Start_{Lot,Operation}。</summary>
+    [OptVar]
+    [OptDim<Set_Lot>("Lot")]
+    [OptDim<Set_Operation>("Operation")]
+    public sealed partial class VariableX_Start { }
+}

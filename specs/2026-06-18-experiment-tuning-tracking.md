@@ -4,6 +4,7 @@ status: shipped
 created: 2026-06-18
 updated: 2026-06-19
 modules: [core, cplex, gurobi, solver]
+superseded_by: 2026-08-01-optimfoundation-dual-config.md, 2026-08-01-optimfoundation-runner-symmetry.md, 2026-08-01-optim-docs-and-projects-migration.md
 ---
 
 # Experiment — Solver-Agnostic Tuning 實驗記錄環境

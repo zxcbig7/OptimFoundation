@@ -47,11 +47,11 @@ namespace OptimFoundation.Gurobi
                     _env.Set(GRB.StringParam.WLSSecret, cfg.WlsSecret);
             }
 
-            if (!config.LogToConsole)
+            if (cfg != null && !cfg.LogToConsole)
                 _env.Set(GRB.IntParam.OutputFlag, 0);
 
-            if (!string.IsNullOrEmpty(config.LogFilePath))
-                _env.Set(GRB.StringParam.LogFile, config.LogFilePath);
+            if (!string.IsNullOrEmpty(cfg?.LogFilePath))
+                _env.Set(GRB.StringParam.LogFile, cfg.LogFilePath);
 
             Model = new GRBModel(_env);
 

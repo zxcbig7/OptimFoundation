@@ -235,7 +235,7 @@ namespace OptimFoundation.Core
         /// <summary>依變數全名取解值（格式 TypeName@s1@s2@…）。MUST 在求解成功後呼叫。</summary>
         public abstract double GetVariableValue(string name);
 
-        /// <summary>釋放 solver 原生資源（CPLEX / Gurobi 的 native handle）。用 using 包住 engine 或由 OptModel.Dispose() 代管。</summary>
+        /// <summary>釋放 solver 原生資源（CPLEX / Gurobi 的 native handle）。用 using 包住 engine，或交由 OptProject / OptExperiment 管理。</summary>
         public abstract void Dispose();
 
         #endregion
@@ -493,13 +493,13 @@ namespace OptimFoundation.Core
             if (!_buildSummaryDirty) return;
 
             int expectedVariables = _variableBuildCounts.Values.Sum(x => x.Expected);
-            Logging.Info($"[變數建立摘要] count={varCount}/{expectedVariables} types={_variableBuildCounts.Count}");
+            Logging.Info($"[變數建立摘要] 總數={varCount}/{expectedVariables} 類別數={_variableBuildCounts.Count}");
 
             foreach (var entry in _constraintBuildCounts.OrderBy(x => x.Key, StringComparer.Ordinal))
                 Logging.Info($"[限制式建立完成] group={entry.Key} count={entry.Value.Actual}/{entry.Value.Expected}");
             int expectedConstraints = _constraintBuildCounts.Values.Sum(x => x.Expected);
             int actualConstraints = _constraintBuildCounts.Values.Sum(x => x.Actual);
-            Logging.Info($"[限制式建立摘要] count={actualConstraints}/{expectedConstraints} groups={_constraintBuildCounts.Count} solverTotal={ConstraintCount}");
+            Logging.Info($"[限制式建立摘要] 總數={actualConstraints}/{expectedConstraints} 群組數={_constraintBuildCounts.Count} solver總數={ConstraintCount}");
 
             _buildSummaryDirty = false;
         }
@@ -812,11 +812,19 @@ namespace OptimFoundation.Core
 
         /// <summary>軟性 LHS &lt;= rhs：加 surplus 變數 dp≥0，建 lhs − dp &lt;= rhs，目標式 += penalty·dp。</summary>
         public virtual bool CreateLeSoft(double rhs, double penalty)
-            => BuildSoft(rhs, penalty, ConstraintSense.LessEqual, null);
+            => CreateLeSoft(rhs, penalty, null);
+
+        /// <summary>具名軟性 LHS &lt;= rhs：名稱會用於限制式、彈性變數與自動 log。</summary>
+        public virtual bool CreateLeSoft(double rhs, double penalty, string name)
+            => BuildSoft(rhs, penalty, ConstraintSense.LessEqual, name);
 
         /// <summary>軟性 LHS &gt;= rhs：加 deficit 變數 dn≥0，建 lhs + dn &gt;= rhs，目標式 += penalty·dn。</summary>
         public virtual bool CreateGeSoft(double rhs, double penalty)
-            => BuildSoft(rhs, penalty, ConstraintSense.GreaterEqual, null);
+            => CreateGeSoft(rhs, penalty, null);
+
+        /// <summary>具名軟性 LHS &gt;= rhs：名稱會用於限制式、彈性變數與自動 log。</summary>
+        public virtual bool CreateGeSoft(double rhs, double penalty, string name)
+            => BuildSoft(rhs, penalty, ConstraintSense.GreaterEqual, name);
 
         /// <summary>軟性 LHS == rhs：加 dn,dp≥0，建 lhs + dn − dp == rhs，目標式 += penalty·(dn+dp)。</summary>
         public virtual bool CreateEqSoft(double rhs, double penalty, string name)
@@ -876,6 +884,7 @@ namespace OptimFoundation.Core
                 }
                 RecordVariableBuild("SoftConstraint", expectedVariables, Variables.Count - variablesBefore);
                 RecordConstraintBuild(name, true);
+                Logging.Info($"[軟性限制式建立完成] name={name} sense={sense} rhs={rhs} penalty={penalty} result=success");
             }
             catch (Exception ex)
             {
