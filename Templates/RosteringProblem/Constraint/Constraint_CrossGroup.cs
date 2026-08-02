@@ -32,7 +32,7 @@ namespace RosteringProblem
                     {
                         engine.AddLHS(1.0, new VariableB_ShiftAssign { Date = date, Employee = employee, Group = rule.Group });
                         engine.AddRHS(1.0, new VariableB_GroupMismatch { Date = date, Employee = employee });
-                        engine.CreateLessEqual($"{ConstraintName}@{date:yyyy_MM_dd}@{employee}s");
+                        engine.CreateLessEqual($"{ConstraintName}@{date:yyyy_MM_dd}@{employee}@{rule.Group}");
                     }
                 }
         }

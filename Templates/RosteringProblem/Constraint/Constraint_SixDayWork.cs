@@ -39,7 +39,7 @@ namespace RosteringProblem
                         engine.AddLHS(1.0, new VariableB_SixDayWork { Date = date, Employee = employee });
                         engine.AddRHS(one);
                         engine.AddRHS(-1.0, new VariableB_ShiftAssign { Date = sd, Employee = employee, Group = "O" });
-                        engine.CreateLessEqual($"{ConstraintName}@{date:yyyy_MM_dd}@{employee}");
+                        engine.CreateLessEqual($"{ConstraintName}@{date:yyyy_MM_dd}@{employee}@{sd:yyyy_MM_dd}");
                     }
 
                     engine.AddLHS(1.0, new VariableB_SixDayWork { Date = date, Employee = employee });
