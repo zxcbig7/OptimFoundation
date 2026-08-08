@@ -8,7 +8,7 @@ Solver-agnostic MILP 建模框架（C#, .NET 8）。後端支援 IBM CPLEX 與 G
 <critical_notes>
 - MUST 動框架 code 前先讀 `specs/developer-guide.md` —— 13 章完整 API 手冊（Variable / Parameter / Pool / BuildModel / Config / 結果 API）—— Why: 框架有自己的建模慣例（Pool API、Variable Key 格式），憑直覺寫會偏離慣例
 - 全鏈 `net8.0` + `LangVersion latest`（含 Templates 與 tests；Generators 例外：netstandard2.0，Roslyn 要求）—— Why: CPLEX/Gurobi 的 .NET assembly 是 managed wrapper，net8 直接載（native `cplex2211.dll` 要在 PATH）；NEVER 降回 net48、NEVER 用 Framework-only 套件（Oracle 一律 `Oracle.ManagedDataAccess.Core`）
-- 改任何 public API 後 MUST：更新 `specs/developer-guide.md` → 同步 sibling 鏡像 `../AI-Modeling/CPLEX_API_REFERENCE.md`（檔頭標同步日期）→ 提醒消費端跑 `AI-Modeling/scripts/setup-dlls.ps1 -Build` 回填 DLL —— Why: stale DLL 會遮住 API drift，消費端看似 build 綠實則已編不過（2026-07-11 事故）
+- 改任何 public API 後 MUST：更新 `specs/developer-guide.md` → 同步 sibling 鏡像 `../AI-Modeling/CPLEX_API_REFERENCE.md`（檔頭標同步日期）→ 提醒消費端依 `AI-Modeling/dlls/README.md` 回填 DLL 並更新 `VERSION.txt` —— Why: stale DLL 會遮住 API drift，消費端看似 build 綠實則已編不過（2026-07-11 事故）
 - solver DLL 不在 repo 內：CPLEX 走 `$(CplexDir)` property（預設 `C:\IBM\ILOG\CPLEX_Studio2211`）、Gurobi 走 `$(GUROBI_HOME)` 條件式，NEVER commit DLL 進 git、NEVER 用 HintPath 指 bin 輸出
 - 框架內部依賴一律 `ProjectReference`；NLog / Oracle 由 Core 傳遞，消費端不重複宣告
 - Variable class 只放 properties、不寫 constructor（框架用 reflection 組 key）
