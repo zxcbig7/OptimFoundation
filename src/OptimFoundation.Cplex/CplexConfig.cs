@@ -161,6 +161,9 @@ namespace OptimFoundation.Cplex
         /// <summary>Param.Preprocessing.Presolve：是否啟用前處理。infeasible 找不出原因時可關掉它再跑 IIS。</summary>
         public bool? PreIndicator { get; set; }
 
+        /// <summary>Param.Preprocessing.Symmetry：-1 = auto，0 = off，1..5 = 逐步提高對稱破除強度。</summary>
+        public int? symmetry = null;
+
         // ── ITunableConfig — 抽象控制項目 delegate 到既有 CPLEX 欄位（RootAlgorithm 由上方滿足） ──
         // ITunableConfig 是 tuning / Experiment 掃參數用的統一介面，同樣是既有欄位的別名
 

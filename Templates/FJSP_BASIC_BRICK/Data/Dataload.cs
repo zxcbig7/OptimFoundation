@@ -61,14 +61,18 @@ namespace FJSP_BASIC_BRICK
         /// </summary>
         public Dataload(string rawFile)
         {
-            var table = CsvCtrl.ReadTable(rawFile);
-            var row = table.Rows[0];
-            int lots = int.Parse((string)row["Lots"], CultureInfo.InvariantCulture);
-            int operations = int.Parse((string)row["Operations"], CultureInfo.InvariantCulture);
-            int eqps = int.Parse((string)row["Eqps"], CultureInfo.InvariantCulture);
-            int seed = int.Parse((string)row["Seed"], CultureInfo.InvariantCulture);
-            int minHours = int.Parse((string)row["MinHours"], CultureInfo.InvariantCulture);
-            int maxHours = int.Parse((string)row["MaxHours"], CultureInfo.InvariantCulture);
+            var rows = new CsvDataSource().LoadRows(rawFile).ToArray();
+            if (rows.Length < 2)
+                throw new InvalidDataException("FJSP import requires a header and one data row.");
+            var header = rows[0].Select((column, index) => (column.Trim(), index))
+                .ToDictionary(pair => pair.Item1, pair => pair.index, StringComparer.OrdinalIgnoreCase);
+            string Read(string column) => rows[1][header[column]].Trim();
+            int lots = int.Parse(Read("Lots"), CultureInfo.InvariantCulture);
+            int operations = int.Parse(Read("Operations"), CultureInfo.InvariantCulture);
+            int eqps = int.Parse(Read("Eqps"), CultureInfo.InvariantCulture);
+            int seed = int.Parse(Read("Seed"), CultureInfo.InvariantCulture);
+            int minHours = int.Parse(Read("MinHours"), CultureInfo.InvariantCulture);
+            int maxHours = int.Parse(Read("MaxHours"), CultureInfo.InvariantCulture);
 
             var lotNames = Enumerable.Range(1, lots).Select(l => $"LOT{l}").ToList();
             var operationNames = Enumerable.Range(1, operations).Select(o => $"OP{o}").ToList();

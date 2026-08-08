@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Globalization;
 using OptimFoundation.Core;
 using OptimFoundation.Core.IO;
 using Xunit;
@@ -196,6 +197,63 @@ namespace OptimFoundation.Cplex.Tests.Unit
             var result = CsvCtrl.ReadStrSet("Set_CsvT11.csv");
 
             Assert.Equal(new[] { "A", "Product, Large", "C" }, result);
+        }
+
+        [Fact]
+        public void BuildParameter_QuotedMultilineField_IsOneRecord()
+        {
+            WriteDataFile("CsvT12.csv", "Lot,Eqp,QTY\n\"North\nDepot\",EQP1,2\n");
+
+            var rows = CsvCtrl.BuildParameter<CsvParam>("CsvT12");
+
+            Assert.Single(rows);
+            Assert.Equal("North\nDepot", rows[0].Lot);
+        }
+
+        [Fact]
+        public void BuildParameter_TrimsAndParsesNumbersWithInvariantCulture()
+        {
+            var original = CultureInfo.CurrentCulture;
+            try
+            {
+                CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+                WriteDataFile("CsvT13.csv", "Lot,Eqp,QTY\n L1 , E1 , 1.5 \n");
+
+                var rows = CsvCtrl.BuildParameter<CsvParam>("CsvT13");
+
+                Assert.Equal("L1", rows[0].Lot);
+                Assert.Equal("E1", rows[0].Eqp);
+                Assert.Equal(1.5, rows[0].QTY);
+            }
+            finally
+            {
+                CultureInfo.CurrentCulture = original;
+            }
+        }
+
+        [Fact]
+        public void BuildParameter_EmptyNumericCell_ThrowsFormatException()
+        {
+            WriteDataFile("CsvT14.csv", "Lot,Eqp,QTY\nL1,E1, \n");
+
+            Assert.Throws<FormatException>(() => CsvCtrl.BuildParameter<CsvParam>("CsvT14"));
+        }
+
+        [Fact]
+        public void ReadDoubleSet_TrimsAndUsesInvariantCulture()
+        {
+            var original = CultureInfo.CurrentCulture;
+            try
+            {
+                CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+                WriteDataFile("Set_CsvT15.csv", " 1.5 \n");
+
+                Assert.Equal(new[] { 1.5 }, CsvCtrl.ReadDoubleSet("Set_CsvT15"));
+            }
+            finally
+            {
+                CultureInfo.CurrentCulture = original;
+            }
         }
     }
 }

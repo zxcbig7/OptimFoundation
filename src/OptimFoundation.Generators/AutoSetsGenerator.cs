@@ -155,6 +155,23 @@ namespace OptimFoundation.Modeling
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
     public sealed class OptSetAttribute<T> : Attribute { }
 
+");
+            for (int n = 2; n <= MaxArity; n++)
+            {
+                string tparams = string.Join(", ", Enumerable.Range(1, n).Select(i => "T" + i));
+                string names = string.Join(", ", Enumerable.Range(1, n).Select(i => "string name" + i));
+                string values = string.Join(", ", Enumerable.Range(1, n).Select(i => "name" + i));
+                sb.Append($@"
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+    public sealed class OptSetAttribute<{tparams}> : Attribute
+    {{
+        public string[] Names {{ get; }}
+        public OptSetAttribute({names}) {{ Names = new[] {{ {values} }}; }}
+    }}
+");
+            }
+            sb.Append(@"
+
     // ── 具名維度：同 set 多維度 / 自訂 index 名。泛型 = 來源 set（直接綁，不 alias），字串 = 維度名 ──
 
     /// <summary>
@@ -219,6 +236,8 @@ namespace OptimFoundation.Modeling
             // B. Set 積木（非泛型預設 string + 泛型 arity 1）
             Register(context, SetAttr, ExtractSet);
             Register(context, SetAttr + "`1", ExtractSet);
+            for (int n = 2; n <= MaxArity; n++)
+                Register(context, SetAttr + "`" + n, ExtractSet);
 
             // B. 泛型 Var / Param（arity 1..MaxArity）
             for (int n = 1; n <= MaxArity; n++)
@@ -319,20 +338,29 @@ namespace OptimFoundation.Modeling
 
             // 元素型別：泛型 [OptSet<T>] 取型別參數；非泛型 [OptSet] 預設 string
             var attrClass = ctx.Attributes[0].AttributeClass;
-            string elemFq = "string";
-            string elemDisplay = "string";
-            bool legal = true;
-            if (attrClass != null && attrClass.IsGenericType && attrClass.TypeArguments.Length == 1)
+            var typeArgs = attrClass != null && attrClass.IsGenericType
+                ? attrClass.TypeArguments : System.Collections.Immutable.ImmutableArray<ITypeSymbol>.Empty;
+            string elemDisplay = typeArgs.Length == 0 ? "string" : string.Join(", ", typeArgs.Select(t => t.ToDisplayString()));
+            var mapped = typeArgs.Select(MapElem).ToArray();
+            bool legal = mapped.All(m => m.legal);
+            string baseFqn;
+            if (typeArgs.Length <= 1)
             {
-                var (fq, _, ok) = MapElem(attrClass.TypeArguments[0]);
-                elemFq = fq;
-                elemDisplay = attrClass.TypeArguments[0].ToDisplayString();
-                legal = ok;
+                string elemFq = typeArgs.Length == 0 ? "string" : mapped[0].fq;
+                baseFqn = $"{SetBaseFqn}<{elemFq}>";
+            }
+            else
+            {
+                var names = ctx.Attributes[0].ConstructorArguments
+                    .Select((a, i) => a.Value as string ?? $"Item{i + 1}")
+                    .ToArray();
+                string tupleMembers = string.Join(", ", mapped.Select((m, i) => $"{m.fq} {names[i]}"));
+                baseFqn = $"{SetBaseFqn}<({tupleMembers})>";
             }
 
             var diag = badPrefix ? SetNamingRule : (legal ? null : SetElementTypeRule);
 
-            return new EmitModel(NamespaceOf(symbol), symbol.Name, $"{SetBaseFqn}<{elemFq}>", string.Empty,
+            return new EmitModel(NamespaceOf(symbol), symbol.Name, baseFqn, string.Empty,
                 AddQty: false, AddCtors: false, Meta: string.Empty,
                 NamingViolation: diag, DiagLocation: loc,
                 Props: System.Array.Empty<PropSpec>(), DiagArg: elemDisplay);

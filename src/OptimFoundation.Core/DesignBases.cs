@@ -1,5 +1,9 @@
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using System.Reflection;
 using System.Text;
 
@@ -132,6 +136,9 @@ namespace OptimFoundation.Core
         /// <summary>本集合的元素型別（SetBase&lt;T&gt; 的 T）。供驗證器辨別 dangling 與 type mismatch（見框架資料防護規格）。</summary>
         Type ElementType { get; }
 
+        /// <summary>一個成員對應的索引分量數；一般集合為 1，ValueTuple 集合為 tuple 的欄位數。</summary>
+        int Arity { get; }
+
         /// <summary>value 是否為本集合成員（先型別檢查再比對，非本集合元素型別一律回 false）。</summary>
         bool ContainsObject(object value);
 
@@ -154,6 +161,7 @@ namespace OptimFoundation.Core
     {
         private readonly List<T> _items = new List<T>();
         private readonly HashSet<T> _index = new HashSet<T>();
+        private static readonly Type[] _tupleElementTypes = GetTupleElementTypes(typeof(T));
         private bool _loaded;
 
         /// <summary>去 "Set_" 前綴的積木名（= 生成到 Var/Param 的 property 名 / CSV 欄名來源）。</summary>
@@ -174,6 +182,11 @@ namespace OptimFoundation.Core
 
         /// <summary>成員的 CLR 型別（string / DateTime / int / long / double / decimal）。</summary>
         public Type ElementType => typeof(T);
+
+        /// <summary>一個集合成員所佔的欄數；ValueTuple 成員依其分量數計算。</summary>
+        public int Arity => TupleElementTypes?.Length ?? 1;
+
+        private static Type[] TupleElementTypes => _tupleElementTypes;
 
         /// <summary>索引存取（保序）。積木即唯讀 List：支援 [i] / Count / foreach / LINQ，consumer 免另存 List 視圖。</summary>
         public T this[int index]
@@ -203,7 +216,9 @@ namespace OptimFoundation.Core
         public void Load(IO.IDataSource source, string name = null)
         {
             if (source == null) throw new ArgumentNullException(nameof(source));
-            LoadFrom(source.LoadSet(name ?? SetName).Select(ParseElement));
+            string logicalName = name ?? SetName;
+            string sourceName = source is IO.CsvDataSource ? IO.SetNaming.File(logicalName) : logicalName;
+            LoadRows(source.LoadRows(sourceName), logicalName);
         }
 
         /// <summary>
@@ -231,7 +246,11 @@ namespace OptimFoundation.Core
             if (_loaded)
                 throw new InvalidOperationException($"【{GetType().Name}】已載入，禁止二次載入（載入即封存）。");
 
-            foreach (var it in items)
+            var materializedItems = items.ToList();
+            if (materializedItems.Distinct().Count() != materializedItems.Count)
+                throw new ArgumentException($"Set '{GetType().Name}' contains duplicate members.");
+
+            foreach (var it in materializedItems)
             {
                 if (!_index.Add(it))
                     throw new ArgumentException($"【{GetType().Name}】重複成員 '{it}'——重複會生出重複變數 key。");
@@ -252,8 +271,33 @@ namespace OptimFoundation.Core
         /// </summary>
         public void LoadCsv(string fileName)
         {
-            var raw = IO.CsvCtrl.ReadStrSet(fileName);
-            LoadFrom(raw.Select(ParseElement));
+            if (fileName == null) throw new ArgumentNullException(nameof(fileName));
+            LoadRows(new IO.CsvDataSource().LoadRows(fileName), fileName);
+        }
+
+        /// <summary>從資料來源的 raw rows 載入；所有多欄 Set 的欄位解析集中於此處。</summary>
+        private void LoadRows(IEnumerable<string[]> rows, string sourceName)
+        {
+            if (rows == null) throw new ArgumentNullException(nameof(rows));
+
+            var parsed = new List<T>();
+            int rowNumber = 0;
+            foreach (var row in rows)
+            {
+                rowNumber++;
+                int actualArity = row?.Length ?? 0;
+                if (actualArity != Arity)
+                    throw new FormatException(
+                        $"Set '{sourceName}' row {rowNumber} has {actualArity} columns; expected {Arity}.");
+
+                var normalizedRow = row.Select(value => value?.Trim() ?? string.Empty).ToArray();
+                if (normalizedRow.All(string.IsNullOrEmpty))
+                    continue;
+
+                parsed.Add(ParseRow(normalizedRow, sourceName, rowNumber));
+            }
+
+            LoadFrom(parsed);
         }
 
         private void EnsureLoaded()
@@ -263,9 +307,48 @@ namespace OptimFoundation.Core
         }
 
         // string → T：支援 string/DateTime/int/long/double/decimal（與 VariableBuilder 支援域一致）。
+        private static T ParseRow(string[] row, string sourceName, int rowNumber)
+        {
+            var tupleElementTypes = TupleElementTypes;
+            if (tupleElementTypes == null)
+            {
+                ValidateSetComponent(row[0], sourceName, rowNumber, 1);
+                return ParseElement(row[0]);
+            }
+
+            var values = new object[tupleElementTypes.Length];
+            for (int i = 0; i < tupleElementTypes.Length; i++)
+            {
+                ValidateSetComponent(row[i], sourceName, rowNumber, i + 1);
+                values[i] = ParseElement(row[i], tupleElementTypes[i]);
+            }
+
+            return (T)Activator.CreateInstance(typeof(T), values);
+        }
+
+        private static void ValidateSetComponent(string value, string sourceName, int rowNumber, int componentNumber)
+        {
+            if (value != null && value.Contains(ModelElementBase.KeySeparator))
+                throw new ArgumentException(
+                    $"Set '{sourceName}' row {rowNumber} component {componentNumber} contains reserved key separator '{ModelElementBase.KeySeparator}'.");
+        }
+
+        private static Type[] GetTupleElementTypes(Type type)
+        {
+            if (!type.IsGenericType || type.GetGenericTypeDefinition().Namespace != "System" ||
+                !type.GetGenericTypeDefinition().Name.StartsWith("ValueTuple`", StringComparison.Ordinal))
+                return null;
+
+            return type.GetGenericArguments();
+        }
+
         private static T ParseElement(string s)
         {
-            var t = typeof(T);
+            return (T)ParseElement(s, typeof(T));
+        }
+
+        private static object ParseElement(string s, Type t)
+        {
             object v;
             if (t == typeof(string)) v = s;
             else if (t == typeof(DateTime)) v = DateTime.Parse(s, CultureInfo.InvariantCulture);
@@ -274,7 +357,7 @@ namespace OptimFoundation.Core
             else if (t == typeof(double)) v = double.Parse(s, CultureInfo.InvariantCulture);
             else if (t == typeof(decimal)) v = decimal.Parse(s, CultureInfo.InvariantCulture);
             else throw new NotSupportedException($"SetBase<{t.Name}> 不支援從字串解析；請改用 LoadInline/LoadFrom。");
-            return (T)v;
+            return v;
         }
 
         /// <summary>依載入順序列舉成員（保序，可直接 foreach / LINQ）。未載入即丟例外。</summary>

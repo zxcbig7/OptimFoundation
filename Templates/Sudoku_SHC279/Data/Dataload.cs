@@ -1,3 +1,4 @@
+using System.Globalization;
 using OptimFoundation.Core;
 using OptimFoundation.Core.IO;
 
@@ -35,9 +36,13 @@ namespace Sudoku_SHC279
         /// <summary>把方形原始題盤展開成 sets、givens、宮格對應與模型常數。</summary>
         public Dataload(string rawFile)
         {
-            var grid = CsvCtrl.ReadMatrixCsv(rawFile);
-            int rowCount = grid.GetLength(0);
-            int columnCount = grid.GetLength(1);
+            var rawRows = new CsvDataSource().LoadRows(rawFile).ToArray();
+            if (rawRows.Length == 0)
+                throw new InvalidDataException("Sudoku import requires at least one row.");
+            int rowCount = rawRows.Length;
+            int columnCount = rawRows[0].Length;
+            if (rawRows.Any(row => row.Length != columnCount))
+                throw new InvalidDataException("Sudoku import requires a rectangular CSV grid.");
             int blockSide = (int)Math.Sqrt(rowCount);
 
             if (rowCount != columnCount || blockSide * blockSide != rowCount)
@@ -67,12 +72,13 @@ namespace Sudoku_SHC279
                         Column = column,
                     });
 
-                    if (grid[rowIndex, columnIndex] > 0)
+                    int digit = int.Parse(rawRows[rowIndex][columnIndex].Trim(), CultureInfo.InvariantCulture);
+                    if (digit > 0)
                         parameter_Given.Add(new Parameter_Given
                         {
                             Row = row,
                             Column = column,
-                            Digit = (int)grid[rowIndex, columnIndex],
+                            Digit = digit,
                         });
                 }
         }

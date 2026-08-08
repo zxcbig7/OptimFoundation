@@ -24,6 +24,96 @@ namespace OptimFoundation.Core.IO
         private static string EnsureCsv(string fileName)
             => fileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) ? fileName : fileName + ".csv";
 
+        /// <summary>
+        /// Parses RFC4180 records from a reader. Newlines inside quoted fields are
+        /// kept as <c>\n</c>, escaped quotes are decoded, and each yielded value is
+        /// one complete logical row rather than one physical line.
+        /// </summary>
+        internal static IEnumerable<string[]> ParseCsv(TextReader reader)
+        {
+            if (reader == null) throw new ArgumentNullException(nameof(reader));
+
+            var fields = new List<string>();
+            var field = new StringBuilder();
+            var inQuotes = false;
+            var recordStarted = false;
+            var recordNumber = 1;
+
+            int codePoint;
+            while ((codePoint = reader.Read()) >= 0)
+            {
+                var c = (char)codePoint;
+                if (inQuotes)
+                {
+                    if (c == '"')
+                    {
+                        if (reader.Peek() == '"')
+                        {
+                            reader.Read();
+                            field.Append('"');
+                        }
+                        else
+                        {
+                            inQuotes = false;
+                        }
+                    }
+                    else if (c == '\r')
+                    {
+                        if (reader.Peek() == '\n') reader.Read();
+                        field.Append('\n');
+                    }
+                    else
+                    {
+                        field.Append(c);
+                    }
+                    recordStarted = true;
+                    continue;
+                }
+
+                switch (c)
+                {
+                    case '"' when field.Length == 0:
+                        inQuotes = true;
+                        recordStarted = true;
+                        break;
+                    case ',':
+                        fields.Add(field.ToString());
+                        field.Clear();
+                        recordStarted = true;
+                        break;
+                    case '\r':
+                        if (reader.Peek() == '\n') reader.Read();
+                        fields.Add(field.ToString());
+                        yield return fields.ToArray();
+                        fields.Clear();
+                        field.Clear();
+                        recordStarted = false;
+                        recordNumber++;
+                        break;
+                    case '\n':
+                        fields.Add(field.ToString());
+                        yield return fields.ToArray();
+                        fields.Clear();
+                        field.Clear();
+                        recordStarted = false;
+                        recordNumber++;
+                        break;
+                    default:
+                        field.Append(c);
+                        recordStarted = true;
+                        break;
+                }
+            }
+
+            if (inQuotes)
+                throw new InvalidDataException($"[CsvCtrl] 第 {recordNumber} 行引號未閉合，不支援欄位內換行。");
+            if (recordStarted)
+            {
+                fields.Add(field.ToString());
+                yield return fields.ToArray();
+            }
+        }
+
         // 統一的行切割：RFC4180 逐字元解析——逗號分隔，"…" 包住的欄位允許內含逗號，"" 跳脫成一個字面 "。
         // 未加引號的欄位照字面取用，不 trim（維持現況行為）。lineNumber 僅供例外訊息使用（預設 0＝不明）。
         // 不支援欄位內換行：行結束時引號未閉合 → InvalidDataException，訊息含行號與該行內容。
@@ -81,29 +171,29 @@ namespace OptimFoundation.Core.IO
         // 以下四個讀 Data/ 下的單欄檔（每列一個成員），差別只在轉型；格式不符會由 Parse 丟 FormatException
 
         /// <summary>讀單欄 CSV 成 int 清單。</summary>
-        public static List<int> ReadIntSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(EnsureCsv(fileName)), int.Parse);
+        public static List<int> ReadIntSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(EnsureCsv(fileName)), s => int.Parse(s, CultureInfo.InvariantCulture));
 
         /// <summary>讀單欄 CSV 成 double 清單。</summary>
-        public static List<double> ReadDoubleSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(EnsureCsv(fileName)), double.Parse);
+        public static List<double> ReadDoubleSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(EnsureCsv(fileName)), s => double.Parse(s, CultureInfo.InvariantCulture));
 
         /// <summary>讀單欄 CSV 成 string 清單（不轉型，set 載入的預設路徑）。</summary>
         public static List<string> ReadStrSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(EnsureCsv(fileName)), s => s);
 
         /// <summary>讀單欄 CSV 成 DateTime 清單（依當前 culture 解析）。</summary>
-        public static List<DateTime> ReadDateSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(EnsureCsv(fileName)), DateTime.Parse);
+        public static List<DateTime> ReadDateSet(string fileName) => ReadLines(FolderDir.Data.GetFilePath(EnsureCsv(fileName)), s => DateTime.Parse(s, CultureInfo.InvariantCulture));
 
         private static List<TValue> ReadLines<TValue>(string path, Func<string, TValue> parser)
         {
             var list = new List<TValue>();
-            using var sr = new StreamReader(path, _csvRead);
-            string line;
-            int lineNum = 0;
-            while ((line = sr.ReadLine()) != null)
-            {
-                lineNum++;
-                list.Add(parser(UnquoteLine(line, lineNum)));
-            }
+            foreach (var row in ReadRecords(path))
+                list.Add(parser(string.Join(",", row).Trim()));
             return list;
+        }
+
+        private static List<string[]> ReadRecords(string path)
+        {
+            using var reader = new StreamReader(path, _csvRead);
+            return ParseCsv(reader).ToList();
         }
 
         /// <summary>
@@ -114,18 +204,16 @@ namespace OptimFoundation.Core.IO
         {
             string path = FolderDir.Data.GetFilePath(EnsureCsv(fileName));
             var table = new DataTable();
-            var lines = File.ReadAllLines(path, _csvRead)
-                .Select((l, idx) => (Line: l, Num: idx + 1))
-                .Where(t => !string.IsNullOrWhiteSpace(t.Line))
+            var rows = ReadRecords(path)
+                .Where(row => row.Any(cell => !string.IsNullOrWhiteSpace(cell)))
                 .ToArray();
-            if (lines.Length == 0) return table;
+            if (rows.Length == 0) return table;
 
-            foreach (var col in SplitLine(lines[0].Line, lines[0].Num))
+            foreach (var col in rows[0])
                 table.Columns.Add(col.Trim());
 
-            foreach (var (line, num) in lines.Skip(1))
+            foreach (var parts in rows.Skip(1))
             {
-                var parts = SplitLine(line, num);
                 var row = table.NewRow();
                 for (int i = 0; i < table.Columns.Count && i < parts.Length; i++)
                     row[i] = parts[i].Trim();
@@ -142,15 +230,10 @@ namespace OptimFoundation.Core.IO
         {
             string path = FolderDir.Data.GetFilePath(EnsureCsv(fileName));
             var data = new Dictionary<string, double>();
-            using var sr = new StreamReader(path, _csvRead);
-            string line;
-            int lineNum = 0;
-            while ((line = sr.ReadLine()) != null)
+            foreach (var parts in ReadRecords(path))
             {
-                lineNum++;
-                var parts = SplitLine(line, lineNum);
                 if (parts.Length >= 2 && double.TryParse(parts.Last(), NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
-                    data["@" + string.Join("@", parts.Take(parts.Length - 1))] = val;
+                    data["@" + string.Join("@", parts.Take(parts.Length - 1).Select(part => part.Trim()))] = val;
             }
             return data;
         }
@@ -173,14 +256,13 @@ namespace OptimFoundation.Core.IO
             var props = type.GetProperties();
             var data = new List<TParameter>();
 
-            var lines = File.ReadAllLines(path, _csvRead)
-                .Select((l, idx) => (Line: l, Num: idx + 1))
-                .Where(t => !string.IsNullOrWhiteSpace(t.Line))
+            var rows = ReadRecords(path)
+                .Where(row => row.Any(cell => !string.IsNullOrWhiteSpace(cell)))
                 .ToArray();
-            if (lines.Length == 0) return data;
+            if (rows.Length == 0) return data;
 
             // 表頭偵測：第一行最後一欄 parse 不成數字 → 視為表頭（參數/解檔最後的資料欄必為數值或 USER 字串欄）
-            var firstParts = SplitLine(lines[0].Line, lines[0].Num);
+            var firstParts = rows[0];
             bool hasHeader = !double.TryParse(firstParts.Last(), NumberStyles.Any, CultureInfo.InvariantCulture, out _);
 
             // colMap[i] = props[i] 的值在哪一欄
@@ -202,17 +284,17 @@ namespace OptimFoundation.Core.IO
                 colMap = Enumerable.Range(0, props.Length).ToArray();
             }
 
-            foreach (var (line, num) in lines.Skip(hasHeader ? 1 : 0))
+            foreach (var parts in rows.Skip(hasHeader ? 1 : 0))
             {
-                var parts = SplitLine(line, num);
-                var values = new object[props.Length];
+                var cells = new string[props.Length];
                 for (int i = 0; i < props.Length; i++)
                 {
                     if (colMap[i] >= parts.Length)
-                        throw new InvalidDataException($"[CsvCtrl] {Path.GetFileName(path)} 資料列欄數不足（需要至少 {colMap[i] + 1} 欄）：'{line}'");
-                    values[i] = parts[colMap[i]].Trim();
+                        throw new InvalidDataException($"[CsvCtrl] {Path.GetFileName(path)} 資料列欄數不足（需要至少 {colMap[i] + 1} 欄）。");
+                    cells[i] = parts[colMap[i]];
                 }
                 var instance = new TParameter();
+                var values = ParameterRowMapper.ConvertCells(props, cells, $"CsvCtrl {Path.GetFileName(path)}");
                 instance.InitClassBySets(values);   // string 值由 InitClassBySets 依 property 型別轉換
                 data.Add(instance);
             }

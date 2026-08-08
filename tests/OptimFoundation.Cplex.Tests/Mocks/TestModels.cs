@@ -35,6 +35,24 @@ namespace OptimFoundation.Cplex.Tests.Mocks
         public string S { get; set; } = "";
     }
 
+    internal class VariableX_ArcFlow : VariableBase
+    {
+        public string NodeFrom { get; set; } = "";
+        public string NodeTo { get; set; } = "";
+    }
+
+    internal class VariableX_ArcFlowByDate : VariableBase
+    {
+        public string NodeFrom { get; set; } = "";
+        public string NodeTo { get; set; } = "";
+        public DateTime Date { get; set; }
+    }
+
+    internal class VariableX_ArcFlowWrongArity : VariableBase
+    {
+        public string NodeFrom { get; set; } = "";
+    }
+
     // 用於 Parameter 測試
     internal class ParamX : ParameterBase
     {

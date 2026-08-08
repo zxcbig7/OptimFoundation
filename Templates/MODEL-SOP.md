@@ -10,15 +10,15 @@ canonical 參考實作：`Sudoku_SHC279/`（每個骨架都可在該專案找到
 
 ## 1. 七個必要元件
 
-| # | 元件 | 位置 | 一句話職責 |
-| --- | --- | --- | --- |
-| 1 | Set | `SetClass/Sets.cs` | 索引集合（模型的維度）|
-| 2 | Parameter | `ParameterClass/Parameter_*.cs` | 已知數值或 key 組合 |
-| 3 | Variable | `VariableClass/Variable{B,X,I}_*.cs` | 決策變數，前綴決定型別 |
-| 4 | Dataload | `Data/Dataload.cs` | 資料唯一入口 |
-| 5 | Constraint | `Constraint/Constraint_*.cs` | 一條數學限制式一個類別 |
-| 6 | Objective | `Constraint/ObjectiveFunction.cs` | 目標式 |
-| 7 | Program | `Program.cs` | 唯一組裝點 |
+| #   | 元件       | 位置                                 | 一句話職責             |
+| --- | ---------- | ------------------------------------ | ---------------------- |
+| 1   | Set        | `SetClass/Sets.cs`                   | 索引集合（模型的維度） |
+| 2   | Parameter  | `ParameterClass/Parameter_*.cs`      | 已知數值或 key 組合    |
+| 3   | Variable   | `VariableClass/Variable{B,X,I}_*.cs` | 決策變數，前綴決定型別 |
+| 4   | Dataload   | `Data/Dataload.cs`                   | 資料唯一入口           |
+| 5   | Constraint | `Constraint/Constraint_*.cs`         | 一條數學限制式一個類別 |
+| 6   | Objective  | `Constraint/ObjectiveFunction.cs`    | 目標式                 |
+| 7   | Program    | `Program.cs`                         | 唯一組裝點             |
 
 缺任何一個都不算完整專案。可行性問題（無目標）仍 MUST 有 Objective，見 §7。
 
@@ -71,11 +71,11 @@ public sealed class Variable<B|X|I>_<Name> : VariableBase
 }
 ```
 
-| 前綴 | 型別 | Program 用的 builder |
-| --- | --- | --- |
-| `VariableB_` | Binary | `engine.BuildBVs<T>(setA, setB, …)` |
-| `VariableX_` | Continuous | `engine.BuildCVs<T>(…)` |
-| `VariableI_` | Integer | `engine.BuildIVs<T>(…)` |
+| 前綴         | 型別       | Program 用的 builder                |
+| ------------ | ---------- | ----------------------------------- |
+| `VariableB_` | Binary     | `engine.BuildBVs<T>(setA, setB, …)` |
+| `VariableX_` | Continuous | `engine.BuildCVs<T>(…)`             |
+| `VariableI_` | Integer    | `engine.BuildIVs<T>(…)`             |
 
 前綴是 **load-bearing**（generator 依它判型），取錯名直接 compile error。NEVER 用 attribute 另外指定型別。
 
@@ -178,15 +178,15 @@ var model = new OptModel("<ModelName>")
 
 ## 9. 硬規則總表
 
-| 規則 | 說明 |
-| --- | --- |
-| NEVER 裸數字 | 係數、容量、比例一律經 Parameter 的 `QTY`。結構性常數（如「每格恰好一個」的 1）可直接寫，但**任何來自題目的數值**都不行 |
-| NEVER 移項改號 | 見 §6 |
-| NEVER 四捨五入 | 數值與題目描述完全一致，不推算、不填佔位符 |
-| NEVER 傳整包 Dataload | 只出現在 `Program.cs` |
-| NEVER 用單字母命名 | `Assign_{Employee,Date}` 而非 `x[i,j]`；程式類別名對應數學符號 |
-| Set 成員字串 | PascalCase 單數：`"Truck"` ✅、`"trucks"` ❌ |
-| 前綴決定型別 | `VariableB_` / `VariableX_` / `VariableI_`，取錯即 compile error |
+| 規則                  | 說明                                                                                                                    |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| NEVER 裸數字          | 係數、容量、比例一律經 Parameter 的 `QTY`。結構性常數（如「每格恰好一個」的 1）可直接寫，但**任何來自題目的數值**都不行 |
+| NEVER 移項改號        | 見 §6                                                                                                                   |
+| NEVER 四捨五入        | 數值與題目描述完全一致，不推算、不填佔位符                                                                              |
+| NEVER 傳整包 Dataload | 只出現在 `Program.cs`                                                                                                   |
+| NEVER 用單字母命名    | `Assign_{Employee,Date}` 而非 `x[i,j]`；程式類別名對應數學符號                                                          |
+| Set 成員字串          | PascalCase 單數：`"Truck"` ✅、`"trucks"` ❌                                                                              |
+| 前綴決定型別          | `VariableB_` / `VariableX_` / `VariableI_`，取錯即 compile error                                                        |
 
 ## 10. 完成前的四步驗證
 
@@ -203,9 +203,9 @@ var model = new OptModel("<ModelName>")
 
 同一份框架目前有兩種寫法並存，本 SOP 採 `Sudoku_SHC279` 的版本：
 
-| 項目 | 本 SOP（Sudoku） | 另一種（Template_CPLEX / `$FW` 規範文字） |
-| --- | --- | --- |
-| engine 傳入時機 | `new Constraint_X(deps).Build(engine)` | `new Constraint_X(deps, engine).Build()` |
-| 資料夾命名 | `SetClass/` `ParameterClass/` `VariableClass/` `Constraint/` | `Set/` `Parameter/` `Variable/` `Objective/` `Constraint/` |
+| 項目            | 本 SOP（Sudoku）                                             | 另一種（Template_CPLEX / `$FW` 規範文字）                  |
+| --------------- | ------------------------------------------------------------ | ---------------------------------------------------------- |
+| engine 傳入時機 | `new Constraint_X(deps).Build(engine)`                       | `new Constraint_X(deps, engine).Build()`                   |
+| 資料夾命名      | `SetClass/` `ParameterClass/` `VariableClass/` `Constraint/` | `Set/` `Parameter/` `Variable/` `Objective/` `Constraint/` |
 
 要讓 AI 產出穩定，這兩項應該擇一收斂後把另一種從 template 移除。

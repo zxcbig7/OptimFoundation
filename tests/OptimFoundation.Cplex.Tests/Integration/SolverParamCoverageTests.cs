@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using OptimFoundation.Core;
 using OptimFoundation.Cplex.Tests.Mocks;
 using Xunit;
@@ -41,6 +42,11 @@ namespace OptimFoundation.Cplex.Tests.Integration
             ("polishAfterTime=1e9", c => c.polishAfterTime = 1e9),
             ("Presolve=on", c => c.PreIndicator = true),
             ("HeuristicEffort=1.0", c => c.HeuristicEffort = 1.0),
+
+            ("symmetry=-1", c => c.symmetry = -1),
+            ("symmetry=1", c => c.symmetry = 1),
+            ("symmetry=2", c => c.symmetry = 2),
+            ("symmetry=3", c => c.symmetry = 3),
 
             // ── node 選擇策略：0 DFS / 1 best-bound / 2 best-estimate / 3 alt best-estimate ──
             ("nodeSelect=0", c => c.nodeSelect = 0),
@@ -213,6 +219,20 @@ namespace OptimFoundation.Cplex.Tests.Integration
             // 全部旋鈕都記成一個 Trial
             Assert.Equal(Knobs.Count, exp.Trials.Count);
 
+            var expectedSymmetry = new Dictionary<string, int>
+            {
+                ["symmetry=-1"] = -1,
+                ["symmetry=1"] = 1,
+                ["symmetry=2"] = 2,
+                ["symmetry=3"] = 3,
+            };
+            foreach (var (label, value) in expectedSymmetry)
+            {
+                var trial = Assert.Single(exp.Trials, t => t.Label == label);
+                Assert.True(trial.Metrics.Status is SolveStatus.Optimal or SolveStatus.Feasible);
+                Assert.Equal(value, Assert.IsType<int>(trial.Config.SolverSpecific["symmetry"]));
+            }
+
             // 每個參數都實際求解成功
             Assert.True(failures.Count == 0,
                 "以下參數求解未達終止狀態：" + Environment.NewLine + string.Join(Environment.NewLine, failures));
@@ -223,6 +243,14 @@ namespace OptimFoundation.Cplex.Tests.Integration
             string csv = File.ReadAllText(csvPath);
             foreach (var (label, _) in Knobs)
                 Assert.Contains(label, csv);
+
+            var saved = Experiment.Load(expName);
+            foreach (var (label, value) in expectedSymmetry)
+            {
+                var trial = Assert.Single(saved.Trials, t => t.Label == label);
+                var recordedValue = Assert.IsType<JsonElement>(trial.Config.SolverSpecific["symmetry"]);
+                Assert.Equal(value, recordedValue.GetInt32());
+            }
         }
 
         /// <summary>3 物品 0/1 背包：max 3a+4b+5c s.t. 2a+3b+4c &lt;= 5。root 即最佳。</summary>

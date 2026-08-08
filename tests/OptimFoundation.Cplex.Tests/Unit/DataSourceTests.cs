@@ -4,6 +4,7 @@ using System.Data;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Globalization;
 using OptimFoundation.Core;
 using OptimFoundation.Core.IO;
 using OptimFoundation.Cplex.Tests.Mocks;
@@ -50,6 +51,18 @@ namespace OptimFoundation.Cplex.Tests.Unit
             var src = new InMemoryDataSource().AddSet("Employee", new[] { "A", "B" });
 
             Assert.Equal(new[] { "A", "B" }, src.LoadSet("employee"));
+        }
+
+        [Fact]
+        public void LoadRows_ReturnsEveryRegisteredColumn()
+        {
+            var src = new InMemoryDataSource()
+                .AddRows("Arc", new[] { new[] { "A", "B" }, new[] { "B", "C" } });
+
+            var rows = src.LoadRows("arc").ToArray();
+
+            Assert.Equal(new[] { "A", "B" }, rows[0]);
+            Assert.Equal(new[] { "B", "C" }, rows[1]);
         }
     }
 
@@ -101,6 +114,17 @@ namespace OptimFoundation.Cplex.Tests.Unit
             // 邏輯名稱與完整檔名兩種呼叫皆可
             Assert.Equal(new[] { "M1", "M2" }, new CsvDataSource().LoadSet("Machine"));
             Assert.Equal(new[] { "M1", "M2" }, new CsvDataSource().LoadSet("Set_Machine"));
+        }
+
+        [Fact]
+        public void LoadRows_ParsesQuotedMultilineFields()
+        {
+            WriteDataFile("Arc.csv", "A,B\n\"North\nDepot\",C\n");
+
+            var rows = new CsvDataSource().LoadRows("Arc").ToArray();
+
+            Assert.Equal(new[] { "A", "B" }, rows[0]);
+            Assert.Equal(new[] { "North\nDepot", "C" }, rows[1]);
         }
     }
 
@@ -254,6 +278,46 @@ namespace OptimFoundation.Cplex.Tests.Unit
             var members = new DbDataSource(fake).LoadSet("SELECT DISTINCT eqp FROM t ORDER BY eqp");
 
             Assert.Equal(new[] { "E1", "E2" }, members);
+        }
+
+        [Fact]
+        public void LoadRows_ReturnsAllColumnsAsStrings()
+        {
+            var dt = new DataTable();
+            dt.Columns.Add("FROM");
+            dt.Columns.Add("TO");
+            dt.Rows.Add("A", "B");
+            var fake = new FakeDbCtrl { NextResult = dt };
+
+            var rows = new DbDataSource(fake).LoadRows("SELECT from_col, to_col FROM arc").ToArray();
+
+            Assert.Single(rows);
+            Assert.Equal(new[] { "A", "B" }, rows[0]);
+        }
+
+        [Fact]
+        public void LoadParam_MapsTrimmedNumbersUsingInvariantCulture()
+        {
+            var original = CultureInfo.CurrentCulture;
+            try
+            {
+                CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+                var dt = new DataTable();
+                dt.Columns.Add("LOT");
+                dt.Columns.Add("EQP");
+                dt.Columns.Add("QTY");
+                dt.Rows.Add(" L1 ", " E1 ", " 1.5 ");
+
+                var rows = new DbDataSource(new FakeDbCtrl { NextResult = dt }).LoadParam<DsParam>("SELECT * FROM demand");
+
+                Assert.Equal("L1", rows[0].Lot);
+                Assert.Equal("E1", rows[0].Eqp);
+                Assert.Equal(1.5, rows[0].QTY);
+            }
+            finally
+            {
+                CultureInfo.CurrentCulture = original;
+            }
         }
     }
 }

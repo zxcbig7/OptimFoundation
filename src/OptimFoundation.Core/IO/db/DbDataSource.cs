@@ -13,7 +13,7 @@ namespace OptimFoundation.Core.IO
     /// 命名，但因 SQL ≠ 名稱、語意不同，本類刻意 NOT 實作 IDataSource（避免「同名不同意」的漏抽象）。
     /// 讀回按「欄名 = property 名」對位（大小寫不敏感），多餘欄忽略；欄名不符用 AS 別名對過去。
     /// </summary>
-    public sealed class DbDataSource
+    public sealed class DbDataSource : IDataSource
     {
         private readonly IDbCtrl _db;
 
@@ -31,12 +31,27 @@ namespace OptimFoundation.Core.IO
             return MapRows<T>(_db.Query(sql, parameters), sql);
         }
 
+        List<TParamClass> IDataSource.LoadParam<TParamClass>(string file)
+            => LoadParam<TParamClass>(file);
+
         /// <summary>用 SELECT 讀一維 set（取第一欄）——與 CsvDataSource.LoadSet 同名，第一引數是 SQL。</summary>
         public List<string> LoadSet(string sql, params (string name, object value)[] parameters)
         {
             if (string.IsNullOrWhiteSpace(sql)) throw new ArgumentNullException(nameof(sql));
             var dt = _db.Query(sql, parameters);
             return dt.Rows.Cast<DataRow>().Select(r => r.ItemArray[0]?.ToString() ?? "").ToList();
+        }
+
+        [Obsolete("Use LoadRows for new code. LoadSet is retained for one-column compatibility.")]
+        List<string> IDataSource.LoadSet(string name) => LoadSet(name);
+
+        /// <summary>Executes <paramref name="sql"/> and returns every selected column as an invariant string.</summary>
+        public IEnumerable<string[]> LoadRows(string sql)
+        {
+            if (string.IsNullOrWhiteSpace(sql)) throw new ArgumentNullException(nameof(sql));
+            return _db.Query(sql).Rows.Cast<DataRow>()
+                .Select(row => row.ItemArray.Select(ParameterRowMapper.ToInvariantString).ToArray())
+                .ToList();
         }
 
         /// <summary>
@@ -69,10 +84,11 @@ namespace OptimFoundation.Core.IO
             var data = new List<TParamClass>();
             foreach (DataRow row in dt.Rows)
             {
-                var values = new object[props.Length];
+                var cells = new string[props.Length];
                 for (int i = 0; i < props.Length; i++)
-                    values[i] = row[colMap[i]]?.ToString() ?? "";
+                    cells[i] = ParameterRowMapper.ToInvariantString(row[colMap[i]]);
                 var instance = new TParamClass();
+                var values = ParameterRowMapper.ConvertCells(props, cells, $"DbDataSource {sourceDesc}");
                 instance.InitClassBySets(values);   // string 值由 InitClassBySets 依 property 型別轉換
                 data.Add(instance);
             }

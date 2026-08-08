@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.IO;
 
 namespace OptimFoundation.Core.IO
 {
@@ -25,9 +26,23 @@ namespace OptimFoundation.Core.IO
         public List<TParamClass> LoadParam<TParamClass>(string file = null) where TParamClass : ModelElementBase, new()
             => CsvCtrl.BuildParameter<TParamClass>(file);
 
+        /// <summary>Loads complete RFC4180 records from <c>Data/{name}.csv</c>.</summary>
+        public IEnumerable<string[]> LoadRows(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) throw new ArgumentNullException(nameof(name));
+
+            using var reader = new StreamReader(FolderDir.Data.GetFilePath(EnsureCsv(name)));
+            foreach (var row in CsvCtrl.ParseCsv(reader))
+                yield return row;
+        }
+
         /// <summary>從 Data/Set_{name}.csv 讀一個 set 的成員（每列一個）。元素轉型交給 SetBase.ParseElement。</summary>
+        [Obsolete("Use LoadRows for new code. LoadSet is retained for one-column compatibility.")]
         public List<string> LoadSet(string name)
             => CsvCtrl.ReadStrSet(SetNaming.File(name));
+
+        private static string EnsureCsv(string fileName)
+            => fileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) ? fileName : fileName + ".csv";
 
         /// <summary>
         /// 讀整張 CSV 成 raw DataTable（第一列 = 欄名、全欄 string），供 set / param 以外的通用用途。

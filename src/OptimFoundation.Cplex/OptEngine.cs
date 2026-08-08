@@ -400,6 +400,12 @@ namespace OptimFoundation.Cplex
                 Model.SetParam(Param.Preprocessing.Presolve, config.PreIndicator.Value);
                 Logging.Info($"[Solver Setting] Presolve={(config.PreIndicator.Value ? "on" : "off")}");
             }
+
+            if (config.symmetry.HasValue)
+            {
+                Model.SetParam(Param.Preprocessing.Symmetry, config.symmetry.Value);
+                Logging.Info($"[Solver Setting] Symmetry={config.symmetry.Value}");
+            }
             #endregion
 
             #region 子問題（節點）演算法

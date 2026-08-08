@@ -10,6 +10,9 @@ namespace OptimFoundation.Core.IO
     /// </summary>
     public interface IDataSource
     {
+        /// <summary>Loads raw CSV/DB/in-memory records. Each array is one complete row.</summary>
+        IEnumerable<string[]> LoadRows(string name);
+
         /// <summary>
         /// 讀某參數型別的全部列。file = 資料檔名（自由，省略則 = 型別名）——檔名無限制，契約是「欄位對得上 class 的 property」，
         /// 對不上即丟例外。
@@ -17,6 +20,7 @@ namespace OptimFoundation.Core.IO
         List<TParamClass> LoadParam<TParamClass>(string file = null) where TParamClass : ModelElementBase, new();
 
         /// <summary>讀一維 set。name = 邏輯名稱（檔名形式 Set_{X}），各實作自行解析位址。</summary>
+        [Obsolete("Use LoadRows for new code. LoadSet is retained for one-column compatibility.")]
         List<string> LoadSet(string name);
     }
 

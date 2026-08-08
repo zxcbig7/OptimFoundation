@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace OptimFoundation.Core
 {
@@ -64,6 +66,97 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>從多個 Set 組合出所有變數名稱（格式：TypeName@set1@set2@...）</summary>
+        private static IEnumerable<string[]> GenVarParts(List<string[]>[] domains)
+        {
+            IEnumerable<string[]> result = new[] { Array.Empty<string>() };
+            foreach (var domain in domains)
+                result = result.SelectMany(_ => domain, (prefix, row) =>
+                {
+                    var next = new string[prefix.Length + row.Length];
+                    prefix.CopyTo(next, 0);
+                    row.CopyTo(next, prefix.Length);
+                    return next;
+                });
+            return result;
+        }
+
+        private static List<string[]>[] ConvertSetsToVarPartLists(object[] sets)
+        {
+            if (sets.Length > 0 && sets.All(x => x is string))
+                sets = [sets.Cast<string>().ToList()];
+
+            var result = new List<string[]>[sets.Length];
+            for (int i = 0; i < sets.Length; i++)
+            {
+                if (GetValueTupleElementType(sets[i]) != null)
+                {
+                    if (sets[i] is not System.Collections.IEnumerable sequence)
+                        throw new ArgumentException($"Set #{i + 1} must be enumerable.");
+
+                    result[i] = sequence.Cast<object>().Select(item =>
+                    {
+                        if (item is not ITuple tuple)
+                            throw new ArgumentException($"Set #{i + 1} contains a non-tuple member.");
+                        return Enumerable.Range(0, tuple.Length)
+                            .Select(index => FormatKeyToken($"Set #{i + 1}", tuple[index]))
+                            .ToArray();
+                    }).ToList();
+                }
+                else
+                {
+                    result[i] = ConvertSetsToStringLists(sets[i]).Single()
+                        .Select(value => new[] { value }).ToList();
+                }
+            }
+            return result;
+        }
+
+        private static Type GetValueTupleElementType(object value)
+        {
+            foreach (var type in value.GetType().GetInterfaces())
+            {
+                if (!type.IsGenericType || type.GetGenericTypeDefinition() != typeof(IEnumerable<>)) continue;
+                var elementType = type.GetGenericArguments()[0];
+                if (elementType.IsValueType && elementType.FullName?.StartsWith("System.ValueTuple`", StringComparison.Ordinal) == true)
+                    return elementType;
+            }
+            return null;
+        }
+
+        private static string FormatKeyToken(string context, object value)
+        {
+            string token = value switch
+            {
+                string s => s,
+                DateTime date => date.ToString("yyyy-MM-dd"),
+                double number => number.ToString(CultureInfo.InvariantCulture),
+                decimal number => number.ToString(CultureInfo.InvariantCulture),
+                _ => Convert.ToString(value, CultureInfo.InvariantCulture)
+                    ?? throw new ArgumentException($"{context} contains a null member.")
+            };
+            ModelElementBase.ValidateKeyToken(context, token);
+            return token;
+        }
+
+        private static void ValidateVariableArity<TVariable>(List<string[]>[] domains)
+        {
+            if (domains.Any(domain => domain.Count == 0)) return;
+            int actual = domains.Sum(domain =>
+            {
+                int width = domain[0].Length;
+                if (domain.Any(row => row.Length != width))
+                    throw new ArgumentException("Each row in a multidimensional set must have the same arity.");
+                return width;
+            });
+            int expected = typeof(TVariable).GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                .Count(property => property.CanWrite && property.GetIndexParameters().Length == 0
+                    && property.DeclaringType != typeof(ModelElementBase)
+                    && property.DeclaringType != typeof(VariableBase));
+            if (actual != expected)
+                throw new ArgumentException(
+                    $"BuildVars arity mismatch for {typeof(TVariable).Name}: supplied {actual}, variable properties {expected}.");
+        }
+
         public static IEnumerable<string> GenVarCombinations(params List<string>[] lists)
         {
             // 0 維（scalar 變數）：無 index，回空字串（呼叫端組出 TypeName，與 ModelElementBase.ToString 一致，不留 trailing @）
@@ -129,9 +222,10 @@ namespace OptimFoundation.Core
         public static IEnumerable<string> GetVarNames<TVariable>(object[] sets)
         {
             string typeName = typeof(TVariable).Name;
-            var stringLists = ConvertSetsToStringLists(sets);
+            var domains = ConvertSetsToVarPartLists(sets);
+            ValidateVariableArity<TVariable>(domains);
             // 0 維（scalar）→ 純 TypeName（與 ModelElementBase.ToString 一致）；≥1 維 → TypeName@v1@v2...
-            foreach (var parts in GenVarParts(stringLists))
+            foreach (var parts in GenVarParts(domains))
                 yield return parts.Length == 0 ? typeName : typeName + "@" + string.Join("@", parts);
         }
 
@@ -139,8 +233,9 @@ namespace OptimFoundation.Core
         public static void BuildVars<TVariable>(Action<object> createVarMethod, object[] sets)
         {
             var create = GetCtor(typeof(TVariable));
-            var stringLists = ConvertSetsToStringLists(sets);
-            foreach (var parts in GenVarParts(stringLists))
+            var domains = ConvertSetsToVarPartLists(sets);
+            ValidateVariableArity<TVariable>(domains);
+            foreach (var parts in GenVarParts(domains))
                 createVarMethod(create(parts));
         }
     }
