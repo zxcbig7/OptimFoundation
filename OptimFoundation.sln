@@ -21,7 +21,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FJSP_BASIC_BRICK", "Templat
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Template_CPLEX", "Template_CPLEX", "{00E809B0-CA9B-4E20-7255-F85164F6D620}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RosteringProblem", "Templates\Template_CPLEX\RosteringProblem.csproj", "{E6573671-17CA-497D-9DF4-BC5AC7D39F9E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RosteringProblem", "Templates\RosteringProblem\RosteringProblem.csproj", "{E6573671-17CA-497D-9DF4-BC5AC7D39F9E}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tutorial", "Templates\Tutorial\Tutorial.csproj", "{121BDABD-788B-42BC-8993-92D44BE70B15}"
 EndProject

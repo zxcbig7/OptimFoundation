@@ -11,6 +11,9 @@ namespace OptimFoundation.Core
     /// </summary>
     public abstract class ModelElementBase
     {
+        /// <summary>變數 key 的維度分隔符。資料值不得含此字元，見 <see cref="ValidateKeyToken"/>。</summary>
+        internal const char KeySeparator = '@';
+
         // PropertyInfo[] 快取：GetProperties() 是反射呼叫，每次 ~100ns，快取後降為字典查找 ~10ns
         private static readonly ConcurrentDictionary<Type, PropertyInfo[]> _propsCache
             = new ConcurrentDictionary<Type, PropertyInfo[]>();
@@ -48,6 +51,9 @@ namespace OptimFoundation.Core
                 var targetType = props[i].PropertyType;
                 var inputValue = sets[i];
 
+                if (inputValue is string raw)
+                    ValidateKeyToken($"{ElemName}.{props[i].Name}", raw);
+
                 if (targetType == inputValue?.GetType())
                 {
                     props[i].SetValue(this, inputValue);
@@ -60,6 +66,18 @@ namespace OptimFoundation.Core
             }
         }
 
+        /// <summary>
+        /// 資料值含 <see cref="KeySeparator"/> 即丟例外。
+        /// Why: 分隔符沒有 escape，值裡混進它會讓不同 element 組出同一把 key（變數被覆寫、同名限制式被當重複略過），
+        /// 且 WriteSolution / SaveToDB 是靠 Split 把 key 拆回各維度欄，多切一刀就整列錯位——兩者都不會丟例外。
+        /// </summary>
+        internal static void ValidateKeyToken(string context, string value)
+        {
+            if (value != null && value.Contains(KeySeparator))
+                throw new ArgumentException(
+                    $"【{context}】值 '{value}' 含保留字元 '{KeySeparator}'——它是變數 key（TypeName{KeySeparator}v1{KeySeparator}v2…）的維度分隔符，資料不得使用。");
+        }
+
         /// <summary>組出唯一 key：TypeName@val1@val2@…（DateTime 固定 yyyy-MM-dd）。全框架以此字串索引變數。</summary>
         public override string ToString()
         {
@@ -67,7 +85,8 @@ namespace OptimFoundation.Core
             var sb = new StringBuilder(ElemName);
             foreach (var p in props)
             {
-                sb.Append('@');
+                // 先加 @ 再加值，避免空字串或 null 造成的 key 重複
+                sb.Append(KeySeparator);
                 if (p.PropertyType == typeof(DateTime))
                     sb.Append(((DateTime)p.GetValue(this)).ToString("yyyy-MM-dd"));
                 else
@@ -80,10 +99,6 @@ namespace OptimFoundation.Core
     /// <summary>限制式基底（前綴慣例 Constraint_）。ConstraintName = 類別名，供組限制式名稱用。</summary>
     public abstract class ConstraintBase : ModelElementBase
     {
-        /// <summary>已廢棄：限制式計數改由 EngineBase 自動統計（見 ConstraintBuildCounts）。</summary>
-        [Obsolete("Constraint counts are tracked automatically by EngineBase.")]
-        protected int ConstraintCount { get; set; }
-
         /// <summary>限制式名稱 = 類別名；建限制式時常用它當名稱前綴再串索引。</summary>
         protected string ConstraintName => ElemName;
     }

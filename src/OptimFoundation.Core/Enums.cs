@@ -3,7 +3,7 @@ namespace OptimFoundation.Core
     /// <summary>變數型別。</summary>
     public enum VarType
     {
-        /// <summary>連續（實數）變數。</summary>
+        /// <summary>連續變數。</summary>
         Continuous,
 
         /// <summary>整數變數。</summary>

@@ -48,7 +48,7 @@ namespace OptimFoundation.Core
             return Expression.Lambda<Func<string[], object>>(Expression.New(stringArrCtor, param), param).Compile();
         });
 
-        // yields string[] parts directly — no string concatenation or Split overhead
+        // 0 維（scalar）→ 回空陣列；≥1 維 → 回每個組合的 string[]，供 GetVarNames/BuildVars 組 key
         private static IEnumerable<string[]> GenVarParts(List<string>[] lists)
         {
             IEnumerable<string[]> result = new[] { Array.Empty<string>() };
@@ -102,6 +102,10 @@ namespace OptimFoundation.Core
                         => seq.Cast<object>().Select(e => e.ToString()).ToList(),
                     _ => throw new ArgumentException($"不支援的 Set 型別：{lists[i].GetType().Name}。目前僅支援 IEnumerable<DateTime/int/long/double/decimal/string/enum>。")
                 };
+
+                // 笛卡兒積之前先驗成員：檢查 N 個成員，不是檢查展開後的 N^k 個變數名
+                foreach (var member in result[i])
+                    ModelElementBase.ValidateKeyToken($"Set #{i + 1}", member);
             }
             return result;
         }

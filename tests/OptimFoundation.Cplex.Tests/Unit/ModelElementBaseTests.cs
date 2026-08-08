@@ -67,6 +67,23 @@ namespace OptimFoundation.Cplex.Tests.Unit
                 v.InitClassBySets("not_a_date", "G"));
         }
 
+        [Fact]
+        public void InitClassBySets_ValueContainsKeySeparator_ThrowsArgumentException()
+        {
+            var v = new VarS();
+            var ex = Assert.Throws<ArgumentException>(() => v.InitClassBySets("A@B"));
+            Assert.Contains("VarS.S", ex.Message);
+            Assert.Contains("A@B", ex.Message);
+        }
+
+        [Fact]
+        public void InitClassBySets_SeparatorInLaterProperty_ThrowsArgumentException()
+        {
+            // 沒擋的話 ("A@B","N") 與 ("A","B@N") 會組出同一把 key
+            var v = new VarDG();
+            Assert.Throws<ArgumentException>(() => v.InitClassBySets("2026-01-15", "B@N"));
+        }
+
         // ── PropertyInfo 快取（間接驗證：多次呼叫結果一致）────────────────
 
         [Fact]

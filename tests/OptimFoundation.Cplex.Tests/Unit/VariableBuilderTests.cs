@@ -67,6 +67,23 @@ namespace OptimFoundation.Cplex.Tests.Unit
                 VariableBuilder.ConvertSetsToStringLists(new List<bool> { true }));
         }
 
+        [Fact]
+        public void ConvertSets_MemberContainsKeySeparator_Throws()
+        {
+            var ex = Assert.Throws<ArgumentException>(() =>
+                VariableBuilder.ConvertSetsToStringLists(new List<string> { "A", "B@C" }));
+            Assert.Contains("Set #1", ex.Message);
+            Assert.Contains("B@C", ex.Message);
+        }
+
+        [Fact]
+        public void GetVarNames_MemberContainsKeySeparator_Throws()
+        {
+            Assert.Throws<ArgumentException>(() =>
+                VariableBuilder.GetVarNames<VarDG>(
+                    [new List<DateTime> { new(2026, 1, 1) }, new List<string> { "D@N" }]).ToList());
+        }
+
         // ── Array 支援（含 string[] 共變誤 bind 還原）──────────────────────
 
         [Fact]

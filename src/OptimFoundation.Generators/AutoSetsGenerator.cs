@@ -92,9 +92,11 @@ namespace OptimFoundation.Generators
         // "VariableB_Assign" → "Binary"；非法前綴回 null（呼叫端報 OPTF001）
         private static string? VarTypeFromPrefix(string className)
         {
-            if (className.StartsWith("VariableB_", System.StringComparison.Ordinal)) return "Binary";
+            if (className.StartsWith("VariableC_", System.StringComparison.Ordinal)) return "Continuous";
             if (className.StartsWith("VariableX_", System.StringComparison.Ordinal)) return "Continuous";
+            if (className.StartsWith("VariableB_", System.StringComparison.Ordinal)) return "Binary";
             if (className.StartsWith("VariableI_", System.StringComparison.Ordinal)) return "Integer";
+            if (className.StartsWith("VariableY_", System.StringComparison.Ordinal)) return "Integer";
             return null;
         }
 

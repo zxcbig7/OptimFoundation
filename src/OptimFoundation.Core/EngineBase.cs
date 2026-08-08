@@ -13,7 +13,7 @@ namespace OptimFoundation.Core
     /// </summary>
     public abstract class EngineBase<TModel, TVar, TExpr, TConstr> : ISolverEngine, ITrajectorySource
     {
-        /// <summary>各 solver 的原生模型物件（CPLEX Cplex / Gurobi GRBModel …）；Configuration() 建立、Dispose() 釋放。</summary>
+        /// <summary>各 solver 的模型物件（CPLEX->Cplex / Gurobi->GRBModel …）；Configuration() 建立、Dispose() 釋放。</summary>
         protected TModel Model;
 
         /// <summary>全部變數：key = 變數名，value = solver 原生變數。含軟性限制式自動加的彈性變數。</summary>

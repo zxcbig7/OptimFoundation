@@ -4,6 +4,55 @@ using System.Collections.Generic;
 namespace OptimFoundation.Core
 {
     /// <summary>
+    /// blessed 建構路徑：new + generator 註冊 + ValidateData 一次到位（見框架資料防護規格）。
+    /// 專案端改用 OptData.Load(() => new Dataload(source)) 取代直接 new Dataload(source)。
+    /// </summary>
+    public static class OptData
+    {
+        /// <summary>
+        /// 建立 Dataload 並完成初始化：跑 factory → 登記 sets / params → 驗資料。
+        /// ALWAYS 走這條路徑取得 Dataload，直接 new 會跳過驗證，錯誤資料要到求解階段才炸。
+        /// </summary>
+        /// <param name="factory">建立 Dataload 的委派，例：() =&gt; new Dataload(source)。</param>
+        /// <exception cref="DataValidationException">資料有問題（dangling index / 重複鍵 / 型別不符 / FullGrid 缺列…），一次列出全部。</exception>
+        public static T Load<T>(Func<T> factory) where T : DataContext
+        {
+            var instance = factory();
+            instance.Initialize();
+            instance.Freeze();
+            return instance;
+        }
+    }
+    /// <summary>數值 sanity helper：供 BigM 等推導值選用防呆比值（見框架資料防護規格）。</summary>
+    public static class Numeric
+    {
+        /// <summary>
+        /// 防呆比值：分母為 0 / 結果非有限 / 超過量級門檻一律 throw（訊息含 context）；否則回傳比值。
+        /// magnitudeCeiling 預設 1e9 是「衍生值（如 BigM）」的嚴格門檻，與 DataValidator.MaxMagnitude（原始資料值，1e15）刻意不同，勿統一。
+        /// </summary>
+        public static double SafeRatio(double numerator, double denominator, double magnitudeCeiling = 1e9, string context = null)
+        {
+            string ctx = context ?? "(未提供 context)";
+
+            if (denominator == 0)
+                throw new InvalidOperationException($"[Numeric.SafeRatio] {ctx} 除零：分母為 0（分子 = {numerator}）。");
+
+            double result = numerator / denominator;
+
+            if (double.IsNaN(result) || double.IsInfinity(result))
+                throw new InvalidOperationException(
+                    $"[Numeric.SafeRatio] {ctx} 計算結果非有限值（{result}）：分子 = {numerator}，分母 = {denominator}。");
+
+            if (Math.Abs(result) > magnitudeCeiling)
+                throw new InvalidOperationException(
+                    $"[Numeric.SafeRatio] {ctx} 比值過大（實際值 {result}，門檻 {magnitudeCeiling}）會使 solver 數值不穩" +
+                    "（如 BigM 過大導致 relaxation 鬆弛、branch 爆炸）。");
+
+            return result;
+        }
+    }
+
+    /// <summary>
     /// 一列 parameter 攤平後的型別抹除結構：index 值（依 indexSets 宣告順序 box 成 object[]）+
     /// 所有 double 型別欄位（含 QTY）。由 generator emit 的編譯期 lambda（indexOf/numbersOf）在
     /// RegisterParam 註冊當下產生——型別抹除只發生在這個邊界，之後驗證器只碰 object[]，零反射。
