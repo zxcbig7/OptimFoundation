@@ -7,21 +7,21 @@ namespace RosteringProblem
     /// NightToDay_{date,employee} ≥ ShiftAssign_{date-1,employee,rule.PreGroup} + ShiftAssign_{date,employee,rule.Group} - One</summary>
     public sealed class Constraint_NightToDay : ConstraintBase
     {
-        private readonly Set_Date dates;
-        private readonly Set_Employee employees;
+        private readonly List<DateTime> dates;
+        private readonly List<string> employees;
         private readonly List<Parameter_NightToDay> nightToDayRules;
         private readonly double nightToDayWindow;
         private readonly double one;
 
         public Constraint_NightToDay(
-            Set_Date dates,
-            Set_Employee employees,
+            List<Set_Date> dates,
+            List<Set_Employee> employees,
             List<Parameter_NightToDay> nightToDayRules,
             double nightToDayWindow,
             double one)
         {
-            this.dates = dates;
-            this.employees = employees;
+            this.dates = dates.Select(row => row.Date).ToList();
+            this.employees = employees.Select(row => row.Employee).ToList();
             this.nightToDayRules = nightToDayRules;
             this.nightToDayWindow = nightToDayWindow;
             this.one = one;
@@ -43,7 +43,7 @@ namespace RosteringProblem
                         engine.AddRHS(1.0, new VariableB_ShiftAssign { Date = preDate, Employee = employee, Group = rule.PreGroup });
                         engine.AddRHS(1.0, new VariableB_ShiftAssign { Date = date, Employee = employee, Group = rule.Group });
                         engine.AddRHS(-one);
-                        engine.CreateGreatEqual($"{ConstraintName}@{date:yyyy_MM_dd}@{employee}@{rule.PreGroup}_{rule.Group}");
+                        engine.CreateGreatEqual(this, date, employee, rule.PreGroup, rule.Group);
                     }
                 }
         }

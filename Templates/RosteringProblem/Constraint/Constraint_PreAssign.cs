@@ -23,7 +23,7 @@ namespace RosteringProblem
             {
                 engine.AddLHS(1.0, new VariableB_ShiftAssign { Date = p.Date, Employee = p.Employee, Group = p.Group });
                 engine.AddRHS(one);
-                engine.CreateEqual($"{ConstraintName}@{p.Date:yyyy_MM_dd}@{p.Employee}@{p.Group}");
+                engine.CreateEqual(this, p.Date, p.Employee, p.Group);
             }
         }
     }

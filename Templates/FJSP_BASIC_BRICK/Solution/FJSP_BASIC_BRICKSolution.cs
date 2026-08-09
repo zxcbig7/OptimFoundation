@@ -32,9 +32,9 @@ namespace FJSP_BASIC_BRICK
             Logging.Info($"Status={engine.Status} Obj={engine.GetObjectiveValue():F4}");
 
             var assignValues = engine.GetSetVarValues<VariableB_Assign>();
-            var startValues = engine.GetSetVarValues<VariableX_Start>();
-            var completeValues = engine.GetSetVarValues<VariableX_Complete>();
-            var makespanValues = engine.GetSetVarValues<VariableX_Makespan>();
+            var startValues = engine.GetSetVarValues<VariableC_Start>();
+            var completeValues = engine.GetSetVarValues<VariableC_Complete>();
+            var makespanValues = engine.GetSetVarValues<VariableC_Makespan>();
 
             var assignedEqp = new Dictionary<(string, string), string>();
             var start = new Dictionary<(string, string), double>();
@@ -52,20 +52,20 @@ namespace FJSP_BASIC_BRICK
                             $"AssignOneEqp 違反 ({lot},{op})：指派了 {matched.Count} 台機台，預期恰好一台。");
 
                     assignedEqp[(lot, op)] = matched[0];
-                    start[(lot, op)] = startValues[$"VariableX_Start@{lot}@{op}"];
-                    complete[(lot, op)] = completeValues[$"VariableX_Complete@{lot}@{op}"];
+                    start[(lot, op)] = startValues[$"VariableC_Start@{lot}@{op}"];
+                    complete[(lot, op)] = completeValues[$"VariableC_Complete@{lot}@{op}"];
                 }
             }
 
-            double makespan = makespanValues["VariableX_Makespan"];
+            double makespan = makespanValues["VariableC_Makespan"];
 
             var solution = new FJSP_BASIC_BRICKSolution(data, assignedEqp, start, complete, makespan);
             solution.ValidateRules();
 
             FolderDir.Solution.CreateFolder();
             CsvCtrl.WriteSolution<VariableB_Assign>(engine, "FJSP_BASIC_BRICK", "SYSTEM");
-            CsvCtrl.WriteSolution<VariableX_Start>(engine, "FJSP_BASIC_BRICK", "SYSTEM");
-            CsvCtrl.WriteSolution<VariableX_Complete>(engine, "FJSP_BASIC_BRICK", "SYSTEM");
+            CsvCtrl.WriteSolution<VariableC_Start>(engine, "FJSP_BASIC_BRICK", "SYSTEM");
+            CsvCtrl.WriteSolution<VariableC_Complete>(engine, "FJSP_BASIC_BRICK", "SYSTEM");
 
             return solution;
         }
@@ -98,9 +98,9 @@ namespace FJSP_BASIC_BRICK
                 // CompleteDef：Complete = Start + ProcessTime（所指派機台）
                 foreach (var op in _data.set_Operation)
                 {
-                    var procTime = _data.parameter_ProcessTime
-                        .FirstOrDefault(p => p.Lot == lot && p.Operation == op && p.Eqp == _assignedEqp[(lot, op)])
-                        ?.QTY ?? 0.0;
+                    var procTime = _data.parameter_ProcessTime.FindParameterOrLog(
+                        p => p.Lot == lot && p.Operation == op && p.Eqp == _assignedEqp[(lot, op)],
+                        lot, op, _assignedEqp[(lot, op)])?.QTY ?? 0.0;
                     if (Math.Abs(_complete[(lot, op)] - _start[(lot, op)] - procTime) > 1e-4)
                         throw new InvalidOperationException(
                             $"CompleteDef 違反 {lot} {op}：Complete {_complete[(lot, op)]} ≠ Start {_start[(lot, op)]} + ProcessTime {procTime}。");

@@ -45,10 +45,10 @@ namespace OptimFoundation.Cplex.Tests.Unit
         {
             var cplex = new CplexConfig
             {
-                timeLimit = 12.5,
-                epGap = 0.025,
-                workThreads = 3,
-                randomSeed = 41,
+                TimeLimit = 12.5,
+                MipGap = 0.025,
+                Threads = 3,
+                Seed = 41,
                 HeuristicEffort = 0.7,
             };
             var project = new ProjectConfig

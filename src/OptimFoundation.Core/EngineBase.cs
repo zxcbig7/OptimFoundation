@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using OptimFoundation.Internal;
 
 namespace OptimFoundation.Core
 {
@@ -23,12 +24,12 @@ namespace OptimFoundation.Core
         protected readonly Dictionary<string, Dictionary<string, TVar>> VariableSets = new Dictionary<string, Dictionary<string, TVar>>();
 
         /// <summary>已建立的變數總數（Variables dict 的大小，含彈性變數）。</summary>
-        public int varCount => Variables.Count;
+        public int VariableCount => Variables.Count;
         /// <summary>
         /// 經 Build*Vs 登記進 VariableSets 的變數總數。
-        /// 與 <see cref="varCount"/> 的差別：後者算的是 Variables dict，額外含軟性限制式自動加的彈性變數（Surplus_/Deficit_/Delta_*）。
+        /// 與 <see cref="VariableCount"/> 的差別：後者算的是 Variables dict，額外含軟性限制式自動加的彈性變數（Surplus_/Deficit_/Delta_*）。
         /// </summary>
-        public int TotalVarCount => VariableSets.Values.Sum(s => s.Count);
+        public int RegisteredVariableCount => VariableSets.Values.Sum(s => s.Count);
 
         /// <summary>建構時傳入的求解器組態；由各 engine 在 Configuration() 內逐項套用到 solver。</summary>
         public ISolverConfig Config { get; protected set; }
@@ -202,16 +203,43 @@ namespace OptimFoundation.Core
         /// </summary>
         public void Build()
         {
-            ResetBuildStatistics();
-            BuildCore();
+            try
+            {
+                ResetBuildStatistics();
+                BuildCore();
+            }
+            catch (Exception ex)
+            {
+                LogUnexpectedBoundaryFailure(nameof(Build), ex);
+                throw;
+            }
         }
 
         /// <summary>求解入口：先跑 PreSolveGuard()（scale guard），再呼叫 SolveCore()（各 engine 實作）。</summary>
         public bool Solve()
         {
-            LogBuildSummary();
-            PreSolveGuard();
-            return SolveCore();
+            try
+            {
+                LogBuildSummary();
+                PreSolveGuard();
+                return SolveCore();
+            }
+            catch (Exception ex)
+            {
+                LogUnexpectedBoundaryFailure(nameof(Solve), ex);
+                throw;
+            }
+        }
+
+        private void LogUnexpectedBoundaryFailure(string operation, Exception exception)
+        {
+            Logging.ErrorOnce(
+                exception,
+                "ENGINE_API_FAILED",
+                "公開 API 執行失敗",
+                operation,
+                GetType().FullName,
+                exception.GetBaseException().Message);
         }
 
         /// <summary>各 engine 的建模實作；由 <see cref="Build"/> 這個 template method 呼叫，消費端不直接叫。</summary>
@@ -220,13 +248,13 @@ namespace OptimFoundation.Core
         /// <summary>各 engine 的求解實作；由 <see cref="Solve"/> 呼叫。回傳 true 代表取得 Optimal 或 Feasible 解。</summary>
         protected abstract bool SolveCore();
 
-        // TotalVarCount > Config.ScaleWarnThreshold → Logging.Warn（只警告不阻擋，大但合法的模型不該被擋）。
+        // RegisteredVariableCount > Config.ScaleWarnThreshold → Logging.Warn（只警告不阻擋，大但合法的模型不該被擋）。
         // Config 為 null 時防禦性跳過（不炸）。
         private void PreSolveGuard()
         {
             if (Config == null) return;
-            if (TotalVarCount > Config.ScaleWarnThreshold)
-                Logging.Warn($"[MODEL_SCALE_WARNING] 變數規模超過警告門檻 | count={TotalVarCount} threshold={Config.ScaleWarnThreshold} result=continued");
+            if (RegisteredVariableCount > Config.ScaleWarnThreshold)
+                Logging.Warn($"[MODEL_SCALE_WARNING] 變數規模超過警告門檻 | count={RegisteredVariableCount} threshold={Config.ScaleWarnThreshold} result=continued");
         }
 
         /// <summary>取目標式的解值。MUST 在 Solve() 回傳 true 之後呼叫，否則各 solver 會丟自己的例外。</summary>
@@ -260,18 +288,24 @@ namespace OptimFoundation.Core
         private void BatchBuild<TVariable>(double lb, double ub, VarType type, object[] sets)
         {
             string setName = typeof(TVariable).Name;
-            if (!VariableSets.ContainsKey(setName))
-                VariableSets[setName] = new Dictionary<string, TVar>();
-
-            // 1) 由 sets 笛卡兒積組出所有變數名（TypeName@s1@s2@…）
-            var names = VariableBuilder.GetVarNames<TVariable>(sets).ToList();
             int before = Variables.Count;
+            List<string> names = null;
+            string stage = "key_generation";
             try
             {
+                // 1) 由 sets 笛卡兒積組出所有變數名（TypeName@s1@s2@…）
+                names = VariableBuilder.GetVarNames<TVariable>(sets).ToList();
+
+                stage = "variable_set_initialization";
+                if (!VariableSets.ContainsKey(setName))
+                    VariableSets[setName] = new Dictionary<string, TVar>();
+
                 // 2) 實際在 solver 建立這些變數（子類別可用原生 batch API 加速）
+                stage = "solver_creation";
                 AddVariables(names, lb, ub, type);
 
                 // 3) 登記到該型別的 VariableSet，供 ReadVar / GetSetVarValues 依型別查詢
+                stage = "variable_set_registration";
                 var varSet = VariableSets[setName];
                 foreach (var name in names)
                     varSet[name] = Variables[name];
@@ -283,10 +317,61 @@ namespace OptimFoundation.Core
             catch (Exception ex)
             {
                 int actual = Math.Max(0, Variables.Count - before);
-                RecordVariableBuild(setName, names.Count, actual);
-                Logging.Error($"[變數建立失敗] type={setName} count={actual}/{names.Count} reason={ex.GetBaseException().Message} result=aborted");
+                string expected = names == null ? "unknown" : names.Count.ToString();
+                if (names != null)
+                    RecordVariableBuild(setName, names.Count, actual);
+                Logging.ErrorOnce(
+                    ex,
+                    "VARIABLE_BUILD_FAILED",
+                    "變數建立失敗",
+                    "BatchBuild",
+                    stage,
+                    ex.GetBaseException().Message,
+                    $"type={setName} varType={type} bounds=[{lb},{ub}] count={actual}/{expected}");
                 throw;
             }
+        }
+
+        private static bool TryResolveVariableType(string className, out VarType type)
+        {
+            if (!VariablePrefixNaming.TryResolve(className, out var typeName))
+            {
+                type = default;
+                return false;
+            }
+
+            if (Enum.TryParse(typeName, ignoreCase: false, out type))
+                return true;
+
+            var exception = new InvalidOperationException(
+                $"Variable 前綴解析器回傳未知的 VarType 成員名稱：{typeName}。");
+            throw Logging.ErrorOnce(
+                exception,
+                "VARIABLE_TYPE_RESOLUTION_FAILED",
+                "變數型別解析失敗",
+                nameof(TryResolveVariableType),
+                typeName,
+                "unknown_var_type");
+        }
+
+        private static void ValidateExplicitVariableType<TVariable>(VarType requestedType, string operation)
+        {
+            string className = typeof(TVariable).Name;
+
+            // 明確 builder 入口：完全沒有正式前綴的類別可由呼叫方法決定型別。
+            if (!TryResolveVariableType(className, out var declaredType) || declaredType == requestedType)
+                return;
+
+            string message = $"{operation}<{className}> 要建立 {requestedType} 變數，但類別名前綴宣告為 {declaredType}。" +
+                $"命名規則：{VariablePrefixNaming.NamingGuide}。";
+            throw Logging.ErrorOnce(
+                new ArgumentException(message),
+                "VARIABLE_TYPE_MISMATCH",
+                "變數前綴與建構方法型別不一致",
+                operation,
+                className,
+                "declared_type_mismatch",
+                $"type={className} declared={declaredType} requested={requestedType}");
         }
 
 
@@ -296,44 +381,74 @@ namespace OptimFoundation.Core
         /// <typeparam name="TVariable">變數類別；其 property 宣告順序 MUST 與 sets 傳入順序一致，否則之後 AddLHS 會找不到變數。</typeparam>
         /// <param name="sets">各維度的 set；框架取笛卡兒積產生所有變數名。</param>
         public virtual void BuildCVs<TVariable>(params object[] sets)
-            => BatchBuild<TVariable>(0, 1E100, VarType.Continuous, sets);
+        {
+            ValidateExplicitVariableType<TVariable>(VarType.Continuous, nameof(BuildCVs));
+            BatchBuild<TVariable>(0, 1E100, VarType.Continuous, sets);
+        }
 
         /// <summary>批次建立連續變數並指定界限 [lb, ub]。</summary>
         public virtual void BuildCVs<TVariable>(double lb, double ub, params object[] sets)
-            => BatchBuild<TVariable>(lb, ub, VarType.Continuous, sets);
+        {
+            ValidateExplicitVariableType<TVariable>(VarType.Continuous, nameof(BuildCVs));
+            BatchBuild<TVariable>(lb, ub, VarType.Continuous, sets);
+        }
 
         /// <summary>批次建立整數變數，界限 [0, 1E100]。其餘語意同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
         public virtual void BuildIVs<TVariable>(params object[] sets)
-            => BatchBuild<TVariable>(0, 1E100, VarType.Integer, sets);
+        {
+            ValidateExplicitVariableType<TVariable>(VarType.Integer, nameof(BuildIVs));
+            BatchBuild<TVariable>(0, 1E100, VarType.Integer, sets);
+        }
 
         /// <summary>批次建立整數變數並指定界限 [lb, ub]。</summary>
         public virtual void BuildIVs<TVariable>(double lb, double ub, params object[] sets)
-            => BatchBuild<TVariable>(lb, ub, VarType.Integer, sets);
+        {
+            ValidateExplicitVariableType<TVariable>(VarType.Integer, nameof(BuildIVs));
+            BatchBuild<TVariable>(lb, ub, VarType.Integer, sets);
+        }
 
         /// <summary>批次建立 0/1 二元變數。其餘語意同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
         public virtual void BuildBVs<TVariable>(params object[] sets)
-            => BatchBuild<TVariable>(0, 1, VarType.Binary, sets);
+        {
+            ValidateExplicitVariableType<TVariable>(VarType.Binary, nameof(BuildBVs));
+            BatchBuild<TVariable>(0, 1, VarType.Binary, sets);
+        }
 
         /// <summary>
-        /// 命名天條路徑：變數型別由類別名前綴決定——VariableB_（Binary, [0,1]）/ VariableX_（Continuous）/ VariableI_（Integer）。
+        /// 命名天條路徑：變數型別由類別名前綴決定——VariableB_（Binary, [0,1]）/
+        /// VariableC_（Continuous）/ VariableI_（Integer）。
         /// 自訂 bounds 或不依天條命名的類別 → 改用 BuildCVs / BuildIVs / BuildBVs 顯式指定。
         /// </summary>
         public virtual void BuildVars<TVariable>(params object[] sets)
         {
             string name = typeof(TVariable).Name;
-            if (name.StartsWith("VariableB_", StringComparison.Ordinal))
-                BatchBuild<TVariable>(0, 1, VarType.Binary, sets);
-            else if (name.StartsWith("VariableX_", StringComparison.Ordinal))
-                BatchBuild<TVariable>(0, 1E100, VarType.Continuous, sets);
-            else if (name.StartsWith("VariableI_", StringComparison.Ordinal))
-                BatchBuild<TVariable>(0, 1E100, VarType.Integer, sets);
-            else
+            if (!TryResolveVariableType(name, out var type))
             {
                 string msg = $"BuildVars<{name}> 無法從類別名前綴判定變數型別。" +
-                    "命名天條：VariableB_<語意>（Binary）/ VariableX_<語意>（Continuous）/ VariableI_<語意>（Integer），例：VariableX_Start；" +
+                    $"命名天條：{VariablePrefixNaming.NamingGuide}，例：VariableC_Start；" +
                     "不依天條命名請改用 BuildCVs / BuildIVs / BuildBVs。";
-                Logging.Error($"[VARIABLE_TYPE_UNKNOWN] 無法判定變數型別 | type={name} reason=invalid_prefix result=aborted");
-                throw new ArgumentException(msg);
+                throw Logging.ErrorOnce(
+                    new ArgumentException(msg),
+                    "VARIABLE_TYPE_UNKNOWN",
+                    "無法判定變數型別",
+                    nameof(BuildVars),
+                    name,
+                    "invalid_prefix",
+                    $"type={name}");
+            }
+
+            // BuildVars 是統一入口；實際建構委派給型別專用方法，三者再共用 BatchBuild。
+            switch (type)
+            {
+                case VarType.Binary:
+                    BuildBVs<TVariable>(sets);
+                    break;
+                case VarType.Integer:
+                    BuildIVs<TVariable>(sets);
+                    break;
+                default:
+                    BuildCVs<TVariable>(sets);
+                    break;
             }
         }
 
@@ -354,7 +469,14 @@ namespace OptimFoundation.Core
             if (VariableSets.TryGetValue(setName, out var set) && set.TryGetValue(varName, out var v))
                 return v;
 
-            throw new KeyNotFoundException($"找不到變數 '{varName}' in VariableSet '{setName}'");
+            throw Logging.ErrorOnce(
+                new KeyNotFoundException($"找不到變數 '{varName}' in VariableSet '{setName}'"),
+                "VARIABLE_NOT_FOUND",
+                "變數不存在",
+                nameof(ReadVar),
+                varName,
+                "variable_not_built",
+                $"type={setName}");
         }
 
         /// <summary>取某變數型別的整組變數（key = 變數全名）。</summary>
@@ -363,7 +485,13 @@ namespace OptimFoundation.Core
         {
             if (VariableSets.TryGetValue(setName, out var set))
                 return set;
-            throw new KeyNotFoundException($"找不到 VariableSet '{setName}'");
+            throw Logging.ErrorOnce(
+                new KeyNotFoundException($"找不到 VariableSet '{setName}'"),
+                "VARIABLE_SET_NOT_FOUND",
+                "變數集合不存在",
+                nameof(GetVariableSet),
+                setName,
+                "variable_set_not_built");
         }
 
         /// <summary>所有經 Build*Vs 建立的變數名（不含軟性限制式的彈性變數）。</summary>
@@ -383,25 +511,43 @@ namespace OptimFoundation.Core
         public Dictionary<string, double> GetSetVarValues<TVariable>()
         {
             string setName = typeof(TVariable).Name;
-            if (!VariableSets.TryGetValue(setName, out var set))
-                return new Dictionary<string, double>();
-            return set.ToDictionary(kvp => kvp.Key, kvp => GetVariableValue(kvp.Key));
+            try
+            {
+                if (!VariableSets.TryGetValue(setName, out var set))
+                    return new Dictionary<string, double>();
+                return set.ToDictionary(kvp => kvp.Key, kvp => GetVariableValue(kvp.Key));
+            }
+            catch (Exception ex)
+            {
+                Logging.ErrorOnce(ex, "SOLUTION_READ_FAILED", "公開 API 執行失敗", nameof(GetSetVarValues), setName,
+                    ex.GetBaseException().Message);
+                throw;
+            }
         }
 
         /// <summary>取解值字典；varTypeName=null 回全部變數，否則只回該型別（前綴 "TypeName@"）。</summary>
         public virtual IReadOnlyDictionary<string, double> GetSolution(string varTypeName = null)
         {
-            if (varTypeName != null && VariableSets.TryGetValue(varTypeName, out var set))
-                return set.ToDictionary(kvp => kvp.Key, kvp => GetVariableValue(kvp.Key));
-
-            var result = new Dictionary<string, double>();
-            string prefix = varTypeName == null ? null : varTypeName + "@";
-            foreach (var key in Variables.Keys)
+            try
             {
-                if (prefix == null || key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                    result[key] = GetVariableValue(key);
+                if (varTypeName != null && VariableSets.TryGetValue(varTypeName, out var set))
+                    return set.ToDictionary(kvp => kvp.Key, kvp => GetVariableValue(kvp.Key));
+
+                var result = new Dictionary<string, double>();
+                string prefix = varTypeName == null ? null : varTypeName + "@";
+                foreach (var key in Variables.Keys)
+                {
+                    if (prefix == null || key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                        result[key] = GetVariableValue(key);
+                }
+                return result;
             }
-            return result;
+            catch (Exception ex)
+            {
+                Logging.ErrorOnce(ex, "SOLUTION_READ_FAILED", "公開 API 執行失敗", nameof(GetSolution), varTypeName,
+                    ex.GetBaseException().Message);
+                throw;
+            }
         }
 
         #endregion
@@ -493,7 +639,7 @@ namespace OptimFoundation.Core
             if (!_buildSummaryDirty) return;
 
             int expectedVariables = _variableBuildCounts.Values.Sum(x => x.Expected);
-            Logging.Info($"[變數建立摘要] 總數={varCount}/{expectedVariables} 類別數={_variableBuildCounts.Count}");
+            Logging.Info($"[變數建立摘要] 總數={VariableCount}/{expectedVariables} 類別數={_variableBuildCounts.Count}");
 
             foreach (var entry in _constraintBuildCounts.OrderBy(x => x.Key, StringComparer.Ordinal))
                 Logging.Info($"[限制式建立完成] group={entry.Key} count={entry.Value.Actual}/{entry.Value.Expected}");
@@ -560,7 +706,16 @@ namespace OptimFoundation.Core
             }
             string key = varSpec.ToString();
             if (!Variables.TryGetValue(key, out var v))
-                throw new KeyNotFoundException($"AddLHS: 找不到變數 '{key}'（type: {varSpec.GetType().Name}）。請確認 property 宣告順序與 Build*Vs 傳入 set 順序一致。");
+            {
+                throw Logging.ErrorOnce(
+                    new KeyNotFoundException($"AddLHS: 找不到變數 '{key}'（type: {varSpec.GetType().Name}）。請確認 property 宣告順序與 Build*Vs 傳入 set 順序一致。"),
+                    "VARIABLE_NOT_FOUND",
+                    "變數不存在",
+                    nameof(AddLHS),
+                    key,
+                    "variable_not_built",
+                    $"type={varSpec.GetType().Name}");
+            }
             _lhsTerms.Add((coeff, v));
             return true;
         }
@@ -588,7 +743,16 @@ namespace OptimFoundation.Core
             }
             string key = varSpec.ToString();
             if (!Variables.TryGetValue(key, out var v))
-                throw new KeyNotFoundException($"AddRHS: 找不到變數 '{key}'（type: {varSpec.GetType().Name}）。請確認 property 宣告順序與 Build*Vs 傳入 set 順序一致。");
+            {
+                throw Logging.ErrorOnce(
+                    new KeyNotFoundException($"AddRHS: 找不到變數 '{key}'（type: {varSpec.GetType().Name}）。請確認 property 宣告順序與 Build*Vs 傳入 set 順序一致。"),
+                    "VARIABLE_NOT_FOUND",
+                    "變數不存在",
+                    nameof(AddRHS),
+                    key,
+                    "variable_not_built",
+                    $"type={varSpec.GetType().Name}");
+            }
             _rhsTerms.Add((coeff, v));
             return true;
         }
@@ -605,6 +769,25 @@ namespace OptimFoundation.Core
 
         #region Pool — 建立限制式
 
+        private static string ComposeConstraintName(ConstraintBase owner, object[] dims)
+        {
+            if (owner == null)
+            {
+                throw Logging.ErrorOnce(
+                    new ArgumentNullException(nameof(owner), "建立限制式名稱時 owner 不可為 null。"),
+                    "CONSTRAINT_OWNER_INVALID",
+                    "限制式名稱建立失敗",
+                    nameof(ComposeConstraintName),
+                    null,
+                    "owner_is_null");
+            }
+
+            return ModelNaming.Compose(owner.GetType().Name, dims);
+        }
+
+        private static string ValidateConstraintName(string operation, string name)
+            => ModelNaming.ValidateComposedName(operation, name);
+
         /// <summary>
         /// 送出 pool 為「LHS ≥ RHS」限制式，對應 Model.md 的 <c>≥</c>。
         /// 實際送進 solver 的形式是 (LHS項 − RHS項) ≥ (RHS常數 − LHS常數)，由框架自動整理，呼叫端不需要也不應該自己移項。
@@ -613,25 +796,11 @@ namespace OptimFoundation.Core
         /// <returns>true = pool 有內容（含被判定重複而略過的情況）；false = pool 是空的，什麼都沒建。</returns>
         /// <remarks>不論建立成功、重複略過或提早返回，pool 都會被清空——下一條限制式從乾淨狀態開始。</remarks>
         public bool CreateGreatEqual(string name)
-        {
-            if (!CheckHasPool(name))
-            {
-                RecordConstraintBuild(name, false);
-                return false;
-            }
-            bool created = false;
-            if (!_verifyConstraints.Contains(name))
-            {
-                AddConstraint(name, LinearExpr(CombinedLhsMinusRhs()), ConstraintSense.GreaterEqual, _rhsConst - _lhsConst);
-                _verifyConstraints.Add(name);
-                created = true;
-            }
-            else
-                LogDuplicateConstraint(name);
-            RecordConstraintBuild(name, created);
-            ClearPool(); // 即使 skip，也必須清空 pool，否則下一條約束的 LHS 會累積舊項目
-            return true;
-        }
+            => CreateLinearConstraint(ValidateConstraintName(nameof(CreateGreatEqual), name), ConstraintSense.GreaterEqual);
+
+        /// <summary>以 owner 類別名與維度值自動組名，送出「LHS ≥ RHS」。</summary>
+        public bool CreateGreatEqual(ConstraintBase owner, params object[] dims)
+            => CreateLinearConstraint(ComposeConstraintName(owner, dims), ConstraintSense.GreaterEqual);
 
         /// <summary>
         /// 送出「LHS ≥ rhs」，右側直接給常數。
@@ -640,6 +809,7 @@ namespace OptimFoundation.Core
         /// <returns>false = 左側沒有任何變數項，限制式未建立。</returns>
         public bool CreateGreatEqual(double rhs, string name)
         {
+            name = ValidateConstraintName(nameof(CreateGreatEqual), name);
             if (_lhsTerms.Count == 0)
             {
                 Logging.Warn($"[CONSTRAINT_EMPTY] 未建立限制式 | name={name} reason=lhs_empty result=skipped");
@@ -647,7 +817,7 @@ namespace OptimFoundation.Core
                 return false;
             }
             _rhsConst = rhs;
-            return CreateGreatEqual(name);
+            return CreateLinearConstraint(name, ConstraintSense.GreaterEqual);
         }
 
         /// <summary>
@@ -657,30 +827,17 @@ namespace OptimFoundation.Core
         /// <param name="name">限制式名稱；同名第二次起會被略過（warn log）。</param>
         /// <returns>true = pool 有內容；false = pool 是空的。</returns>
         public bool CreateLessEqual(string name)
-        {
-            if (!CheckHasPool(name))
-            {
-                RecordConstraintBuild(name, false);
-                return false;
-            }
-            bool created = false;
-            if (!_verifyConstraints.Contains(name))
-            {
-                AddConstraint(name, LinearExpr(CombinedLhsMinusRhs()), ConstraintSense.LessEqual, _rhsConst - _lhsConst);
-                _verifyConstraints.Add(name);
-                created = true;
-            }
-            else
-                LogDuplicateConstraint(name);
-            RecordConstraintBuild(name, created);
-            ClearPool();
-            return true;
-        }
+            => CreateLinearConstraint(ValidateConstraintName(nameof(CreateLessEqual), name), ConstraintSense.LessEqual);
+
+        /// <summary>以 owner 類別名與維度值自動組名，送出「LHS ≤ RHS」。</summary>
+        public bool CreateLessEqual(ConstraintBase owner, params object[] dims)
+            => CreateLinearConstraint(ComposeConstraintName(owner, dims), ConstraintSense.LessEqual);
 
         /// <summary>送出「LHS ≤ rhs」。rhs 覆蓋右側常數（語意同 <see cref="CreateGreatEqual(double, string)"/>）。</summary>
         /// <returns>false = 左側沒有任何變數項，限制式未建立。</returns>
         public bool CreateLessEqual(double rhs, string name)
         {
+            name = ValidateConstraintName(nameof(CreateLessEqual), name);
             if (_lhsTerms.Count == 0)
             {
                 Logging.Warn($"[CONSTRAINT_EMPTY] 未建立限制式 | name={name} reason=lhs_empty result=skipped");
@@ -688,7 +845,7 @@ namespace OptimFoundation.Core
                 return false;
             }
             _rhsConst = rhs;
-            return CreateLessEqual(name);
+            return CreateLinearConstraint(name, ConstraintSense.LessEqual);
         }
 
         /// <summary>
@@ -698,30 +855,17 @@ namespace OptimFoundation.Core
         /// <param name="name">限制式名稱；同名第二次起會被略過（warn log）。</param>
         /// <returns>true = pool 有內容；false = pool 是空的。</returns>
         public bool CreateEqual(string name)
-        {
-            if (!CheckHasPool(name))
-            {
-                RecordConstraintBuild(name, false);
-                return false;
-            }
-            bool created = false;
-            if (!_verifyConstraints.Contains(name))
-            {
-                AddConstraint(name, LinearExpr(CombinedLhsMinusRhs()), ConstraintSense.Equal, _rhsConst - _lhsConst);
-                _verifyConstraints.Add(name);
-                created = true;
-            }
-            else
-                LogDuplicateConstraint(name);
-            RecordConstraintBuild(name, created);
-            ClearPool();
-            return true;
-        }
+            => CreateLinearConstraint(ValidateConstraintName(nameof(CreateEqual), name), ConstraintSense.Equal);
+
+        /// <summary>以 owner 類別名與維度值自動組名，送出「LHS = RHS」。</summary>
+        public bool CreateEqual(ConstraintBase owner, params object[] dims)
+            => CreateLinearConstraint(ComposeConstraintName(owner, dims), ConstraintSense.Equal);
 
         /// <summary>送出「LHS = rhs」。rhs 覆蓋右側常數（語意同 <see cref="CreateGreatEqual(double, string)"/>）。</summary>
         /// <returns>false = 左側沒有任何變數項，限制式未建立。</returns>
         public bool CreateEqual(double rhs, string name)
         {
+            name = ValidateConstraintName(nameof(CreateEqual), name);
             if (_lhsTerms.Count == 0)
             {
                 Logging.Warn($"[CONSTRAINT_EMPTY] 未建立限制式 | name={name} reason=lhs_empty result=skipped");
@@ -729,11 +873,58 @@ namespace OptimFoundation.Core
                 return false;
             }
             _rhsConst = rhs;
-            return CreateEqual(name);
+            return CreateLinearConstraint(name, ConstraintSense.Equal);
         }
 
         /// <summary>送出範圍限制式 lb ≤ LHS ≤ ub（只用 AddLHS 累積的左側；LHS 常數移到界上抵銷）。</summary>
         public bool CreateRange(double lb, double ub, string name)
+            => CreateRangeCore(lb, ub, ValidateConstraintName(nameof(CreateRange), name));
+
+        /// <summary>以 owner 類別名與維度值自動組名，送出範圍限制式。</summary>
+        public bool CreateRange(double lb, double ub, ConstraintBase owner, params object[] dims)
+            => CreateRangeCore(lb, ub, ComposeConstraintName(owner, dims));
+
+        private bool CreateLinearConstraint(string name, ConstraintSense sense)
+        {
+            if (!CheckHasPool(name))
+            {
+                RecordConstraintBuild(name, false);
+                return false;
+            }
+
+            bool created = false;
+            try
+            {
+                if (!_verifyConstraints.Contains(name))
+                {
+                    AddConstraint(name, LinearExpr(CombinedLhsMinusRhs()), sense, _rhsConst - _lhsConst);
+                    _verifyConstraints.Add(name);
+                    created = true;
+                }
+                else
+                {
+                    LogDuplicateConstraint(name);
+                }
+            }
+            catch (Exception ex)
+            {
+                RecordConstraintBuild(name, false);
+                Logging.ErrorOnce(
+                    ex,
+                    "CONSTRAINT_BUILD_FAILED",
+                    "限制式建立失敗",
+                    $"Create{sense}",
+                    name,
+                    ex.GetBaseException().Message);
+                throw;
+            }
+
+            RecordConstraintBuild(name, created);
+            ClearPool(); // 即使 skip，也必須清空 pool，否則下一條約束的 LHS 會累積舊項目
+            return true;
+        }
+
+        private bool CreateRangeCore(double lb, double ub, string name)
         {
             if (_lhsTerms.Count == 0)
             {
@@ -741,15 +932,35 @@ namespace OptimFoundation.Core
                 RecordConstraintBuild(name, false);
                 return false;
             }
+
             bool created = false;
-            if (!_verifyConstraints.Contains(name))
+            try
             {
-                AddRangeConstraint(name, LinearExpr(_lhsTerms), lb - _lhsConst, ub - _lhsConst);
-                _verifyConstraints.Add(name);
-                created = true;
+                if (!_verifyConstraints.Contains(name))
+                {
+                    AddRangeConstraint(name, LinearExpr(_lhsTerms), lb - _lhsConst, ub - _lhsConst);
+                    _verifyConstraints.Add(name);
+                    created = true;
+                }
+                else
+                {
+                    LogDuplicateConstraint(name);
+                }
             }
-            else
-                LogDuplicateConstraint(name);
+            catch (Exception ex)
+            {
+                RecordConstraintBuild(name, false);
+                Logging.ErrorOnce(
+                    ex,
+                    "CONSTRAINT_BUILD_FAILED",
+                    "範圍限制式建立失敗",
+                    nameof(CreateRange),
+                    name,
+                    ex.GetBaseException().Message,
+                    $"bounds=[{lb},{ub}]");
+                throw;
+            }
+
             RecordConstraintBuild(name, created);
             ClearPool();
             return true;
@@ -785,7 +996,13 @@ namespace OptimFoundation.Core
             }
             catch (Exception ex)
             {
-                Logging.Error($"[目標式建構完成] sense={sense} terms={expectedTerms} reason={ex.GetBaseException().Message} result=failed");
+                Logging.ErrorOnce(
+                    ex,
+                    "OBJECTIVE_BUILD_FAILED",
+                    "目標式建立失敗",
+                    $"Create{sense}",
+                    expectedTerms,
+                    ex.GetBaseException().Message);
                 throw;
             }
         }
@@ -812,23 +1029,38 @@ namespace OptimFoundation.Core
 
         /// <summary>軟性 LHS &lt;= rhs：加 surplus 變數 dp≥0，建 lhs − dp &lt;= rhs，目標式 += penalty·dp。</summary>
         public virtual bool CreateLeSoft(double rhs, double penalty)
-            => CreateLeSoft(rhs, penalty, null);
+            => BuildSoft(rhs, penalty, ConstraintSense.LessEqual, null);
 
         /// <summary>具名軟性 LHS &lt;= rhs：名稱會用於限制式、彈性變數與自動 log。</summary>
         public virtual bool CreateLeSoft(double rhs, double penalty, string name)
-            => BuildSoft(rhs, penalty, ConstraintSense.LessEqual, name);
+            => BuildSoft(rhs, penalty, ConstraintSense.LessEqual,
+                ValidateConstraintName(nameof(CreateLeSoft), name));
+
+        /// <summary>以 owner 類別名與維度值自動組名，建立軟性 LHS ≤ rhs。</summary>
+        public virtual bool CreateLeSoft(double rhs, double penalty, ConstraintBase owner, params object[] dims)
+            => BuildSoft(rhs, penalty, ConstraintSense.LessEqual, ComposeConstraintName(owner, dims));
 
         /// <summary>軟性 LHS &gt;= rhs：加 deficit 變數 dn≥0，建 lhs + dn &gt;= rhs，目標式 += penalty·dn。</summary>
         public virtual bool CreateGeSoft(double rhs, double penalty)
-            => CreateGeSoft(rhs, penalty, null);
+            => BuildSoft(rhs, penalty, ConstraintSense.GreaterEqual, null);
 
         /// <summary>具名軟性 LHS &gt;= rhs：名稱會用於限制式、彈性變數與自動 log。</summary>
         public virtual bool CreateGeSoft(double rhs, double penalty, string name)
-            => BuildSoft(rhs, penalty, ConstraintSense.GreaterEqual, name);
+            => BuildSoft(rhs, penalty, ConstraintSense.GreaterEqual,
+                ValidateConstraintName(nameof(CreateGeSoft), name));
+
+        /// <summary>以 owner 類別名與維度值自動組名，建立軟性 LHS ≥ rhs。</summary>
+        public virtual bool CreateGeSoft(double rhs, double penalty, ConstraintBase owner, params object[] dims)
+            => BuildSoft(rhs, penalty, ConstraintSense.GreaterEqual, ComposeConstraintName(owner, dims));
 
         /// <summary>軟性 LHS == rhs：加 dn,dp≥0，建 lhs + dn − dp == rhs，目標式 += penalty·(dn+dp)。</summary>
         public virtual bool CreateEqSoft(double rhs, double penalty, string name)
-            => BuildSoft(rhs, penalty, ConstraintSense.Equal, name);
+            => BuildSoft(rhs, penalty, ConstraintSense.Equal,
+                ValidateConstraintName(nameof(CreateEqSoft), name));
+
+        /// <summary>以 owner 類別名與維度值自動組名，建立軟性 LHS = rhs。</summary>
+        public virtual bool CreateEqSoft(double rhs, double penalty, ConstraintBase owner, params object[] dims)
+            => BuildSoft(rhs, penalty, ConstraintSense.Equal, ComposeConstraintName(owner, dims));
 
         // 軟性限制式通用建構：彈性變數放進變數池，penalty 放進目標式。
         // penalty 方向依目標式 sense：最小化 +penalty（懲罰違反量）、最大化 -penalty。
@@ -841,7 +1073,8 @@ namespace OptimFoundation.Core
                 RecordConstraintBuild(skippedName, false);
                 return false;
             }
-            if (string.IsNullOrEmpty(name)) name = $"Soft_{sense}_{++_softCount}";
+            if (name == null)
+                name = ModelNaming.ValidateComposedName("automatic soft constraint", $"Soft_{sense}_{++_softCount}");
 
             double adjustedRhs = rhs + _rhsConst - _lhsConst;
             double p = _objectiveSense == ObjectiveSense.Maximize ? -penalty : penalty;
@@ -890,7 +1123,14 @@ namespace OptimFoundation.Core
             {
                 RecordVariableBuild("SoftConstraint", expectedVariables, Math.Max(0, Variables.Count - variablesBefore));
                 RecordConstraintBuild(name, false);
-                Logging.Error($"[限制式建立失敗] group={ConstraintGroup(name)} reason={ex.GetBaseException().Message} result=aborted");
+                Logging.ErrorOnce(
+                    ex,
+                    "SOFT_CONSTRAINT_BUILD_FAILED",
+                    "軟性限制式建立失敗",
+                    nameof(BuildSoft),
+                    name,
+                    ex.GetBaseException().Message,
+                    $"group={ConstraintGroup(name)}");
                 throw;
             }
             ClearPool();

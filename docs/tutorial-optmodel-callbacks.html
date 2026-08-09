@@ -1,330 +1,48 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-Hant">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>OptModel Callback 心智模型 · OptimFoundation 教學</title>
-<style>
-  :root{
-    --bg:#ffffff; --bg-soft:#fafafa; --bg-side:#f6f7f9;
-    --ink:#16181d; --muted:#6b7280; --line:#e6e8ec; --line-2:#eceef1;
-    --accent:#2b41ff; --accent-soft:#eef0ff;
-    --code-bg:#0e1116; --code-ink:#e6edf3;
-    --c-kw:#ff7b9c; --c-str:#7ee787; --c-com:#6e7681; --c-num:#79c0ff;
-    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
-    --sans:-apple-system,"Segoe UI",Roboto,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
-  }
-  *{box-sizing:border-box}
-  html{scroll-behavior:smooth}
-  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.65;-webkit-font-smoothing:antialiased}
-  a{color:inherit;text-decoration:none}
-
-  /* ---------- layout ---------- */
-  .wrap{display:grid;grid-template-columns:264px minmax(0,1fr);max-width:1280px;margin:0 auto}
-  aside{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;border-right:1px solid var(--line);background:var(--bg-side);padding:26px 20px 60px}
-  main{padding:0 clamp(20px,5vw,64px)}
-  @media(max-width:880px){
-    .wrap{grid-template-columns:1fr}
-    aside{position:fixed;z-index:40;left:0;top:0;width:280px;transform:translateX(-100%);transition:.25s;box-shadow:0 0 40px rgba(0,0,0,.18)}
-    aside.open{transform:none}
-    .navbtn{display:inline-flex !important}
-  }
-
-  /* ---------- sidebar ---------- */
-  .brand{font-family:var(--mono);font-weight:700;font-size:15px;letter-spacing:.02em;display:flex;align-items:center;gap:9px;margin-bottom:4px}
-  .brand .dot{width:11px;height:11px;background:var(--accent);border-radius:3px;transform:rotate(45deg)}
-  .back{font-family:var(--mono);font-size:12px;color:var(--muted);display:inline-block;margin:2px 0 22px;padding-left:20px}
-  .back:hover{color:var(--accent)}
-  nav h5{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:22px 0 8px}
-  nav a{display:block;padding:5px 10px;border-radius:7px;font-size:13.5px;color:#3b3f46;border-left:2px solid transparent}
-  nav a:hover{background:#eef0f3;color:var(--ink)}
-  nav a.active{background:var(--accent-soft);color:var(--accent);border-left-color:var(--accent);font-weight:600}
-
-  /* ---------- typography ---------- */
-  section{padding:54px 0 8px;border-top:1px solid var(--line-2)}
-  section:first-of-type{border-top:none}
-  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.1em;color:var(--accent);text-transform:uppercase}
-  h1{font-size:clamp(28px,4.2vw,42px);line-height:1.12;letter-spacing:-.02em;margin:.35em 0 .25em}
-  h2{font-size:clamp(22px,3vw,30px);letter-spacing:-.015em;margin:.2em 0 .5em;display:flex;align-items:baseline;gap:12px}
-  h2 .n{font-family:var(--mono);font-size:14px;color:var(--accent);font-weight:600}
-  h3{font-size:18px;margin:1.4em 0 .4em}
-  p{margin:.5em 0;color:#2b2f36}
-  .lead{font-size:18px;color:#3b3f46;max-width:66ch}
-  .muted{color:var(--muted)}
-  code.inl{font-family:var(--mono);font-size:.88em;background:#f1f2f5;border:1px solid var(--line);padding:1px 6px;border-radius:5px;color:#283042}
-
-  /* ---------- hero meta ---------- */
-  .hero-meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}
-  .pill{font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:999px;padding:5px 12px;background:var(--bg-soft);color:#3b3f46}
-  .pill b{color:var(--accent)}
-
-  /* ---------- code ---------- */
-  pre{background:var(--code-bg);color:var(--code-ink);font-family:var(--mono);font-size:12.5px;line-height:1.55;padding:15px 17px;border-radius:11px;overflow-x:auto;margin:14px 0}
-  pre code{font-family:inherit}
-  .c-kw{color:var(--c-kw)} .c-str{color:var(--c-str)} .c-com{color:var(--c-com);font-style:italic} .c-num{color:var(--c-num)}
-  .cap{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:18px 0 -6px}
-
-  /* ---------- tables ---------- */
-  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px}
-  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line-2);vertical-align:top}
-  th{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line)}
-  td code{font-family:var(--mono);font-size:12px;color:#283042}
-  tbody tr:hover{background:var(--bg-soft)}
-
-  /* ---------- callout ---------- */
-  .note{border:1px solid var(--line);border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:10px;padding:12px 16px;margin:16px 0;font-size:13.5px}
-  .note b{color:var(--accent)}
-  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-  @media(max-width:680px){.two{grid-template-columns:1fr}}
-
-  footer{border-top:1px solid var(--line);margin-top:60px;padding:30px 0 60px;font-size:12.5px;color:var(--muted);font-family:var(--mono)}
-
-  .navbtn{display:none;position:fixed;z-index:50;top:14px;left:14px;width:42px;height:42px;border-radius:11px;border:1px solid var(--line);background:#fff;align-items:center;justify-content:center;font-size:18px;box-shadow:0 4px 14px rgba(0,0,0,.1);cursor:pointer}
-  .scrim{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:35}
-  .scrim.open{display:block}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OptModel callbacks</title>
+  <style>
+    body { max-width: 900px; margin: 0 auto; padding: 32px 20px 80px; font: 16px/1.65 system-ui, sans-serif; color: #172033; }
+    pre { overflow: auto; padding: 16px; background: #f4f6fa; border-radius: 8px; }
+  </style>
 </head>
 <body>
-<button class="navbtn" id="navbtn" aria-label="menu">≡</button>
-<div class="scrim" id="scrim"></div>
+  <h1>OptModel callbacks</h1>
+  <p>OptModel 以 callback 記錄「如何在 engine 上建立模型」。資料透過 closure 傳入，callback 執行時才操作實際 engine。</p>
 
-<div class="wrap">
-  <!-- ============ SIDEBAR ============ -->
-  <aside id="aside">
-    <div class="brand"><span class="dot"></span> OptimFoundation</div>
-    <a class="back" href="index.html">← 開發說明</a>
-    <nav id="nav">
-      <h5>教學 · Callback</h5>
-      <a href="#tldr">一句話先講</a>
-      <a href="#delegates">前置 · Action / Func</a>
-      <a href="#scene">現場：你寫的那行</a>
-      <a href="#name">① e 只是名字</a>
-      <a href="#register">② 註冊 ≠ 執行</a>
-      <a href="#execute">③ Execute() 才綁定</a>
-      <a href="#timeline">完整時間軸</a>
-      <a href="#why">為什麼這樣設計</a>
-      <a href="#incarnations">同一觀念的化身</a>
-      <a href="#pitfalls">三個常見誤解</a>
-    </nav>
-  </aside>
+  <pre><code class="language-csharp">var data = OptData.Load(() =&gt; new Dataload());
 
-  <!-- ============ MAIN ============ -->
-  <main>
+var model = new OptModel("Canonical")
+    .AddVariables(engine =&gt;
+        engine.BuildVars&lt;VariableB_Assign&gt;(
+            data.set_Lot, data.set_Operation, data.set_Eqp))
+    .AddObjective(engine =&gt;
+        new ObjectiveFunction(/* only required dependencies */).Build(engine))
+    .AddConstraints(engine =&gt;
+        new Constraint_AssignOne(/* only required dependencies */).Build(engine));</code></pre>
 
-    <section id="tldr">
-      <div class="kicker">教學 / Tutorial</div>
-      <h1>為什麼 <code class="inl">e =&gt;</code> 拿得到<br>OptModel 裡面的 engine？</h1>
-      <p class="lead">在 <code class="inl">.AddModel(e =&gt; buildModel(data, e))</code> 這行裡，你從沒 <code class="inl">new</code> 過任何 engine，卻能在 lambda 裡直接用 <code class="inl">e</code>。它是哪來的？這篇用一個 FJSP 例子，把 <b>callback（回呼委派）</b> 的機制拆到見底。</p>
-      <div class="hero-meta">
-        <span class="pill">概念 <b>delegate / callback</b></span>
-        <span class="pill">形式 <b>FORM 03 · OptModel</b></span>
-        <span class="pill">關鍵字 <b>Action&lt;OptEngine&gt;</b></span>
-        <span class="pill">設計 <b>Inversion of Control</b></span>
-      </div>
-      <div class="note" style="margin-top:24px">
-        <b>一句話：</b>你寫的不是「engine」，是一段「<b>拿到 engine 之後要做什麼</b>」的食譜。框架先 <code class="inl">new</code> 出唯一的 engine，再回頭一個個呼叫你的食譜、把那顆 engine 當參數餵進來。<code class="inl">e</code> 這名字純粹為了好讀，跟綁定無關。
-      </div>
-    </section>
+  <h2>為什麼用 lambda</h2>
+  <p>lambda 把資料依賴固定在組裝點，同時讓 Objective/Constraint 類別只接收實際材料。它不是立即求解；真正執行發生在 OptProject.Execute。</p>
 
-    <section id="delegates">
-      <h2><span class="n">前置</span> delegate 速成：<code class="inl">Action&lt;&gt;</code> 與 <code class="inl">Func&lt;&gt;</code></h2>
-      <p>整篇的地基是一個觀念：C# 可以把「<b>函式</b>」當「<b>值</b>」傳來傳去。裝這種值的型別叫 <b>delegate</b>，而 <code class="inl">Action&lt;&gt;</code> / <code class="inl">Func&lt;&gt;</code> 是 .NET 內建、最常用的兩個。</p>
+  <pre><code class="language-csharp">using var project = new OptProject(model)
+    .UseConfig(() =&gt; projectConfig)
+    .UseConfig(() =&gt; solverConfig)
+    .OnSolved(engine =&gt; sink.WriteSolution&lt;VariableB_Assign&gt;(engine));
 
-      <h3><code class="inl">Action&lt;&gt;</code>：做事、不回值（回 <code class="inl">void</code>）</h3>
-      <p><code class="inl">&lt;...&gt;</code> 裡填這函式<b>吃什麼參數</b>；<code class="inl">Action</code> 家族一律回 <code class="inl">void</code>。</p>
-<pre><code class="cs">Action greet = () =&gt; Log("hi");                  // 無參數、回 void
-Action&lt;string&gt; log = s =&gt; Console.WriteLine(s);   // 吃一個 string、回 void
-Action&lt;Dataload, OptEngine&gt; build = (d, e) =&gt; { /* 建模 */ };   // 吃兩個、回 void</code></pre>
-      <table>
-        <thead><tr><th>型別</th><th>意思</th></tr></thead>
-        <tbody>
-          <tr><td><code>Action</code></td><td>沒參數、回 void</td></tr>
-          <tr><td><code>Action&lt;T&gt;</code></td><td>吃一個 T、回 void</td></tr>
-          <tr><td><code>Action&lt;T1, T2&gt;</code></td><td>吃兩個、回 void（最多到 T16）</td></tr>
-        </tbody>
-      </table>
+bool solved = project.Execute();</code></pre>
 
-      <h3><code class="inl">Func&lt;&gt;</code>：要有回傳值</h3>
-      <p>差別只在「回不回值」。要回值改用 <code class="inl">Func&lt;&gt;</code>，<b>最後一個</b>型別參數是回傳型別：</p>
-<pre><code class="cs">Func&lt;bool&gt; canSolve = () =&gt; engine.Solve();     // 無參數、回 bool
-Func&lt;int, int, bool&gt; ge = (a, b) =&gt; a &gt;= b;    // 吃兩 int、回 bool（最後一格 bool 是回傳型別）</code></pre>
-      <table>
-        <thead><tr><th>要不要回值</th><th>用</th><th>心法</th></tr></thead>
-        <tbody>
-          <tr><td>不回值（只做事）</td><td><code>Action&lt;...&gt;</code></td><td>「交出去一段動作」</td></tr>
-          <tr><td>有回值</td><td><code>Func&lt;..., TResult&gt;</code></td><td>最後一格是回傳型別</td></tr>
-        </tbody>
-      </table>
+  <h2>順序</h2>
+  <ol>
+    <li>AddVariables</li>
+    <li>AddObjective</li>
+    <li>AddConstraints</li>
+    <li>OptProject.Execute</li>
+    <li>OnSolved</li>
+  </ol>
 
-      <div class="note"><b>怎麼生出一個 <code class="inl">Action</code>？</b>兩種：① lambda <code class="inl">x =&gt; ...</code>；② 直接給一個<b>簽名相符的方法名</b>（method group）——例如把 <code class="inl">static void BuildModelA(Dataload, OptEngine)</code> 直接當 <code class="inl">Action&lt;Dataload, OptEngine&gt;</code> 傳。FJSP 模板那六行實驗就是這樣把 <code class="inl">BuildModelA</code> / <code class="inl">BuildModelB</code> 塞進去的。</div>
-
-      <p class="muted">帶著這個，下一節你就會看到：<code class="inl">.AddModel</code> 的參數型別是 <code class="inl">Action&lt;OptEngine&gt;</code>——「吃一顆 OptEngine、回 void 的函式」，而那顆 engine 由框架執行時餵進來。</p>
-    </section>
-
-    <section id="scene">
-      <h2><span class="n">00</span> 現場：你寫的那行</h2>
-      <p class="muted">FJSP 模板裡求解一個模型的寫法。注意：整段沒有任何一處由你 <code class="inl">new OptEngine</code>。</p>
-<pre><code class="cs">using var model = new OptModel(name)
-    .UseConfig(() =&gt; new CplexConfig { epGap = 1e-4, timeLimit = 60, enableLog = true })
-    .AddModel(engine =&gt; buildModel(data, engine))
-    .OnSolved(engine =&gt; data.WriteSolution(engine));
-
-bool ok = model.Execute();</code></pre>
-      <p>問題就在 <code class="inl">.AddModel(engine =&gt; ...)</code>：<code class="inl">engine</code> 從哪冒出來的、憑什麼是「模型裡那顆」？答案分三步。</p>
-    </section>
-
-    <section id="name">
-      <h2><span class="n">01</span> <code class="inl">engine</code> 只是名字，型別由簽名決定</h2>
-      <p>你不是「知道」<code class="inl">engine</code> 是 OptEngine，是<b>型別系統強制</b>的。看 <code class="inl">AddModel</code> 的簽名：</p>
-<pre><code class="cs">// OptimFoundation.Cplex / OptModel.cs
-public OptModel AddModel(Action&lt;OptEngine&gt; build) { /* ... */ }</code></pre>
-      <p>參數型別是 <code class="inl">Action&lt;OptEngine&gt;</code>——「一個吃 <code class="inl">OptEngine</code>、回傳 <code class="inl">void</code> 的函式」。所以你 lambda 的那個參數<b>一定</b>是 <code class="inl">OptEngine</code>，編譯器自動推斷。名字則隨你取，以下三行完全等價：</p>
-<pre><code class="cs">.AddModel(engine =&gt; buildModel(data, engine))
-.AddModel(e =&gt; buildModel(data, e))
-.AddModel(whatever =&gt; buildModel(data, whatever))</code></pre>
-      <div class="note"><b>重點：</b>「<code class="inl">engine</code>」不是關鍵字、也沒有任何魔法連結。它是<b>參數名</b>，是這段函式「將來會收到的東西」的代稱。</div>
-    </section>
-
-    <section id="register">
-      <h2><span class="n">02</span> 註冊 ≠ 執行：你存的是一段「之後才跑的程式」</h2>
-      <p>第二個誤會最致命：以為 <code class="inl">engine =&gt; buildModel(data, engine)</code> 當下就執行了。<b>沒有。</b>此刻 <code class="inl">engine</code> 根本還沒有值。<code class="inl">AddModel</code> 只是把這段函式「收進口袋」：</p>
-<pre><code class="cs">// OptimFoundation.Cplex / OptModel.cs
-public OptModel AddModel(Action&lt;OptEngine&gt; build)
-{
-    _modelSteps.Add(build);   // 只是把這段函式「存起來」，此刻不呼叫它
-    return this;              // 回傳 this → 才能繼續 .OnSolved(...) 鏈下去
-}</code></pre>
-      <p>同理 <code class="inl">.UseConfig</code>、<code class="inl">.AddVariables</code>、<code class="inl">.OnSolved</code> 都只是「登記」：把你給的函式各自塞進清單。整條 fluent 鏈跑完，<b>一次求解都還沒發生</b>。</p>
-    </section>
-
-    <section id="execute">
-      <h2><span class="n">03</span> <code class="inl">Execute()</code> 才把 engine 綁上去</h2>
-      <p>真正給 <code class="inl">engine</code> 值的是 <code class="inl">Execute()</code>。它先 <code class="inl">new</code> 出唯一的 engine，再回頭把你登記的函式一個個叫起來、<b>把那顆 engine 當參數傳進去</b>：</p>
-      <p class="cap">// OptModel.Execute()（簡化：省略計時與 log，語意不變）</p>
-<pre><code class="cs">public bool Execute()
-{
-    optEngine = new OptEngine(_configFactory());   // ① 框架自己 new 出「唯一」的 engine
-    optEngine.SetModelName(_projectName);
-    optEngine.Build();
-
-    foreach (var step in _variableSteps) step(optEngine);   // ② 變數步驟先跑
-    foreach (var step in _modelSteps) step(optEngine);      // ③ 模型步驟後跑 ← 你的 lambda 在這被呼叫
-
-    _isSuccess = optEngine.Solve();                         // 求解
-    foreach (var h in _solvedHandlers) h(optEngine);        // ④ OnSolved 回呼
-    return _isSuccess;
-}</code></pre>
-      <p>看第 ③ 行的 <code class="inl">step(optEngine)</code>：<code class="inl">step</code> 就是你當初寫的 <code class="inl">engine =&gt; buildModel(data, engine)</code>，<code class="inl">optEngine</code> 就是框架第 ① 行 new 出來的那顆。<b>這一刻</b>，你 lambda 裡的 <code class="inl">engine</code> 才 = 框架的 <code class="inl">optEngine</code>。它們是同一個物件，因為框架把它當引數傳了進去——不是你去拿，是它塞給你。</p>
-    </section>
-
-    <section id="timeline">
-      <h2><span class="n">04</span> 完整時間軸</h2>
-      <p class="muted">把「登記期」與「執行期」分開看，一切就清楚了。</p>
-      <table>
-        <thead><tr><th>時刻</th><th>程式在做什麼</th><th>engine 存在嗎？</th></tr></thead>
-        <tbody>
-          <tr><td>寫下 <code>.AddModel(e =&gt; …)</code></td><td>把 lambda 存進 <code>_modelSteps</code></td><td>❌ 還沒 new</td></tr>
-          <tr><td><code>.UseConfig / .OnSolved</code></td><td>同樣只是登記到各自清單</td><td>❌</td></tr>
-          <tr><td><code>Execute()</code> ①</td><td><code>new OptEngine(config)</code></td><td>✅ 誕生（在框架手上）</td></tr>
-          <tr><td><code>Execute()</code> ②③</td><td><code>step(optEngine)</code> 逐一呼叫你的 lambda</td><td>✅ 被當引數餵進你的 <code>e</code></td></tr>
-          <tr><td><code>Execute()</code> ④</td><td><code>Solve()</code> 後呼叫 OnSolved</td><td>✅ 帶著解</td></tr>
-        </tbody>
-      </table>
-      <div class="note"><b>順序保證：</b>框架先跑完 <code class="inl">_variableSteps</code> 才跑 <code class="inl">_modelSteps</code>。所以變數一定早於約束建好——這正是為什麼變數該用 <code class="inl">.AddVariables</code> 登記，而不是塞進 <code class="inl">.AddModel</code>。</div>
-    </section>
-
-    <section id="why">
-      <h2><span class="n">05</span> 為什麼要這樣設計？（Inversion of Control）</h2>
-      <p>你可能會問：那我自己 <code class="inl">new OptEngine</code>、自己照順序呼叫不就好了？可以，但那樣<b>順序、生命週期、設定、Dispose 全要你顧</b>。改成「你只交食譜、框架掌控時機」有幾個直接好處：</p>
-      <div class="two">
-        <div>
-          <h3>框架掌控的事</h3>
-          <ul>
-            <li>依 <code class="inl">UseConfig</code> 建好 engine 與 solver 參數</li>
-            <li>保證變數 → 約束 → 求解 → 後處理的正確順序</li>
-            <li><code class="inl">using</code> 結束自動 Dispose，不漏 CPLEX 資源</li>
-            <li>對你的具體 class <b>零依賴</b>，換 solver 不用改組裝碼</li>
-          </ul>
-        </div>
-        <div>
-          <h3>你只需負責</h3>
-          <ul>
-            <li>「拿到 engine 後，要建哪些變數 / 約束」</li>
-            <li>「求解成功後，要拿解做什麼」</li>
-            <li>其餘什麼時候發生、發生幾次，都不用管</li>
-          </ul>
-        </div>
-      </div>
-      <p>這就是 <b>Inversion of Control（控制反轉）</b>：呼叫的主導權從你手上「反轉」給框架。你不呼叫框架，是框架在對的時機回呼你。</p>
-    </section>
-
-    <section id="incarnations">
-      <h2><span class="n">06</span> 同一個觀念的化身</h2>
-      <p>看懂一個，就看懂全部。OptModel 的三個註冊點都是同一招——收一個 <code class="inl">Action&lt;OptEngine&gt;</code>，執行期回呼：</p>
-<pre><code class="cs">.AddVariables(e =&gt; e.BuildBVs&lt;VariableB_Assign&gt;(data.Lot, data.Operation, data.Eqp))
-.AddModel(e =&gt; new Constraint_NoOverlap(/* ... */, e).Build())
-.OnSolved(e =&gt; data.WriteSolution(e))</code></pre>
-      <p>連交叉實驗也是同一個心智模型——只是這次交出去的是「<b>怎麼求解</b>」這段動作，讓 <code class="inl">Trial.Capture</code> 在它量測收斂數據的前後夾著呼叫：</p>
-<pre><code class="cs">// () =&gt; engine.Solve() 就是「求解這件事」被包成委派交出去
-var trial = Trial.Capture(engine, label, () =&gt; engine.Solve());</code></pre>
-      <div class="note"><b>通則：</b>只要看到 <code class="inl">參數 =&gt; ...</code> 被傳進某個方法，就對自己說：「我在交一段<b>之後才跑</b>的程式，那個參數的值由<b>呼叫方</b>在執行時決定。」</div>
-    </section>
-
-    <section id="pitfalls">
-      <h2><span class="n">07</span> 三個常見誤解</h2>
-      <table>
-        <thead><tr><th>誤解</th><th>實際</th></tr></thead>
-        <tbody>
-          <tr><td>以為 <code>e =&gt; …</code> 當下就執行了</td><td>只是被存起來；<code>Execute()</code> 才依序呼叫</td></tr>
-          <tr><td>想在 fluent 鏈之外先抓 engine 來用</td><td>那時框架還沒 <code>new</code> engine，根本拿不到</td></tr>
-          <tr><td>把建變數塞進 <code>.AddModel</code></td><td>能跑，但語意上變數應走 <code>.AddVariables</code>（框架保證它早於約束步驟）</td></tr>
-        </tbody>
-      </table>
-      <p class="muted" style="margin-top:20px">延伸閱讀：<a href="index.html#forms" style="color:var(--accent)">開發說明 · FORM 03 OptModel 組裝管線</a>、<code class="inl">Templates/FJSP_BASIC/Program.cs</code>（本篇例子的完整出處）。</p>
-    </section>
-
-    <footer>
-      OptimFoundation · 教學 / Callback 心智模型　/　單檔靜態頁，可離線開啟　/　回 <a href="index.html" style="color:var(--muted);text-decoration:underline">開發說明</a>
-    </footer>
-  </main>
-</div>
-
-<script>
-// ---------- C# highlighter (tokenizer, HTML-safe) ----------
-const KW = new Set("using namespace public private protected internal sealed abstract class interface enum struct static readonly const new return void var bool int double long string object params override virtual this base if else for foreach in while do switch case true false null get set throw try catch finally partial".split(" "));
-function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
-function highlight(src){
-  let o="",i=0,n=src.length;
-  while(i<n){
-    const c=src[i];
-    if(c==="/"&&src[i+1]==="/"){let j=src.indexOf("\n",i);if(j<0)j=n;o+='<span class="c-com">'+esc(src.slice(i,j))+"</span>";i=j;continue;}
-    if(c==='"'||((c==="$"||c==="@")&&(src[i+1]==='"'||((src[i+1]==="@"||src[i+1]==="$")&&src[i+2]==='"')))){
-      let s=i;while(src[i]==="$"||src[i]==="@")i++;i++;
-      while(i<n){if(src[i]==="\\"){i+=2;continue;}if(src[i]==='"'){i++;break;}i++;}
-      o+='<span class="c-str">'+esc(src.slice(s,i))+"</span>";continue;
-    }
-    if(/[A-Za-z_]/.test(c)){let j=i+1;while(j<n&&/[A-Za-z0-9_]/.test(src[j]))j++;const w=src.slice(i,j);o+=KW.has(w)?'<span class="c-kw">'+w+"</span>":esc(w);i=j;continue;}
-    if(/[0-9]/.test(c)){let j=i+1;while(j<n&&/[0-9.]/.test(src[j]))j++;o+='<span class="c-num">'+src.slice(i,j)+"</span>";i=j;continue;}
-    o+=esc(c);i++;
-  }
-  return o;
-}
-document.querySelectorAll("pre code.cs").forEach(el=>{el.innerHTML=highlight(el.textContent);});
-
-// ---------- scrollspy ----------
-const links=[...document.querySelectorAll("#nav a")];
-const map=new Map(links.map(a=>[a.getAttribute("href").slice(1),a]));
-const obs=new IntersectionObserver(es=>{
-  es.forEach(e=>{if(e.isIntersecting){links.forEach(l=>l.classList.remove("active"));const a=map.get(e.target.id);if(a)a.classList.add("active");}});
-},{rootMargin:"-45% 0px -50% 0px"});
-document.querySelectorAll("section[id]").forEach(s=>obs.observe(s));
-
-// ---------- mobile nav ----------
-const aside=document.getElementById("aside"),scrim=document.getElementById("scrim"),btn=document.getElementById("navbtn");
-const toggle=o=>{aside.classList.toggle("open",o);scrim.classList.toggle("open",o);};
-btn.addEventListener("click",()=>toggle(!aside.classList.contains("open")));
-scrim.addEventListener("click",()=>toggle(false));
-aside.addEventListener("click",e=>{if(e.target.tagName==="A")toggle(false);});
-</script>
+  <p>Objective 先於 constraints，讓 soft penalty 能依正確的目標方向加入。</p>
 </body>
 </html>

@@ -10,21 +10,21 @@ namespace RosteringProblem
     /// ∀ employee ∈ EMPLOYEE：Σ_date DoubleOffFlag_{date,employee} + DoubleOffThreshold·DoubleOffLT2_{employee} ≥ DoubleOffThreshold</summary>
     public sealed class Constraint_DoubleOffLT2 : ConstraintBase
     {
-        private readonly Set_Date dates;
-        private readonly Set_Employee employees;
+        private readonly List<DateTime> dates;
+        private readonly List<string> employees;
         private readonly double doubleOffWindow;
         private readonly double doubleOffThreshold;
         private readonly double one;
 
         public Constraint_DoubleOffLT2(
-            Set_Date dates,
-            Set_Employee employees,
+            List<Set_Date> dates,
+            List<Set_Employee> employees,
             double doubleOffWindow,
             double doubleOffThreshold,
             double one)
         {
-            this.dates = dates;
-            this.employees = employees;
+            this.dates = dates.Select(row => row.Date).ToList();
+            this.employees = employees.Select(row => row.Employee).ToList();
             this.doubleOffWindow = doubleOffWindow;
             this.doubleOffThreshold = doubleOffThreshold;
             this.one = one;
@@ -59,7 +59,7 @@ namespace RosteringProblem
                         engine.AddRHS(-(window.Count - one));
                     }
 
-                    engine.CreateGreatEqual($"{ConstraintName}_a@{date:yyyy_MM_dd}@{employee}");
+                    engine.CreateGreatEqual(this, "a", date, employee);
                 }
             }
 
@@ -70,7 +70,7 @@ namespace RosteringProblem
 
                 engine.AddLHS(doubleOffThreshold, new VariableB_DoubleOffLT2 { Employee = employee });
                 engine.AddRHS(doubleOffThreshold);
-                engine.CreateGreatEqual($"{ConstraintName}_b@{employee}");
+                engine.CreateGreatEqual(this, "b", employee);
             }
         }
     }

@@ -57,13 +57,39 @@ namespace OptimFoundation.Core.IO
         /// </summary>
         public void ExecuteInTransaction(Action<IDbCtrl> work)
         {
+            if (work == null)
+                throw Logging.ErrorOnce(
+                    new ArgumentNullException(nameof(work)),
+                    "DB_TRANSACTION_INVALID", "資料庫交易不合法", nameof(ExecuteInTransaction), null, "work_is_null");
+
             if (AmbientTransaction != null)
             {
-                work(this);
-                return;
+                try
+                {
+                    work(this);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    Logging.ErrorOnce(
+                        ex, "DB_TRANSACTION_FAILED", "公開 API 執行失敗", nameof(ExecuteInTransaction), GetType().FullName,
+                        ex.GetBaseException().Message);
+                    throw;
+                }
             }
 
-            var conn = CreateRawConnection();
+            IDbConnection conn;
+            try
+            {
+                conn = CreateRawConnection();
+            }
+            catch (Exception ex)
+            {
+                Logging.ErrorOnce(
+                    ex, "DB_TRANSACTION_FAILED", "公開 API 執行失敗", nameof(ExecuteInTransaction), GetType().FullName,
+                    ex.GetBaseException().Message);
+                throw;
+            }
             try
             {
                 var tx = conn.BeginTransaction();
@@ -74,9 +100,22 @@ namespace OptimFoundation.Core.IO
                     work(this);
                     tx.Commit();
                 }
-                catch
+                catch (Exception ex)
                 {
-                    tx.Rollback();
+                    try
+                    {
+                        tx.Rollback();
+                    }
+                    catch (Exception rollbackException)
+                    {
+                        Logging.ErrorOnce(
+                            rollbackException,
+                            "DB_ROLLBACK_FAILED", "資料庫回滾失敗", nameof(ExecuteInTransaction), GetType().FullName,
+                            rollbackException.GetBaseException().Message);
+                    }
+                    Logging.ErrorOnce(
+                        ex, "DB_TRANSACTION_FAILED", "公開 API 執行失敗", nameof(ExecuteInTransaction), GetType().FullName,
+                        ex.GetBaseException().Message);
                     throw;
                 }
                 finally
@@ -86,9 +125,26 @@ namespace OptimFoundation.Core.IO
                     AmbientTransaction = null;
                 }
             }
+            catch (Exception ex)
+            {
+                Logging.ErrorOnce(
+                    ex, "DB_TRANSACTION_FAILED", "公開 API 執行失敗", nameof(ExecuteInTransaction), GetType().FullName,
+                    ex.GetBaseException().Message);
+                throw;
+            }
             finally
             {
-                conn.Dispose();
+                try
+                {
+                    conn.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    Logging.ErrorOnce(
+                        ex, "DB_DISPOSE_FAILED", "資料庫連線釋放失敗", nameof(ExecuteInTransaction), GetType().FullName,
+                        ex.GetBaseException().Message);
+                    throw;
+                }
             }
         }
 

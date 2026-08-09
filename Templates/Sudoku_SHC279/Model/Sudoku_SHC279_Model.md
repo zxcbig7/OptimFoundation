@@ -20,12 +20,12 @@
 
 | Set | 語意 | 成員 | → 程式 |
 | --- | --- | --- | --- |
-| ROW | 盤面的列索引 | 1..N | `Set_Row`（`[OptSet<int>]`） |
-| COLUMN | 盤面的欄索引 | 1..N | `Set_Column`（`[OptSet<int>]`） |
-| DIGIT | 可填入的數字 | 1..N | `Set_Digit`（`[OptSet<int>]`） |
-| BLOCK | 宮（√N × √N 的子區塊） | 1..N | `Set_Block`（`[OptSet<int>]`） |
-| GIVEN | 題盤已知數字的（列, 欄, 數字）tuple | ROW, COLUMN, DIGIT | `Set_Given`（`[OptSet<int,int,int>]`） |
-| BLOCKCELL | 每個宮涵蓋的（宮, 列, 欄）tuple | BLOCK, ROW, COLUMN | `Set_BlockCell`（`[OptSet<int,int,int>]`） |
+| ROW | 盤面的列索引 | 1..N | `Set_Row`：`[OptSet]` + `OptDim<int>("Row")` |
+| COLUMN | 盤面的欄索引 | 1..N | `Set_Column`：`[OptSet]` + `OptDim<int>("Column")` |
+| DIGIT | 可填入的數字 | 1..N | `Set_Digit`：`[OptSet]` + `OptDim<int>("Digit")` |
+| BLOCK | 宮（√N × √N 的子區塊） | 1..N | `Set_Block`：`[OptSet]` + `OptDim<int>("Block")` |
+| GIVEN | 題盤已知數字的（列, 欄, 數字）tuple | ROW, COLUMN, DIGIT | `Set_Given`：三個 primitive `OptDim<int>` |
+| BLOCKCELL | 每個宮涵蓋的（宮, 列, 欄）tuple | BLOCK, ROW, COLUMN | `Set_BlockCell`：三個 primitive `OptDim<int>` |
 
 ## PARAM
 

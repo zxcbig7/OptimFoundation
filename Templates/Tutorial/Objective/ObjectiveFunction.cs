@@ -27,13 +27,17 @@ namespace Tutorial
         {
             foreach (var product in products)
             {
-                var profit = unitProfit.First(p => p.Product == product).QTY;
-                var cost = setupCost.First(p => p.Product == product).QTY;
+                var profit = unitProfit.FindParameterOrLog(
+                    p => p.Product == product,
+                    product)?.QTY ?? 0.0;
+                var cost = setupCost.FindParameterOrLog(
+                    p => p.Product == product,
+                    product)?.QTY ?? 0.0;
 
                 foreach (var date in dates)
                     foreach (var shift in shifts)
                     {
-                        engine.AddLHS(profit, new VariableX_Produce { Product = product, Date = date, Shift = shift });
+                        engine.AddLHS(profit, new VariableC_Produce { Product = product, Date = date, Shift = shift });
                         engine.AddLHS(-cost, new VariableB_Setup { Product = product, Date = date, Shift = shift });
                     }
             }

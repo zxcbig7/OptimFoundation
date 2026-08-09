@@ -6,19 +6,30 @@ namespace OptimFoundation.Core.IO
 {
     /// <summary>
     /// 模型資料來源抽象：Dataload 只依賴本介面，換來源（CSV / 記憶體 / DB）不動模型 code。
-    /// LoadSet 與 LoadParam 都遵循 schema；LoadData 則刻意不認得任何積木。
+    /// Set 與 Parameter 都透過 Load&lt;T&gt; 依 schema 映射；LoadData 則只回傳中立表格。
     /// </summary>
     public interface IDataSource
     {
-        /// <summary>載入完整 Set 資料列，包含必填表頭。</summary>
-        /// <summary>載入含 schema 的獨立 CSV／DB 表格，不考慮任何模型積木。</summary>
-        DataTable LoadData(string file);
+        /// <summary>載入含 schema 的獨立表格，不映射至模型資料列。</summary>
+        /// <param name="sourceName">
+        /// 資料來源識別：<see cref="CsvDataSource"/> 使用 <c>Data/{sourceName}</c> 下的 CSV 檔案；
+        /// <see cref="DbDataSource"/> 使用完整 SQL；<see cref="InMemoryDataSource"/> 使用已註冊的表格名稱。
+        /// </param>
+        DataTable LoadData(string sourceName);
 
-        /// <summary>依表頭與 public property 名稱對應，載入具型別的 Parameter。</summary>
-        List<T> Load<T>(string file = null) where T : ModelElementBase, new()
+        /// <summary>依欄名與 public property 名稱對應，載入具型別的 Set 或 Parameter model row。</summary>
+        /// <typeparam name="T">要建立的 Set 或 Parameter row 型別。</typeparam>
+        /// <param name="sourceName">
+        /// 資料來源識別。使用 <see cref="CsvDataSource"/> 時，檔案位於 <c>Data/{sourceName}</c>，
+        /// 可傳入有或沒有 <c>.csv</c> 的檔名，而且檔名不必等於 <typeparamref name="T"/> 的類別名稱；
+        /// 使用 <see cref="DbDataSource"/> 時是完整 SQL；使用 <see cref="InMemoryDataSource"/> 時是已註冊的表格名稱。
+        /// 省略時使用 <c>typeof(T).Name</c> 作為來源名稱。
+        /// </param>
+        /// <returns>依來源資料列順序建立的 model row 清單。</returns>
+        List<T> Load<T>(string sourceName = null) where T : ModelElementBase, new()
         {
-            var name = file ?? typeof(T).Name;
-            return ModelRowMapper.MapTable<T>(LoadData(name), name);
+            var resolvedSourceName = sourceName ?? typeof(T).Name;
+            return ModelRowMapper.MapTable<T>(LoadData(resolvedSourceName), resolvedSourceName);
         }
     }
 

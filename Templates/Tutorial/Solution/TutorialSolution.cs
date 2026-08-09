@@ -16,13 +16,13 @@ namespace Tutorial
             Logging.Info($"Status={engine.Status} Obj={engine.GetObjectiveValue():F4} " +
                          $"BestBound={engine.BestObjValue:F4} MIPGap={engine.MIPGap:P2}");
 
-            var produce = engine.GetSetVarValues<VariableX_Produce>();
+            var produce = engine.GetSetVarValues<VariableC_Produce>();
             var setup = engine.GetSetVarValues<VariableB_Setup>();
             var batch = engine.GetSetVarValues<VariableI_Batch>();
             ValidateRules(produce, setup, batch, data);
 
             FolderDir.Solution.CreateFolder(); // MUST，否則 WriteSolution 丟 DirectoryNotFoundException
-            CsvCtrl.WriteSolution<VariableX_Produce>(engine, "Tutorial", "SYSTEM");
+            CsvCtrl.WriteSolution<VariableC_Produce>(engine, "Tutorial", "SYSTEM");
             CsvCtrl.WriteSolution<VariableB_Setup>(engine, "Tutorial", "SYSTEM");
             CsvCtrl.WriteSolution<VariableI_Batch>(engine, "Tutorial", "SYSTEM");
             return new TutorialSolution(produce);
@@ -34,14 +34,21 @@ namespace Tutorial
             Dataload data)
         {
             double ProduceOf(string product, DateTime date, int shift) =>
-                produce.TryGetValue($"VariableX_Produce@{product}@{date:yyyy-MM-dd}@{shift}", out var v) ? v : 0.0;
+                produce.TryGetValue(new VariableC_Produce
+                {
+                    Product = product,
+                    Date = date,
+                    Shift = shift
+                }.ToString(), out var v) ? v : 0.0;
 
             // Demand：Σ_shift Produce ≥ Demand
             foreach (var product in data.set_Product)
                 foreach (var date in data.set_Date)
                 {
                     var used = data.set_Shift.Sum(shift => ProduceOf(product, date, shift));
-                    var required = data.parameter_Demand.First(d => d.Product == product && d.Date == date).QTY;
+                    var required = data.parameter_Demand.FindParameterOrLog(
+                        d => d.Product == product && d.Date == date,
+                        product, date)?.QTY ?? 0.0;
                     if (used < required - 1e-6)
                         throw new InvalidOperationException($"{product}@{date:yyyy-MM-dd} 違反 Demand：{used} < {required}。");
                 }
@@ -53,10 +60,14 @@ namespace Tutorial
                     {
                         var used = data.set_Product.Sum(product =>
                         {
-                            var hours = data.parameter_MachineHours.FirstOrDefault(h => h.Product == product && h.Machine == machine)?.QTY ?? 0.0;
+                            var hours = data.parameter_MachineHours.FindParameterOrLog(
+                                h => h.Product == product && h.Machine == machine,
+                                product, machine)?.QTY ?? 0.0;
                             return hours * ProduceOf(product, date, shift);
                         });
-                        var cap = data.parameter_Capacity.First(c => c.Machine == machine && c.Date == date && c.Shift == shift).QTY;
+                        var cap = data.parameter_Capacity.FindParameterOrLog(
+                            c => c.Machine == machine && c.Date == date && c.Shift == shift,
+                            machine, date, shift)?.QTY ?? 0.0;
                         if (used > cap + 1e-6)
                             throw new InvalidOperationException($"{machine}@{date:yyyy-MM-dd}@{shift} 違反 Capacity：{used} > {cap}。");
                     }
@@ -66,8 +77,14 @@ namespace Tutorial
                 foreach (var date in data.set_Date)
                 {
                     var used = data.set_Shift.Sum(shift => ProduceOf(product, date, shift));
-                    var size = data.parameter_BatchSize.First(b => b.Product == product).QTY;
-                    var batches = batch.TryGetValue($"VariableI_Batch@{product}@{date:yyyy-MM-dd}", out var b) ? b : 0.0;
+                    var size = data.parameter_BatchSize.FindParameterOrLog(
+                        b => b.Product == product,
+                        product)?.QTY ?? 0.0;
+                    var batches = batch.TryGetValue(new VariableI_Batch
+                    {
+                        Product = product,
+                        Date = date
+                    }.ToString(), out var b) ? b : 0.0;
                     if (Math.Abs(used - size * batches) > 1e-6)
                         throw new InvalidOperationException($"{product}@{date:yyyy-MM-dd} 違反 BatchDef：{used} ≠ {size}×{batches}。");
                 }
@@ -78,7 +95,12 @@ namespace Tutorial
                     foreach (var shift in data.set_Shift)
                     {
                         var qty = ProduceOf(product, date, shift);
-                        var opened = setup.TryGetValue($"VariableB_Setup@{product}@{date:yyyy-MM-dd}@{shift}", out var s) ? s : 0.0;
+                        var opened = setup.TryGetValue(new VariableB_Setup
+                        {
+                            Product = product,
+                            Date = date,
+                            Shift = shift
+                        }.ToString(), out var s) ? s : 0.0;
                         if (qty > data.BigM * opened + 1e-6)
                             throw new InvalidOperationException($"{product}@{date:yyyy-MM-dd}@{shift} 違反 SetupLink：{qty} > BigM×{opened}。");
                     }

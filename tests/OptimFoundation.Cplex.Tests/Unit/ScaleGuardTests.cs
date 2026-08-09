@@ -7,7 +7,7 @@ using Xunit;
 
 namespace OptimFoundation.Cplex.Tests.Unit
 {
-    // Scale guard（EngineBase.PreSolveGuard）：TotalVarCount 超過 ISolverConfig.ScaleWarnThreshold → Logging.Warn，不 throw、不中止。
+    // Scale guard（EngineBase.PreSolveGuard）：RegisteredVariableCount 超過 ISolverConfig.ScaleWarnThreshold → Logging.Warn，不 throw、不中止。
     // Logging 是 static class，直接寫 console/log 檔，無法用 mock 攔截呼叫；改用「讀回 log 檔內容」證明警告確實觸發——
     // Logging.SetLogFileName(tag) 把之後所有寫入導向一個帶 tag 的新檔，Solve() 後讀該檔內容比對是否含 WARN。
     // [Collection("Logging")]：本類別內測試序列執行（xUnit 預設同 class 內即序列，此為局部保險）；
@@ -46,7 +46,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             var engine = new MockEngine(new SmallThresholdConfig());
             engine.Build();
-            engine.BuildBVs<VarS>(new List<string> { "A", "B" }); // TotalVarCount = 2 > 門檻(1)
+            engine.BuildBVs<VarS>(new List<string> { "A", "B" }); // RegisteredVariableCount = 2 > 門檻(1)
 
             bool ok = engine.Solve();
 

@@ -36,13 +36,17 @@ namespace Tutorial
                     {
                         foreach (var product in products)
                         {
-                            var h = hours.FirstOrDefault(x => x.Product == product && x.Machine == machine)?.QTY ?? 0.0;
-                            engine.AddLHS(h, new VariableX_Produce { Product = product, Date = date, Shift = shift });
+                            var h = hours.FindParameterOrLog(
+                                x => x.Product == product && x.Machine == machine,
+                                product, machine)?.QTY ?? 0.0;
+                            engine.AddLHS(h, new VariableC_Produce { Product = product, Date = date, Shift = shift });
                         }
 
-                        var cap = capacity.First(c => c.Machine == machine && c.Date == date && c.Shift == shift).QTY;
+                        var cap = capacity.FindParameterOrLog(
+                            c => c.Machine == machine && c.Date == date && c.Shift == shift,
+                            machine, date, shift)?.QTY ?? 0.0;
                         engine.AddRHS(cap);
-                        engine.CreateLessEqual($"{ConstraintName}@{machine}@{date:yyyy-MM-dd}@{shift}");
+                        engine.CreateLessEqual(this, machine, date, shift);
                     }
         }
     }

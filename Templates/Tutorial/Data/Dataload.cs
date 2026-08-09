@@ -8,7 +8,7 @@ namespace Tutorial
     // 換來源：CSV↔InMemory 只換傳入的 IDataSource（DB query-only 用型別化 DbDataSource，見 developer-guide）。
     public sealed partial class Dataload : DataContext
     {
-        // Set 積木：三種元素型別 string / DateTime / int
+        // Set 資料列：維度型別包含 string / DateTime / int
         public List<Set_Product> set_Product = new();
         public List<Set_Machine> set_Machine = new();
         public List<Set_Date> set_Date = new();
@@ -29,13 +29,13 @@ namespace Tutorial
 
         public Dataload(IDataSource source)
         {
-            // Set：檔名形式 Set_{X}（CSV → Data/Set_{X}.csv；DateTime/int 由 ParseElement 自動轉型）
+            // Set：Load<T> 依表頭映射 public property，並把 DateTime/int 轉成宣告型別
             set_Product = source.Load<Set_Product>("Set_Product");
             set_Machine = source.Load<Set_Machine>("Set_Machine");
             set_Date = source.Load<Set_Date>("Set_Date");
             set_Shift = source.Load<Set_Shift>("Set_Shift");
 
-            // Parameter：CSV 讀 Data/{檔名}.csv（表頭按名對位；DateTime/int 欄由 InitClassBySets 轉型）
+            // Parameter：同樣走 Load<T>；差別只在生成型別最後固定多一個 QTY
             parameter_UnitProfit = source.Load<Parameter_UnitProfit>("Parameter_UnitProfit");
             parameter_SetupCost = source.Load<Parameter_SetupCost>("Parameter_SetupCost");
             parameter_BatchSize = source.Load<Parameter_BatchSize>("Parameter_BatchSize");

@@ -16,7 +16,7 @@ namespace OptimFoundation.Core
         /// <summary>可用執行緒數；null = 由 solver 自行決定。</summary>
         int? Threads { get; set; }
 
-        /// <summary>Solve 前 scale guard 門檻：TotalVarCount 超過此值 → PreSolveGuard 只 Warn 不阻擋。預設值 default interface member，不破壞既有實作者。</summary>
+        /// <summary>Solve 前 scale guard 門檻：RegisteredVariableCount 超過此值 → PreSolveGuard 只 Warn 不阻擋。預設值 default interface member，不破壞既有實作者。</summary>
         int ScaleWarnThreshold => 10_000_000;
     }
 

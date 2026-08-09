@@ -6,20 +6,20 @@ namespace RosteringProblem
     /// <summary>∀ date ∈ DATE, employee ∈ EMPLOYEE：Σ_group ShiftAssign_{date,employee,group} = One</summary>
     public sealed class Constraint_OneGroup : ConstraintBase
     {
-        private readonly Set_Date dates;
-        private readonly Set_Employee employees;
-        private readonly Set_Group groups;
+        private readonly List<DateTime> dates;
+        private readonly List<string> employees;
+        private readonly List<string> groups;
         private readonly double one;
 
         public Constraint_OneGroup(
-            Set_Date dates,
-            Set_Employee employees,
-            Set_Group groups,
+            List<Set_Date> dates,
+            List<Set_Employee> employees,
+            List<Set_Group> groups,
             double one)
         {
-            this.dates = dates;
-            this.employees = employees;
-            this.groups = groups;
+            this.dates = dates.Select(row => row.Date).ToList();
+            this.employees = employees.Select(row => row.Employee).ToList();
+            this.groups = groups.Select(row => row.Group).ToList();
             this.one = one;
         }
 
@@ -32,7 +32,7 @@ namespace RosteringProblem
                         engine.AddLHS(1.0, new VariableB_ShiftAssign { Date = date, Employee = employee, Group = group });
 
                     engine.AddRHS(one);
-                    engine.CreateEqual($"{ConstraintName}@{date:yyyy_MM_dd}@{employee}");
+                    engine.CreateEqual(this, date, employee);
                 }
         }
     }

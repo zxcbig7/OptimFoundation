@@ -24,6 +24,10 @@ namespace OptimFoundation.Core
         /// <summary>建立實驗。name 決定輸出檔名，同名等於接續同一份歷史（Save 會 append）。</summary>
         public Experiment(string name, string description)
         {
+            if (string.IsNullOrWhiteSpace(name))
+                throw Logging.ErrorOnce(
+                    new ArgumentException("Experiment name is required.", nameof(name)),
+                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(Experiment), name, "name_is_empty");
             Name = name;
             Description = description;
             CreatedAt = DateTime.Now;
@@ -36,6 +40,10 @@ namespace OptimFoundation.Core
         /// <summary>把一次求解的紀錄（Trial）加入本實驗。</summary>
         public void AddTrial(Trial trial)
         {
+            if (trial == null)
+                throw Logging.ErrorOnce(
+                    new ArgumentNullException(nameof(trial)),
+                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(AddTrial), Name, "trial_is_null");
             Trials.Add(trial);
         }
 
@@ -44,6 +52,24 @@ namespace OptimFoundation.Core
         /// 先 Load 既有 JSON、把不在本次記憶體中的 trials 併到前面（以 RunAt+Label 去重，重複 Save 同物件不會重覆）。
         /// </summary>
         public void Save()
+        {
+            if (string.IsNullOrWhiteSpace(Name))
+                throw Logging.ErrorOnce(
+                    new InvalidOperationException("Experiment name is required before Save."),
+                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(Save), Name, "name_is_empty");
+            try
+            {
+                SaveCore();
+            }
+            catch (Exception ex)
+            {
+                Logging.ErrorOnce(ex, "EXPERIMENT_SAVE_FAILED", "公開 API 執行失敗", nameof(Save), Name,
+                    ex.GetBaseException().Message);
+                throw;
+            }
+        }
+
+        private void SaveCore()
         {
             FolderDir.Experiment.CreateFolder();
 
@@ -72,7 +98,22 @@ namespace OptimFoundation.Core
 
         /// <summary>讀回既有實驗（以 JSON 為權威來源），供累積。檔案不存在回 null。</summary>
         public static Experiment Load(string name)
-            => new JsonExperimentWriter().Read(FolderDir.Experiment.GetFilePath($"{name}.json"));
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                throw Logging.ErrorOnce(
+                    new ArgumentException("Experiment name is required.", nameof(name)),
+                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(Load), name, "name_is_empty");
+            try
+            {
+                return new JsonExperimentWriter().Read(FolderDir.Experiment.GetFilePath($"{name}.json"));
+            }
+            catch (Exception ex)
+            {
+                Logging.ErrorOnce(ex, "EXPERIMENT_LOAD_FAILED", "公開 API 執行失敗", nameof(Load), name,
+                    ex.GetBaseException().Message);
+                throw;
+            }
+        }
     }
 
     /// <summary>

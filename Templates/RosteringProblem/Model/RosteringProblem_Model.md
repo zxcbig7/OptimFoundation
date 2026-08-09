@@ -56,7 +56,7 @@
 | WeekendLT4    | 員工週末休假天數低於門檻的缺口量         | Employee              | Continuous | 0   | +∞  |
 
 → 程式：`VariableB_ShiftAssign` / `VariableB_GroupMismatch` / `VariableB_NightToDay` / `VariableB_DoubleOffFlag` /
-`VariableB_DoubleOffLT2` / `VariableB_Off1Day` / `VariableB_SixDayWork` / `VariableX_BelowAVG` / `VariableX_WeekendLT4`
+`VariableB_DoubleOffLT2` / `VariableB_Off1Day` / `VariableB_SixDayWork` / `VariableC_BelowAVG` / `VariableC_WeekendLT4`
 
 ## CONSTRAINT
 

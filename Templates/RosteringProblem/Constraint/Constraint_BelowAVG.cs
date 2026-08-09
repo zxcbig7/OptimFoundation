@@ -7,17 +7,17 @@ namespace RosteringProblem
     /// ∀ employee ∈ EMPLOYEE：Σ_date ShiftAssign_{date,employee,O} + BelowAVG_{employee} ≥ avgOff</summary>
     public sealed class Constraint_BelowAVG : ConstraintBase
     {
-        private readonly Set_Date dates;
-        private readonly Set_Employee employees;
+        private readonly List<DateTime> dates;
+        private readonly List<string> employees;
         private readonly List<Parameter_ShiftDemand> shiftDemand;
 
         public Constraint_BelowAVG(
-            Set_Date dates,
-            Set_Employee employees,
+            List<Set_Date> dates,
+            List<Set_Employee> employees,
             List<Parameter_ShiftDemand> shiftDemand)
         {
-            this.dates = dates;
-            this.employees = employees;
+            this.dates = dates.Select(row => row.Date).ToList();
+            this.employees = employees.Select(row => row.Employee).ToList();
             this.shiftDemand = shiftDemand;
         }
 
@@ -33,9 +33,9 @@ namespace RosteringProblem
                 foreach (var date in dates)
                     engine.AddLHS(1.0, new VariableB_ShiftAssign { Date = date, Employee = employee, Group = "O" });
 
-                engine.AddLHS(1.0, new VariableX_BelowAVG { Employee = employee });
+                engine.AddLHS(1.0, new VariableC_BelowAVG { Employee = employee });
                 engine.AddRHS(avgOff);
-                engine.CreateGreatEqual($"{ConstraintName}@{employee}");
+                engine.CreateGreatEqual(this, employee);
             }
         }
     }

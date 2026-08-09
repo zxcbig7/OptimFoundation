@@ -25,35 +25,62 @@ namespace OptimFoundation.Core
             => string.Join(Environment.NewLine, issues.Select(i => $"[{i.Kind}] {i.Parameter}: {i.Detail}"));
     }
 
-    [AttributeUsage(AttributeTargets.Class)]
-    public sealed class FullGridAttribute : Attribute { }
-
-    /// <summary>Validates each loaded Parameter table without consulting Set rows.</summary>
+    /// <summary>驗證已載入的 Set 與 Parameter 資料列。</summary>
     public static class DataValidator
     {
         public const double MaxMagnitude = 1e15;
 
-        public static IReadOnlyList<DataIssue> Validate(IReadOnlyList<ParamRegistration> parameters)
+        /// <summary>驗證 Set／Parameter key 重複與 Parameter 數值合理性。</summary>
+        public static IReadOnlyList<DataIssue> Validate(
+            IReadOnlyList<SetRegistration> sets,
+            IReadOnlyList<ParamRegistration> parameters)
         {
             var issues = new List<DataIssue>();
+            foreach (var set in sets)
+                CheckDuplicateSetKeys(set, issues);
             foreach (var parameter in parameters)
             {
-                CheckDuplicateKeys(parameter, issues);
+                CheckDuplicateParameterKeys(parameter, issues);
                 CheckNumericValues(parameter, issues);
             }
             return issues;
         }
 
-        private static void CheckDuplicateKeys(ParamRegistration parameter, List<DataIssue> issues)
+        /// <summary>保留只驗證 Parameter 的呼叫方式。</summary>
+        public static IReadOnlyList<DataIssue> Validate(IReadOnlyList<ParamRegistration> parameters)
+            => Validate(Array.Empty<SetRegistration>(), parameters);
+
+        private static void CheckDuplicateSetKeys(SetRegistration set, List<DataIssue> issues)
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            for (var row = 0; row < set.Rows.Count; row++)
+            {
+                var key = ComposeKey(set.Name, row, set.Rows[row]);
+                if (!seen.Add(key))
+                    issues.Add(new DataIssue(
+                        DataIssueKind.DuplicateKey,
+                        set.Name,
+                        $"duplicate Set key at row {row + 1}: {key}"));
+            }
+        }
+
+        private static void CheckDuplicateParameterKeys(ParamRegistration parameter, List<DataIssue> issues)
         {
             var seen = new HashSet<string>(StringComparer.Ordinal);
             for (var row = 0; row < parameter.Rows.Count; row++)
             {
-                var key = string.Join("\u001f", parameter.Rows[row].Index.Select(Format));
+                var key = ComposeKey(parameter.Name, row, parameter.Rows[row].Index);
                 if (!seen.Add(key))
-                    issues.Add(new DataIssue(DataIssueKind.DuplicateKey, parameter.Name, $"duplicate index row {row + 1}: {key}"));
+                    issues.Add(new DataIssue(
+                        DataIssueKind.DuplicateKey,
+                        parameter.Name,
+                        $"duplicate Parameter key at row {row + 1}: {key}"));
             }
         }
+
+        private static string ComposeKey(string source, int row, IReadOnlyList<object> values)
+            => string.Join("\u001f", values.Select((value, index) =>
+                ModelNaming.Token($"{source} row #{row + 1} index #{index + 1}", value)));
 
         private static void CheckNumericValues(ParamRegistration parameter, List<DataIssue> issues)
         {
@@ -62,13 +89,5 @@ namespace OptimFoundation.Core
                     if (double.IsNaN(value) || double.IsInfinity(value) || Math.Abs(value) > MaxMagnitude)
                         issues.Add(new DataIssue(DataIssueKind.Numeric, parameter.Name, $"row {row + 1}, {name}={value.ToString(CultureInfo.InvariantCulture)}"));
         }
-
-        private static string Format(object? value) => value switch
-        {
-            DateTime date => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
-            null => "",
-            _ => value.ToString() ?? "",
-        };
     }
 }

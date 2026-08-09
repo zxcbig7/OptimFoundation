@@ -8,19 +8,19 @@ namespace RosteringProblem
     ///                            + One - ShiftAssign_{date-2,employee,O} - (OffOneDayWindow - One)</summary>
     public sealed class Constraint_OffOneDay : ConstraintBase
     {
-        private readonly Set_Date dates;
-        private readonly Set_Employee employees;
+        private readonly List<DateTime> dates;
+        private readonly List<string> employees;
         private readonly double offOneDayWindow;
         private readonly double one;
 
         public Constraint_OffOneDay(
-            Set_Date dates,
-            Set_Employee employees,
+            List<Set_Date> dates,
+            List<Set_Employee> employees,
             double offOneDayWindow,
             double one)
         {
-            this.dates = dates;
-            this.employees = employees;
+            this.dates = dates.Select(row => row.Date).ToList();
+            this.employees = employees.Select(row => row.Employee).ToList();
             this.offOneDayWindow = offOneDayWindow;
             this.one = one;
         }
@@ -45,7 +45,7 @@ namespace RosteringProblem
                     engine.AddRHS(-1.0, new VariableB_ShiftAssign { Date = prePreDate, Employee = employee, Group = "O" });
                     engine.AddRHS(-(offOneDayWindow - one));
 
-                    engine.CreateGreatEqual($"{ConstraintName}@{date:yyyy_MM_dd}@{employee}");
+                    engine.CreateGreatEqual(this, date, employee);
                 }
         }
     }

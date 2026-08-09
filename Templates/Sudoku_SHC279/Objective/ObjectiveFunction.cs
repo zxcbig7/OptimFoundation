@@ -1,3 +1,4 @@
+using OptimFoundation.Core;
 using OptimFoundation.Cplex;
 
 namespace Sudoku_SHC279
@@ -28,8 +29,9 @@ namespace Sudoku_SHC279
                 foreach (int column in _columns)
                     foreach (int digit in _digits)
                     {
-                        double coefficient = _objCoefByDigit.Single(
-                            parameter => parameter.Digit == digit).QTY;
+                        double coefficient = _objCoefByDigit.FindParameterOrLog(
+                            parameter => parameter.Digit == digit,
+                            digit)?.QTY ?? 0.0;
                         engine.AddLHS(
                             coefficient,
                             new VariableB_CellDigit { Row = row, Column = column, Digit = digit });

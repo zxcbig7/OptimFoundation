@@ -27,7 +27,10 @@ namespace OptimFoundation.Cplex
         /// <summary>Creates an experiment.</summary>
         public OptExperiment(string name, string description)
         {
-            if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Experiment name is required.", nameof(name));
+            if (string.IsNullOrWhiteSpace(name))
+                throw Logging.ErrorOnce(
+                    new ArgumentException("Experiment name is required.", nameof(name)),
+                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(OptExperiment), name, "name_is_empty");
             _name = name;
             _description = description ?? string.Empty;
         }
@@ -35,14 +38,19 @@ namespace OptimFoundation.Cplex
         /// <summary>Uses a fresh project configuration for each experiment cell.</summary>
         public OptExperiment UseConfig(Func<ProjectConfig> configFactory)
         {
-            _projectConfigFactory = configFactory ?? throw new ArgumentNullException(nameof(configFactory));
+            _projectConfigFactory = configFactory ?? throw Logging.ErrorOnce(
+                new ArgumentNullException(nameof(configFactory)),
+                "EXPERIMENT_INVALID", "實驗設定不合法", nameof(UseConfig), _name, "config_factory_is_null");
             return this;
         }
 
         /// <summary>Adds a model to the cross-product.</summary>
         public OptExperiment AddModel(OptModel model)
         {
-            if (model == null) throw new ArgumentNullException(nameof(model));
+            if (model == null)
+                throw Logging.ErrorOnce(
+                    new ArgumentNullException(nameof(model)),
+                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(AddModel), _name, "model_is_null");
             _models.Add(model);
             return this;
         }
@@ -51,9 +59,14 @@ namespace OptimFoundation.Cplex
         public OptExperiment AddConfig(string label, CplexConfig config)
         {
             ValidateLabel(label);
-            if (config == null) throw new ArgumentNullException(nameof(config));
+            if (config == null)
+                throw Logging.ErrorOnce(
+                    new ArgumentNullException(nameof(config)),
+                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(AddConfig), label, "config_is_null");
             if (_configs.Any(c => string.Equals(c.Label, label, StringComparison.Ordinal)))
-                throw new ArgumentException($"Duplicate experiment configuration label '{label}'.", nameof(label));
+                throw Logging.ErrorOnce(
+                    new ArgumentException($"Duplicate experiment configuration label '{label}'.", nameof(label)),
+                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(AddConfig), label, "duplicate_config_label");
             _configs.Add((label, config));
             return this;
         }
@@ -61,15 +74,35 @@ namespace OptimFoundation.Cplex
         /// <summary>Adds exactly one explicit model/configuration cell.</summary>
         public OptExperiment AddTrial(OptModel model, string label, CplexConfig config)
         {
-            if (model == null) throw new ArgumentNullException(nameof(model));
+            if (model == null)
+                throw Logging.ErrorOnce(
+                    new ArgumentNullException(nameof(model)),
+                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(AddTrial), _name, "model_is_null");
             ValidateLabel(label);
-            if (config == null) throw new ArgumentNullException(nameof(config));
+            if (config == null)
+                throw Logging.ErrorOnce(
+                    new ArgumentNullException(nameof(config)),
+                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(AddTrial), label, "config_is_null");
             _explicitTrials.Add((model, label, config));
             return this;
         }
 
         /// <summary>Runs all cells and saves the resulting experiment.</summary>
         public Experiment Run()
+        {
+            try
+            {
+                return RunCore();
+            }
+            catch (Exception ex)
+            {
+                Logging.ErrorOnce(ex, "EXPERIMENT_RUN_FAILED", "公開 API 執行失敗", nameof(Run), _name,
+                    ex.GetBaseException().Message);
+                throw;
+            }
+        }
+
+        private Experiment RunCore()
         {
             var cells = new List<(OptModel Model, string Label, CplexConfig Config)>();
             foreach (var model in _models)
@@ -78,15 +111,18 @@ namespace OptimFoundation.Cplex
             cells.AddRange(_explicitTrials);
 
             if (cells.Count == 0)
-                throw new InvalidOperationException("An experiment requires at least one model/configuration cell.");
+                throw Logging.ErrorOnce(
+                    new InvalidOperationException("An experiment requires at least one model/configuration cell."),
+                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(Run), _name, "trial_cell_is_missing");
 
             var finalLabels = new HashSet<string>(StringComparer.Ordinal);
             foreach (var cell in cells)
             {
                 string finalLabel = $"{cell.Model.Name} | {cell.Label}";
                 if (!finalLabels.Add(finalLabel))
-                    throw new InvalidOperationException(
-                        $"Duplicate final experiment trial label '{finalLabel}'.");
+                    throw Logging.ErrorOnce(
+                        new InvalidOperationException($"Duplicate final experiment trial label '{finalLabel}'."),
+                        "EXPERIMENT_INVALID", "實驗設定不合法", nameof(Run), finalLabel, "duplicate_final_trial_label");
             }
 
             var experiment = new Experiment(_name, _description);
@@ -108,7 +144,9 @@ namespace OptimFoundation.Cplex
         private static void ValidateLabel(string label)
         {
             if (string.IsNullOrWhiteSpace(label))
-                throw new ArgumentException("Experiment configuration label is required.", nameof(label));
+                throw Logging.ErrorOnce(
+                    new ArgumentException("Experiment configuration label is required.", nameof(label)),
+                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(ValidateLabel), label, "label_is_empty");
         }
     }
 }

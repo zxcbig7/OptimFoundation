@@ -30,13 +30,13 @@ namespace Tutorial
             // 唯一 production baseline/champion；experiment clone 它，prod 直接使用它。
             var productionBaseline = new CplexConfig
             {
-                epGap = 1e-6,
-                timeLimit = 120,
+                MipGap = 1e-6,
+                TimeLimit = 120,
             };
 
             // ── 2. 模型 ────────────────────────────────────────────
             var model = new OptModel("Canonical")
-                .AddVariables(engine => engine.BuildVars<VariableX_Produce>(data.set_Product, data.set_Date, data.set_Shift))
+                .AddVariables(engine => engine.BuildVars<VariableC_Produce>(data.set_Product, data.set_Date, data.set_Shift))
                 .AddVariables(engine => engine.BuildVars<VariableB_Setup>(data.set_Product, data.set_Date, data.set_Shift))
                 .AddVariables(engine => engine.BuildVars<VariableI_Batch>(data.set_Product, data.set_Date))
                 .AddObjective(engine => new ObjectiveFunction(data.set_Product, data.set_Date, data.set_Shift, data.parameter_UnitProfit, data.parameter_SetupCost).Build(engine))

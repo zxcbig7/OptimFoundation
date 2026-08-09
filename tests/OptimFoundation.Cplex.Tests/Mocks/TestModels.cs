@@ -19,13 +19,13 @@ namespace OptimFoundation.Cplex.Tests.Mocks
         public int N { get; set; }
     }
 
-    // 用於 BuildVars 前綴解析測試（命名天條：VariableB_/X_/I_ → Binary/Continuous/Integer）
+    // 用於 BuildVars 前綴解析測試（B → Binary；C → Continuous；I → Integer）
     internal class VariableB_Pick : VariableBase
     {
         public string S { get; set; } = "";
     }
 
-    internal class VariableX_Amt : VariableBase
+    internal class VariableC_Amt : VariableBase
     {
         public string S { get; set; } = "";
     }
@@ -35,23 +35,31 @@ namespace OptimFoundation.Cplex.Tests.Mocks
         public string S { get; set; } = "";
     }
 
-    internal class VariableX_ArcFlow : VariableBase
+    internal class VariableC_ArcFlow : VariableBase
     {
         public string NodeFrom { get; set; } = "";
         public string NodeTo { get; set; } = "";
     }
 
-    internal class VariableX_ArcFlowByDate : VariableBase
+    internal class VariableC_ArcFlowByDate : VariableBase
     {
         public string NodeFrom { get; set; } = "";
         public string NodeTo { get; set; } = "";
         public DateTime Date { get; set; }
     }
 
-    internal class VariableX_ArcFlowWrongArity : VariableBase
+    internal class VariableC_ArcFlowWrongArity : VariableBase
     {
         public string NodeFrom { get; set; } = "";
     }
+
+    internal class Set_Arc : SetRowBase
+    {
+        public string NodeFrom { get; set; } = "";
+        public string NodeTo { get; set; } = "";
+    }
+
+    internal class Constraint_Test : ConstraintBase { }
 
     // 用於 Parameter 測試
     internal class ParamX : ParameterBase

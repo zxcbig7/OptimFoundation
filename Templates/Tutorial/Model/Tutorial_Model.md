@@ -3,7 +3,7 @@
 Phase 1 產物。本範本刻意涵蓋框架**所有建模元素**，作為教學靶心：
 - **Set 三種元素型別**：string（Product、Machine）、DateTime（Date）、int（Shift）
 - **Param 多維**：1D / 2D / 3D 都有
-- **Var 三種型別 + 多維，且全部有用到**：`VariableX_`（continuous）/ `VariableB_`（binary）/ `VariableI_`（integer）
+- **Var 三種型別 + 多維，且全部有用到**：`VariableC_`（continuous）/ `VariableB_`（binary）/ `VariableI_`（integer）
 - **限制式三種**：`≤`（CreateLessEqual）/ `≥`（CreateGreatEqual）/ `=`（CreateEqual）
 
 ## 題目（去故事化）
@@ -35,7 +35,7 @@ Phase 1 產物。本範本刻意涵蓋框架**所有建模元素**，作為教�
 
 | 符號 | 型別 | 意義 | 程式類別 | 維度 |
 | --- | --- | --- | --- | --- |
-| $Produce_{Product,Date,Shift} \ge 0$ | continuous | 生產量 | `VariableX_Produce` | 3D |
+| $Produce_{Product,Date,Shift} \ge 0$ | continuous | 生產量 | `VariableC_Produce` | 3D |
 | $Setup_{Product,Date,Shift} \in \{0,1\}$ | binary | 是否開線 | `VariableB_Setup` | 3D |
 | $Batch_{Product,Date} \in \mathbb{Z}_{\ge 0}$ | integer | 每日生產批數 | `VariableI_Batch` | 2D |
 
@@ -65,7 +65,7 @@ $$\max \sum_{p,d,s} UnitProfit_{p} \cdot Produce_{p,d,s} \;-\; \sum_{p,d,s} Setu
 
 - Set：string ✔ DateTime ✔ int ✔
 - Param：1D ✔ 2D ✔ 3D ✔
-- Var：`X_` continuous（Produce）✔ `B_` binary（Setup）✔ `I_` integer（Batch）✔，皆有出現在約束/目標 ✔
+- Var：`C_` continuous（Produce）✔ `B_` binary（Setup）✔ `I_` integer（Batch）✔，皆有出現在約束/目標 ✔
 - 限制式：`≤`（Capacity/SetupLink）✔ `≥`（Demand）✔ `=`（BatchDef）✔
 - 每個 PARAM 都有 CSV 來源、無佔位；BigM 由數據推導
 - 日班 / 夜班產能不同 → 打破 shift 對稱，solver 較快證出最優（教學範本求解穩定性考量）

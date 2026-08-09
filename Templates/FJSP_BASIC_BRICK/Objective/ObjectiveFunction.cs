@@ -7,7 +7,7 @@ namespace FJSP_BASIC_BRICK
     {
         public void Build(OptEngine engine)
         {
-            engine.AddLHS(1.0, new VariableX_Makespan());
+            engine.AddLHS(1.0, new VariableC_Makespan());
             engine.CreateMinimize();
         }
     }

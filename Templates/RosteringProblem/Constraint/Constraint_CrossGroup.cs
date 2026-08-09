@@ -7,17 +7,17 @@ namespace RosteringProblem
     /// ShiftAssign_{date,employee,group} ≤ GroupMismatch_{date,employee}</summary>
     public sealed class Constraint_CrossGroup : ConstraintBase
     {
-        private readonly Set_Date dates;
-        private readonly Set_Employee employees;
+        private readonly List<DateTime> dates;
+        private readonly List<string> employees;
         private readonly List<Parameter_CrossGroup> crossGroup;
 
         public Constraint_CrossGroup(
-            Set_Date dates,
-            Set_Employee employees,
+            List<Set_Date> dates,
+            List<Set_Employee> employees,
             List<Parameter_CrossGroup> crossGroup)
         {
-            this.dates = dates;
-            this.employees = employees;
+            this.dates = dates.Select(row => row.Date).ToList();
+            this.employees = employees.Select(row => row.Employee).ToList();
             this.crossGroup = crossGroup;
         }
 
@@ -32,7 +32,7 @@ namespace RosteringProblem
                     {
                         engine.AddLHS(1.0, new VariableB_ShiftAssign { Date = date, Employee = employee, Group = rule.Group });
                         engine.AddRHS(1.0, new VariableB_GroupMismatch { Date = date, Employee = employee });
-                        engine.CreateLessEqual($"{ConstraintName}@{date:yyyy_MM_dd}@{employee}@{rule.Group}");
+                        engine.CreateLessEqual(this, date, employee, rule.Group);
                     }
                 }
         }

@@ -4,14 +4,14 @@
 
 ## 架構
 
-專案採 canonical 積木結構與單一 `Sudoku_SHC279` namespace：
+專案採 canonical row-data 結構與單一 `Sudoku_SHC279` namespace：
 
 - `Set/`：ROW、COLUMN、DIGIT、BLOCK、Given、BlockCell，一個 generator 型別一檔。
 - `Parameter/`：ExactlyOne、ObjCoef。
 - `Variable/`：`VariableB_CellDigit{Row,Column,Digit}`。
 - `Objective/`：逐項套用 `ObjCoef`；目前全為零，因此是純可行性問題。
 - `Constraint/`：CellValue、RowDigit、ColumnDigit、BlockDigit、Given 五組限制式。
-- `Data/`：canonical CSV 與唯一資料入口 `Dataload`；`raw/` 保留原始矩陣供 import。
+- `Data/`：Template CSV 與唯一資料入口 `Dataload`；`raw/` 保留原始矩陣供 import。
 - `Solution/`：讀解後逐條驗證 givens、列、欄與宮規則。
 - `Program.cs`：唯一組裝點，依序建立材料、`OptModel("Canonical")` 與執行環境。
 
@@ -19,7 +19,7 @@
 
 ## 資料
 
-求解模式只讀以下已就位的 canonical CSV：
+求解模式只讀以下已就位的 Template CSV：
 
 - `Set_Row.csv`、`Set_Column.csv`、`Set_Digit.csv`、`Set_Block.csv`
 - `Set_Given.csv`
@@ -40,7 +40,7 @@ dotnet run --project Templates\Sudoku_SHC279\Sudoku_SHC279.csproj
 # r2：warm-up 後比較 baseline / feasibility emphasis / aggressive probe（3 seeds、輪替順序）
 dotnet run --project Templates\Sudoku_SHC279\Sudoku_SHC279.csproj -- exp
 
-# 將 Data/raw/Puzzle_SHC279.csv 展開並 Export 成 canonical CSV
+# 將 Data/raw/Puzzle_SHC279.csv 展開並 Export 成 Template CSV
 dotnet run --project Templates\Sudoku_SHC279\Sudoku_SHC279.csproj -- import raw/Puzzle_SHC279
 ```
 

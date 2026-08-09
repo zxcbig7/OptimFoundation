@@ -4,11 +4,11 @@ using OptimFoundation.Core.IO;
 
 namespace FJSP_BASIC_BRICK
 {
-    /// <summary>資料唯一入口：把 Data/*.csv 讀成積木，再由 DataContext 驗證。</summary>
+    /// <summary>資料唯一入口：把 Data/*.csv 讀成 Set/Parameter rows，再由 DataContext 驗證 Parameter。</summary>
     public sealed partial class Dataload : DataContext
     {
         public List<Set_Lot> set_Lot = new();
-        public Set_Operation set_Operation = new();   // 行序＝加工順序（RoutePrecedence／MakespanDef 依此索引）
+        public List<Set_Operation> set_Operation = new();   // 行序＝加工順序（RoutePrecedence／MakespanDef 依此索引）
         public List<Set_Eqp> set_Eqp = new();
 
         public List<Parameter_ProcessTime> parameter_ProcessTime = new();
@@ -40,7 +40,7 @@ namespace FJSP_BASIC_BRICK
         //public Dataload() : this(new DbDataSource()) { }
         public Dataload() : this(new CsvDataSource()) { }
 
-        /// <summary>讀取已就位的 canonical CSV；此建構子只做資料載入。</summary>
+        /// <summary>讀取已就位的 Template CSV；此建構子只做資料載入。</summary>
         public Dataload(IDataSource source)
         {
             set_Lot = source.Load<Set_Lot>("Set_Lot");
@@ -101,7 +101,7 @@ namespace FJSP_BASIC_BRICK
             parameter_NoOverlapBackwardOffset.Add(new Parameter_NoOverlapBackwardOffset { QTY = 2.0 });
         }
 
-        /// <summary>把 import ctor 產生的資料輸出成求解流程使用的 canonical CSV。</summary>
+        /// <summary>把 import ctor 產生的資料輸出成求解流程使用的 Template CSV。</summary>
         public void Export()
         {
             CsvCtrl.WriteRows(set_Lot, "Set_Lot");

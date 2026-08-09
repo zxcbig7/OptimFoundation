@@ -7,8 +7,8 @@ namespace RosteringProblem
     /// + Σ_employee (DoubleOffLT2Penalty·DoubleOffLT2 + BelowAVGPenalty·BelowAVG + Weekend4DayPenalty·WeekendLT4)</summary>
     public sealed class ObjectiveFunction
     {
-        private readonly Set_Date dates;
-        private readonly Set_Employee employees;
+        private readonly List<DateTime> dates;
+        private readonly List<string> employees;
         private readonly double offOneDayPenalty;
         private readonly double sixDayPenalty;
         private readonly double groupMismatchPenalty;
@@ -18,8 +18,8 @@ namespace RosteringProblem
         private readonly double weekend4DayPenalty;
 
         public ObjectiveFunction(
-            Set_Date dates,
-            Set_Employee employees,
+            List<Set_Date> dates,
+            List<Set_Employee> employees,
             double offOneDayPenalty,
             double sixDayPenalty,
             double groupMismatchPenalty,
@@ -28,8 +28,8 @@ namespace RosteringProblem
             double belowAvgPenalty,
             double weekend4DayPenalty)
         {
-            this.dates = dates;
-            this.employees = employees;
+            this.dates = dates.Select(row => row.Date).ToList();
+            this.employees = employees.Select(row => row.Employee).ToList();
             this.offOneDayPenalty = offOneDayPenalty;
             this.sixDayPenalty = sixDayPenalty;
             this.groupMismatchPenalty = groupMismatchPenalty;
@@ -53,8 +53,8 @@ namespace RosteringProblem
             foreach (var employee in employees)
             {
                 engine.AddLHS(doubleOffLT2Penalty, new VariableB_DoubleOffLT2 { Employee = employee });
-                engine.AddLHS(belowAvgPenalty, new VariableX_BelowAVG { Employee = employee });
-                engine.AddLHS(weekend4DayPenalty, new VariableX_WeekendLT4 { Employee = employee });
+                engine.AddLHS(belowAvgPenalty, new VariableC_BelowAVG { Employee = employee });
+                engine.AddLHS(weekend4DayPenalty, new VariableC_WeekendLT4 { Employee = employee });
             }
 
             engine.CreateMinimize();

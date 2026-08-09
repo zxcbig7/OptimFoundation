@@ -6,12 +6,12 @@ namespace FJSP_BASIC_BRICK
     /// <summary>[Exclusive XOR] ∀ lot ∈ Lot, op ∈ Operation：Σ_eqp Assign_{lot,op,eqp} = ExactlyOne</summary>
     public sealed class Constraint_AssignOneEqp : ConstraintBase
     {
-        private readonly Set_Lot _lots;
-        private readonly Set_Operation _operations;
-        private readonly Set_Eqp _eqps;
+        private readonly List<Set_Lot> _lots;
+        private readonly List<Set_Operation> _operations;
+        private readonly List<Set_Eqp> _eqps;
         private readonly double _exactlyOne;
 
-        public Constraint_AssignOneEqp(Set_Lot lots, Set_Operation operations, Set_Eqp eqps, double exactlyOne)
+        public Constraint_AssignOneEqp(List<Set_Lot> lots, List<Set_Operation> operations, List<Set_Eqp> eqps, double exactlyOne)
         {
             _lots = lots;
             _operations = operations;
@@ -29,7 +29,7 @@ namespace FJSP_BASIC_BRICK
                         engine.AddLHS(1.0, new VariableB_Assign { Lot = lot, Operation = op, Eqp = eqp });
 
                     engine.AddRHS(_exactlyOne);
-                    engine.CreateEqual($"{ConstraintName}@{lot}@{op}");
+                    engine.CreateEqual(this, lot, op);
                 }
             }
         }

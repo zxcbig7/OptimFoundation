@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
-using System.Text;
 
 namespace OptimFoundation.Core
 {
@@ -13,13 +12,20 @@ namespace OptimFoundation.Core
         public static double SafeRatio(double numerator, double denominator, double magnitudeCeiling = 1e12, string context = null)
         {
             if (denominator == 0)
-                throw new InvalidOperationException($"{context ?? "Ratio"}: 除零 is not allowed.");
+                throw Logging.ErrorOnce(
+                    new InvalidOperationException($"{context ?? "Ratio"}: 除零 is not allowed."),
+                    "NUMERIC_RATIO_INVALID", "數值比例計算失敗", context ?? "Ratio", denominator, "division_by_zero");
 
             var value = numerator / denominator;
             if (double.IsNaN(value) || double.IsInfinity(value))
-                throw new InvalidOperationException($"{context ?? "Ratio"}: result must be finite.");
+                throw Logging.ErrorOnce(
+                    new InvalidOperationException($"{context ?? "Ratio"}: result must be finite."),
+                    "NUMERIC_RATIO_INVALID", "數值比例計算失敗", context ?? "Ratio", value, "result_not_finite");
             if (Math.Abs(value) > magnitudeCeiling)
-                throw new InvalidOperationException($"{context ?? "Ratio"}: result 過大; 門檻 {magnitudeCeiling}.");
+                throw Logging.ErrorOnce(
+                    new InvalidOperationException($"{context ?? "Ratio"}: result 過大; 門檻 {magnitudeCeiling}."),
+                    "NUMERIC_RATIO_INVALID", "數值比例計算失敗", context ?? "Ratio", value, "magnitude_ceiling_exceeded",
+                    $"ceiling={magnitudeCeiling}");
             return value;
         }
     }
@@ -27,7 +33,7 @@ namespace OptimFoundation.Core
     /// <summary>Common base for generated Set, Parameter, and Variable rows.</summary>
     public abstract class ModelElementBase
     {
-        internal const char KeySeparator = '@';
+        internal const char KeySeparator = ModelNaming.Separator;
         private static readonly ConcurrentDictionary<Type, PropertyInfo[]> Props = new();
 
         private static PropertyInfo[] GetProps(Type type) => Props.GetOrAdd(type, t =>
@@ -39,19 +45,29 @@ namespace OptimFoundation.Core
         {
             var properties = GetProps(GetType());
             if (values.Length != properties.Length)
-                throw new ArgumentException($"{GetType().Name} expects {properties.Length} values but received {values.Length}.");
+            {
+                string message = $"{GetType().Name} expects {properties.Length} values but received {values.Length}.";
+                throw Logging.ErrorOnce(
+                    new ArgumentException(message),
+                    "MODEL_ELEMENT_INIT_FAILED", "模型元素初始化失敗", nameof(InitClassBySets), GetType().Name,
+                    "arity_mismatch", $"type={GetType().Name} expected={properties.Length} actual={values.Length}");
+            }
 
             for (var index = 0; index < properties.Length; index++)
             {
-                var value = values[index];
-                if (value is string text) ValidateKeyToken($"{GetType().Name}.{properties[index].Name}", text);
+                string context = $"{GetType().Name}.{properties[index].Name}";
                 try
                 {
-                    properties[index].SetValue(this, ConvertValue(value, properties[index].PropertyType));
+                    object? converted = ConvertValue(values[index], properties[index].PropertyType);
+                    ModelNaming.Token(context, converted);
+                    properties[index].SetValue(this, converted);
                 }
                 catch (Exception ex) when (ex is FormatException || ex is OverflowException)
                 {
-                    throw new InvalidCastException($"Cannot convert {GetType().Name}.{properties[index].Name}.", ex);
+                    throw Logging.ErrorOnce(
+                        new InvalidCastException($"Cannot convert {context}.", ex),
+                        "MODEL_ELEMENT_INIT_FAILED", "模型元素初始化失敗", context, values[index],
+                        "conversion_failed", $"detail={ex.GetBaseException().Message}");
                 }
             }
         }
@@ -60,34 +76,33 @@ namespace OptimFoundation.Core
         {
             if (value == null) return null;
             if (targetType.IsInstanceOfType(value)) return value;
+            if (targetType == typeof(DateTime) && value is string text
+                && DateTime.TryParseExact(text, ModelNaming.DateFormat, CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out DateTime modelDate))
+                return modelDate;
             return Convert.ChangeType(value, targetType, CultureInfo.InvariantCulture);
         }
 
         internal static void ValidateKeyToken(string context, string value)
-        {
-            if (value?.Contains(KeySeparator) == true)
-                throw new ArgumentException($"{context} value '{value}' cannot contain reserved key separator '{KeySeparator}'.");
-        }
+            => ModelNaming.ValidateToken(context, value);
+
+        private protected string[] KeyParts()
+            => GetProps(GetType())
+                .Select(property => ModelNaming.Token($"{GetType().Name}.{property.Name}", property.GetValue(this)))
+                .ToArray();
 
         public override string ToString()
-        {
-            var values = GetProps(GetType()).Select(p => FormatKeyPart(p.GetValue(this))).ToArray();
-            return values.Length == 0
-                ? GetType().Name
-                : GetType().Name + KeySeparator + string.Join(KeySeparator, values);
-        }
-
-        private static string FormatKeyPart(object? value) => value switch
-        {
-            DateTime date => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
-            null => string.Empty,
-            _ => value.ToString() ?? string.Empty,
-        };
+            => ModelNaming.Compose(GetType().Name, KeyParts());
     }
 
     /// <summary>A Set row: an existing dimensional combination with no QTY.</summary>
-    public abstract class SetRowBase : ModelElementBase { }
+    public abstract class SetRowBase : ModelElementBase
+    {
+        // Set row 的字串形式＝它在變數 key 裡佔的那幾段，不含類別名 —— Why: 使用者會把 set row 直接內插進
+        // constraint 名與解答查詢 key，帶上類別名就與 BuildVars 反射屬性組出來的變數名對不起來，而那種錯只會
+        // 讓 TryGetValue 回 false、解答靜默變 0，不會報錯。
+        public override string ToString() => string.Join(KeySeparator, KeyParts());
+    }
 
     /// <summary>A Parameter row: a dimensional combination with generated QTY.</summary>
     public abstract class ParameterBase : ModelElementBase { }

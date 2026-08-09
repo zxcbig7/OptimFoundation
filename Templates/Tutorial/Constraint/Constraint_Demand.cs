@@ -30,11 +30,13 @@ namespace Tutorial
                 foreach (var date in dates)
                 {
                     foreach (var shift in shifts)
-                        engine.AddLHS(1.0, new VariableX_Produce { Product = product, Date = date, Shift = shift });
+                        engine.AddLHS(1.0, new VariableC_Produce { Product = product, Date = date, Shift = shift });
 
-                    var req = demand.First(d => d.Product == product && d.Date == date).QTY;
+                    var req = demand.FindParameterOrLog(
+                        d => d.Product == product && d.Date == date,
+                        product, date)?.QTY ?? 0.0;
                     engine.AddRHS(req);
-                    engine.CreateGreatEqual($"{ConstraintName}@{product}@{date:yyyy-MM-dd}");
+                    engine.CreateGreatEqual(this, product, date);
                 }
         }
     }

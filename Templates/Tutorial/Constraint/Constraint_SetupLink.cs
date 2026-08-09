@@ -29,9 +29,9 @@ namespace Tutorial
                 foreach (var date in dates)
                     foreach (var shift in shifts)
                     {
-                        engine.AddLHS(1.0, new VariableX_Produce { Product = product, Date = date, Shift = shift });
+                        engine.AddLHS(1.0, new VariableC_Produce { Product = product, Date = date, Shift = shift });
                         engine.AddRHS(bigM, new VariableB_Setup { Product = product, Date = date, Shift = shift });
-                        engine.CreateLessEqual($"{ConstraintName}@{product}@{date:yyyy-MM-dd}@{shift}");
+                        engine.CreateLessEqual(this, product, date, shift);
                     }
         }
     }

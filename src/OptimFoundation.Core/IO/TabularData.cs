@@ -12,17 +12,28 @@ namespace OptimFoundation.Core.IO
     {
         internal static DataTable ToDataTable(IEnumerable<string[]> records, string sourceDescription)
         {
-            if (records == null) throw new ArgumentNullException(nameof(records));
+            if (records == null)
+                throw Logging.ErrorOnce(
+                    new ArgumentNullException(nameof(records)),
+                    "TABULAR_DATA_INVALID", "表格資料不合法", nameof(ToDataTable), null, "records_are_null");
             var rows = records.Select(row => row?.ToArray()
-                ?? throw new InvalidDataException($"[{sourceDescription}] A CSV row cannot be null.")).ToArray();
+                ?? throw Logging.ErrorOnce(
+                    new InvalidDataException($"[{sourceDescription}] A CSV row cannot be null."),
+                    "TABULAR_DATA_INVALID", "表格資料不合法", sourceDescription, null, "row_is_null")).ToArray();
             if (rows.Length == 0)
-                throw new InvalidDataException($"[{sourceDescription}] CSV requires a header row.");
+                throw Logging.ErrorOnce(
+                    new InvalidDataException($"[{sourceDescription}] CSV requires a header row."),
+                    "TABULAR_DATA_INVALID", "表格資料不合法", sourceDescription, "<empty>", "header_is_missing");
 
             var headers = rows[0].Select(header => (header ?? string.Empty).Trim()).ToArray();
             if (headers.Length == 0 || headers.Any(string.IsNullOrEmpty))
-                throw new InvalidDataException($"[{sourceDescription}] CSV header cannot contain empty column names.");
+                throw Logging.ErrorOnce(
+                    new InvalidDataException($"[{sourceDescription}] CSV header cannot contain empty column names."),
+                    "TABULAR_DATA_INVALID", "表格資料不合法", sourceDescription, string.Join(",", headers), "header_contains_empty_column");
             if (headers.Distinct(StringComparer.OrdinalIgnoreCase).Count() != headers.Length)
-                throw new InvalidDataException($"[{sourceDescription}] CSV header contains duplicate column names.");
+                throw Logging.ErrorOnce(
+                    new InvalidDataException($"[{sourceDescription}] CSV header contains duplicate column names."),
+                    "TABULAR_DATA_INVALID", "表格資料不合法", sourceDescription, string.Join(",", headers), "header_contains_duplicate_column");
 
             var table = new DataTable();
             foreach (var header in headers) table.Columns.Add(header, typeof(string));
@@ -30,8 +41,10 @@ namespace OptimFoundation.Core.IO
             for (var rowIndex = 1; rowIndex < rows.Length; rowIndex++)
             {
                 if (rows[rowIndex].Length != headers.Length)
-                    throw new InvalidDataException(
-                        $"[{sourceDescription}] Row {rowIndex + 1} has {rows[rowIndex].Length} columns; expected {headers.Length}.");
+                    throw Logging.ErrorOnce(
+                        new InvalidDataException($"[{sourceDescription}] Row {rowIndex + 1} has {rows[rowIndex].Length} columns; expected {headers.Length}."),
+                        "TABULAR_DATA_INVALID", "表格資料不合法", sourceDescription, rowIndex + 1, "column_count_mismatch",
+                        $"actual={rows[rowIndex].Length} expected={headers.Length}");
                 var row = table.NewRow();
                 for (var columnIndex = 0; columnIndex < headers.Length; columnIndex++)
                     row[columnIndex] = rows[rowIndex][columnIndex] ?? string.Empty;
@@ -42,7 +55,10 @@ namespace OptimFoundation.Core.IO
 
         internal static IEnumerable<string[]> ToRecords(DataTable table)
         {
-            if (table == null) throw new ArgumentNullException(nameof(table));
+            if (table == null)
+                throw Logging.ErrorOnce(
+                    new ArgumentNullException(nameof(table)),
+                    "TABULAR_DATA_INVALID", "表格資料不合法", nameof(ToRecords), null, "table_is_null");
             yield return table.Columns.Cast<DataColumn>().Select(column => column.ColumnName).ToArray();
             foreach (DataRow row in table.Rows)
                 yield return row.ItemArray.Select(ToInvariantString).ToArray();

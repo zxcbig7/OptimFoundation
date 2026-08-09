@@ -8,7 +8,7 @@ namespace OptimFoundation.Core.IO
 {
     /// <summary>
     /// CSV 資料來源：包 CsvCtrl，檔案放 Data/ 資料夾。
-    /// 參數檔名自由（省略則 = 型別名），契約是欄位對得上 class（LoadParam 表頭缺欄即丟例外）；set 檔 = Set_{name}.csv。
+    /// 檔名省略時使用型別名；Set 與 Parameter 都依 CSV 表頭對應資料列的 public property，缺欄即丟例外。
     /// </summary>
     public sealed class CsvDataSource : IDataSource
     {
@@ -19,24 +19,38 @@ namespace OptimFoundation.Core.IO
         /// </summary>
         public CsvDataSource() => FolderDir.Data.CreateFolder();
 
-        /// <summary>從 <c>Data/{name}.csv</c> 載入完整 RFC4180 Set 資料列，包含必填表頭。</summary>
-        private IEnumerable<string[]> LoadRows(string name)
+        /// <summary>從 <c>Data/{fileName}</c> 載入完整 RFC4180 資料列，包含必填表頭；副檔名可省略。</summary>
+        private IEnumerable<string[]> LoadRows(string fileName)
         {
-            if (string.IsNullOrWhiteSpace(name)) throw new ArgumentNullException(nameof(name));
+            if (string.IsNullOrWhiteSpace(fileName))
+                throw Logging.ErrorOnce(
+                    new ArgumentNullException(nameof(fileName)),
+                    "CSV_SOURCE_INVALID", "CSV 資料來源不合法", nameof(LoadRows), fileName, "file_name_is_empty");
 
-            using var reader = new StreamReader(FolderDir.Data.GetFilePath(EnsureCsv(name)), Encoding.UTF8);
+            using var reader = new StreamReader(FolderDir.Data.GetFilePath(EnsureCsv(fileName)), Encoding.UTF8);
             foreach (var row in CsvCtrl.ParseCsv(reader))
                 yield return row;
         }
 
         /// <summary>將含 schema 的 CSV 載入為中立 DataTable，不映射至 Set 或 Parameter。</summary>
-        public DataTable LoadData(string name)
+        public DataTable LoadData(string fileName)
         {
-            if (string.IsNullOrWhiteSpace(name)) throw new ArgumentNullException(nameof(name));
-            return TabularData.ToDataTable(LoadRows(name), name);
+            if (string.IsNullOrWhiteSpace(fileName))
+                throw Logging.ErrorOnce(
+                    new ArgumentNullException(nameof(fileName)),
+                    "CSV_SOURCE_INVALID", "CSV 資料來源不合法", nameof(LoadData), fileName, "file_name_is_empty");
+            try
+            {
+                return TabularData.ToDataTable(LoadRows(fileName), fileName);
+            }
+            catch (Exception ex)
+            {
+                Logging.ErrorOnce(ex, "CSV_LOAD_FAILED", "公開 API 執行失敗", nameof(LoadData), fileName,
+                    ex.GetBaseException().Message);
+                throw;
+            }
         }
 
-        /// <summary>依 CSV 表頭與 Parameter 的 public property 對應，載入具型別 Parameter。</summary>
         private static string EnsureCsv(string fileName)
             => fileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) ? fileName : fileName + ".csv";
 
@@ -44,7 +58,7 @@ namespace OptimFoundation.Core.IO
 
     /// <summary>
     /// CSV 解輸出：包 CsvCtrl.WriteSolution，寫到 Solution/{變數型別名}.csv。
-    /// 輸出帶表頭，可直接由 CsvDataSource.LoadParam 讀回（round-trip）。
+    /// 輸出帶表頭；欄位相容時可由 IDataSource.Load&lt;T&gt; 讀回。
     /// </summary>
     public sealed class CsvSolutionSink : ISolutionSink
     {

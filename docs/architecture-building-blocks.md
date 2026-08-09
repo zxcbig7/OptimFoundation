@@ -17,9 +17,9 @@
 
 | 積木 | 白話 | 它回答什麼 | 範例（`Templates/Tutorial`） |
 |------|------|-----------|------|
-| **集合積木 Set** | 你有「哪些東西」 | 產品有哪些？機器、日期、班次？ | `Set_Product` = {Desk, Chair, Table} |
+| **Set 資料列** | 哪些索引或索引組合存在 | 產品有哪些？哪些弧可用？ | `Set_Product` 或 `Set_Arc(From,To)` |
 | **參數積木 Parameter** | 已知的「數字」 | 每件多少利潤？每班多少產能？ | `Parameter_Capacity`（每機每日每班工時上限） |
-| **變數積木 Variable** | 要「決定」的東西 | 每班生產多少？開不開線？ | `VariableX_Produce`（生產量）、`VariableB_Setup`（開不開線） |
+| **變數積木 Variable** | 要「決定」的東西 | 每班生產多少？開不開線？ | `VariableC_Produce`（生產量）、`VariableB_Setup`（開不開線） |
 | **限制式積木 Constraint** | 「規則」 | 不能超過產能、要滿足需求 | `Constraint_Capacity`（用量 ≤ 產能） |
 | **目標式** | 你要「最好的什麼」 | 利潤最大 | `ObjectiveFunction`（max 利潤 − 成本） |
 | **模型積木** | 把上面全部照順序組成一顆 | —— | `Model/TutorialModel.cs` |

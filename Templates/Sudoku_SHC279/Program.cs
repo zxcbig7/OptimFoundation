@@ -35,14 +35,14 @@ namespace Sudoku_SHC279
             // Experiment 從它 clone variants；正式求解直接使用它。
             var productionBaseline = new CplexConfig
             {
-                timeLimit = 30,
-                workThreads = 1,
-                parallelMode = 1,
-                randomSeed = 1,
+                TimeLimit = 30,
+                Threads = 1,
+                ParallelMode = 1,
+                Seed = 1,
             };
 
             // 2. 模型
-            var model = new OptModel("Canonical")
+            var model = new OptModel("Sudoku_SHC279")
                 .AddVariables(engine => engine.BuildVars<VariableB_CellDigit>(
                     data.set_Row,
                     data.set_Column,
@@ -83,25 +83,25 @@ namespace Sudoku_SHC279
                 var warmup = productionBaseline.Clone();
 
                 var baselineSeed1 = productionBaseline.Clone();
-                baselineSeed1.randomSeed = 1;
+                baselineSeed1.Seed = 1;
                 var feasibilitySeed1 = baselineSeed1.Clone();
                 feasibilitySeed1.Emphasis = 1;
                 var probeSeed1 = baselineSeed1.Clone();
-                probeSeed1.probe = 2;
+                probeSeed1.Probe = 2;
 
                 var baselineSeed2 = productionBaseline.Clone();
-                baselineSeed2.randomSeed = 2;
+                baselineSeed2.Seed = 2;
                 var feasibilitySeed2 = baselineSeed2.Clone();
                 feasibilitySeed2.Emphasis = 1;
                 var probeSeed2 = baselineSeed2.Clone();
-                probeSeed2.probe = 2;
+                probeSeed2.Probe = 2;
 
                 var baselineSeed3 = productionBaseline.Clone();
-                baselineSeed3.randomSeed = 3;
+                baselineSeed3.Seed = 3;
                 var feasibilitySeed3 = baselineSeed3.Clone();
                 feasibilitySeed3.Emphasis = 1;
                 var probeSeed3 = baselineSeed3.Clone();
-                probeSeed3.probe = 2;
+                probeSeed3.Probe = 2;
 
                 var result = new OptExperiment(
                         $"{Dataload.PuzzleName}-tuning-r2",

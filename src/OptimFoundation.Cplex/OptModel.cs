@@ -26,28 +26,37 @@ namespace OptimFoundation.Cplex
         /// <summary>Adds a variable-building step.</summary>
         public OptModel AddVariables(Action<OptEngine> build)
         {
-            _variableSteps.Add(build ?? throw new ArgumentNullException(nameof(build)));
+            _variableSteps.Add(build ?? throw Logging.ErrorOnce(
+                new ArgumentNullException(nameof(build)),
+                "MODEL_DEFINITION_INVALID", "模型定義不合法", nameof(AddVariables), Name, "build_action_is_null"));
             return this;
         }
 
         /// <summary>Adds an objective-building step.</summary>
         public OptModel AddObjective(Action<OptEngine> build)
         {
-            _objectiveSteps.Add(build ?? throw new ArgumentNullException(nameof(build)));
+            _objectiveSteps.Add(build ?? throw Logging.ErrorOnce(
+                new ArgumentNullException(nameof(build)),
+                "MODEL_DEFINITION_INVALID", "模型定義不合法", nameof(AddObjective), Name, "build_action_is_null"));
             return this;
         }
 
         /// <summary>Adds a constraint-building step.</summary>
         public OptModel AddConstraints(Action<OptEngine> build)
         {
-            _constraintSteps.Add(build ?? throw new ArgumentNullException(nameof(build)));
+            _constraintSteps.Add(build ?? throw Logging.ErrorOnce(
+                new ArgumentNullException(nameof(build)),
+                "MODEL_DEFINITION_INVALID", "模型定義不合法", nameof(AddConstraints), Name, "build_action_is_null"));
             return this;
         }
 
         /// <summary>Applies all recorded phases in variables, objective, constraints order.</summary>
         internal void ApplyTo(OptEngine engine)
         {
-            if (engine == null) throw new ArgumentNullException(nameof(engine));
+            if (engine == null)
+                throw Logging.ErrorOnce(
+                    new ArgumentNullException(nameof(engine)),
+                    "MODEL_APPLY_INVALID", "模型套用失敗", nameof(ApplyTo), Name, "engine_is_null");
 
             if (_variableSteps.Count == 0 && _objectiveSteps.Count == 0 && _constraintSteps.Count == 0)
                 Logging.Warn($"[MODEL_EMPTY] OptModel '{Name}' has no build phases; solving the empty model unchanged");

@@ -19,7 +19,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
         {
             if (!CplexAvailable) return;
 
-            var config = new CplexConfig { timeLimit = 30 };
+            var config = new CplexConfig { TimeLimit = 30 };
             var projectConfig = new ProjectConfig { EnableSolverLog = false };
             config.Seed = 7;        // 透過抽象旋鈕 tune（delegate 到 randomSeed）
             config.Emphasis = 2;    // delegate 到 mipEmphasis
@@ -77,7 +77,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             const double cap = 170;
 
             using var engine = new OptEngine(
-                new CplexConfig { timeLimit = 30 },
+                new CplexConfig { TimeLimit = 30 },
                 new ProjectConfig { EnableSolverLog = false });
             engine.Build();
             var items = System.Linq.Enumerable.Range(0, values.Length).Select(i => "i" + i).ToList();
@@ -128,7 +128,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
                 });
 
             string name = "cross-" + Guid.NewGuid().ToString("N");
-            var baseline = new CplexConfig { timeLimit = 30 };
+            var baseline = new CplexConfig { TimeLimit = 30 };
             var emphasis = baseline.Clone(); emphasis.Emphasis = 2;
             var threads = baseline.Clone(); threads.Threads = 1;
 
@@ -175,7 +175,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             try
             {
                 Experiment result = new OptExperiment(name, "one cell")
-                    .AddTrial(model, "only-config", new CplexConfig { timeLimit = 30 })
+                    .AddTrial(model, "only-config", new CplexConfig { TimeLimit = 30 })
                     .Run();
 
                 Trial trial = Assert.Single(result.Trials);
@@ -192,7 +192,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
         public void OptExperiment_AddTrialCollisionWithCrossProduct_Throws()
         {
             var model = new OptModel("Model1");
-            var config = new CplexConfig { timeLimit = 30 };
+            var config = new CplexConfig { TimeLimit = 30 };
             var experiment = new OptExperiment("collision", "duplicate final label")
                 .AddModel(model)
                 .AddConfig("baseline", config)

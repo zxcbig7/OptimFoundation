@@ -155,7 +155,10 @@ namespace OptimFoundation.Gurobi
                 ConstraintSense.LessEqual => GRB.LESS_EQUAL,
                 ConstraintSense.Equal => GRB.EQUAL,
                 ConstraintSense.GreaterEqual => GRB.GREATER_EQUAL,
-                _ => throw new ArgumentOutOfRangeException(nameof(sense))
+                _ => throw Logging.ErrorOnce(
+                    new ArgumentOutOfRangeException(nameof(sense)),
+                    "CONSTRAINT_SENSE_INVALID", "限制式方向不合法", nameof(AddConstraint), sense,
+                    "unsupported_constraint_sense")
             };
             var c = Model.AddConstr(lhs, grb, rhs, name);
             _constraints.Add(c);
@@ -197,7 +200,9 @@ namespace OptimFoundation.Gurobi
             }
             catch (Exception ex)
             {
-                Logging.Error($"[SOLVER_EXCEPTION] 求解器執行失敗 | solver=Gurobi exception={ex.GetType().FullName} reason={ex.GetBaseException().Message} result=rethrown");
+                Logging.ErrorOnce(
+                    ex, "SOLVER_EXCEPTION", "求解器執行失敗", nameof(SolveCore), "Gurobi",
+                    ex.GetBaseException().Message, $"exception={ex.GetType().FullName}");
                 throw;
             }
             finally
@@ -230,7 +235,7 @@ namespace OptimFoundation.Gurobi
                 RunTimeMs = solveTimer.Elapsed.TotalMilliseconds,
                 NodeCount = (ok && isMip) ? (long?)Model.NodeCount : null,
                 IterationCount = ok ? (long?)Model.IterCount : null,
-                VarCount = varCount,
+                VarCount = VariableCount,
                 ConstraintCount = _constraints.Count
             };
 
@@ -253,16 +258,41 @@ namespace OptimFoundation.Gurobi
             return ok;
         }
 
-        public override double GetObjectiveValue() => Model.ObjVal;
+        public override double GetObjectiveValue()
+            => ReadSolverValue(nameof(GetObjectiveValue), "Gurobi", () => Model.ObjVal);
 
-        public override double GetVariableValue(string name) => Variables[name].X;
+        public override double GetVariableValue(string name)
+            => ReadSolverValue(nameof(GetVariableValue), name, () => Variables[name].X);
+
+        private static double ReadSolverValue(string context, object value, Func<double> read)
+        {
+            try
+            {
+                return read();
+            }
+            catch (Exception ex)
+            {
+                Logging.ErrorOnce(ex, "SOLUTION_READ_FAILED", "公開 API 執行失敗", context, value,
+                    ex.GetBaseException().Message);
+                throw;
+            }
+        }
 
         public override void Dispose()
         {
-            Model?.Dispose();
-            _env?.Dispose();
-            Model = null;
-            _env = null;
+            try
+            {
+                Model?.Dispose();
+                _env?.Dispose();
+                Model = null;
+                _env = null;
+            }
+            catch (Exception ex)
+            {
+                Logging.ErrorOnce(ex, "SOLVER_DISPOSE_FAILED", "公開 API 執行失敗", nameof(Dispose), "Gurobi",
+                    ex.GetBaseException().Message);
+                throw;
+            }
         }
 
         #endregion
@@ -398,31 +428,37 @@ namespace OptimFoundation.Gurobi
     {
         public OptEngine(GurobiConfig config) : base(config) { }
 
+        private static NotSupportedException Missing(string context, object value = null)
+            => Logging.ErrorOnce(
+                new NotSupportedException("Gurobi DLL 未安裝"),
+                "SOLVER_UNAVAILABLE", "求解器不可用", context, value ?? "Gurobi",
+                "gurobi_dll_not_installed");
+
         protected override object AddVariable(string name, double lb, double ub, VarType type)
-            => throw new NotSupportedException("Gurobi DLL 未安裝");
+            => throw Missing(nameof(AddVariable), name);
 
         protected override object LinearExpr(IEnumerable<(double coef, object var)> terms)
-            => throw new NotSupportedException("Gurobi DLL 未安裝");
+            => throw Missing(nameof(LinearExpr));
 
         protected override object AddConstraint(string name, object lhs, ConstraintSense sense, double rhs)
-            => throw new NotSupportedException("Gurobi DLL 未安裝");
+            => throw Missing(nameof(AddConstraint), name);
 
         protected override object AddRangeConstraint(string name, object expr, double lb, double ub)
-            => throw new NotSupportedException("Gurobi DLL 未安裝");
+            => throw Missing(nameof(AddRangeConstraint), name);
 
         protected override void SetObjective(object expr, ObjectiveSense sense)
-            => throw new NotSupportedException("Gurobi DLL 未安裝");
+            => throw Missing(nameof(SetObjective), sense);
 
         protected override void SetVariableBounds(object variable, double? lb, double? ub)
-            => throw new NotSupportedException("Gurobi DLL 未安裝");
+            => throw Missing(nameof(SetVariableBounds));
 
         public override void Configuration(ISolverConfig config)
-            => throw new NotSupportedException("Gurobi DLL 未安裝");
+            => throw Missing(nameof(Configuration));
 
-        protected override void BuildCore()    => throw new NotSupportedException("Gurobi DLL 未安裝");
-        protected override bool SolveCore()    => throw new NotSupportedException("Gurobi DLL 未安裝");
-        public override double GetObjectiveValue()       => throw new NotSupportedException("Gurobi DLL 未安裝");
-        public override double GetVariableValue(string name) => throw new NotSupportedException("Gurobi DLL 未安裝");
+        protected override void BuildCore()    => throw Missing(nameof(BuildCore));
+        protected override bool SolveCore()    => throw Missing(nameof(SolveCore));
+        public override double GetObjectiveValue()       => throw Missing(nameof(GetObjectiveValue));
+        public override double GetVariableValue(string name) => throw Missing(nameof(GetVariableValue), name);
         public override void Dispose() { }
     }
 

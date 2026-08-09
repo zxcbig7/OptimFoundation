@@ -40,21 +40,21 @@ namespace FJSP_BASIC_BRICK
                 UserId = "SYSTEM",
             };
             // Production baseline/champion：tuning promotion 只更新這一個設定來源。
-            // Provenance：沿用重構前 demo 值——timeLimit=90 已實測兩種組裝寫法各 3 次，全數 Status=Optimal 且 ObjVal 一致。
+            // Provenance：沿用重構前 demo 值——TimeLimit=90 已實測兩種組裝寫法各 3 次，全數 Status=Optimal 且 ObjVal 一致。
             var productionBaseline = new CplexConfig
             {
-                epGap = 1e-4,
-                timeLimit = 90,
-                workThreads = 8,
+                MipGap = 1e-4,
+                TimeLimit = 90,
+                Threads = 8,
             };
 
             // ── 2. 模型（canonical：只用 hard constraint API）─────────
             var model = new OptModel("Canonical")
                 .AddVariables(engine => engine.BuildVars<VariableB_Assign>(data.set_Lot, data.set_Operation, data.set_Eqp))
                 .AddVariables(engine => engine.BuildVars<VariableB_Precede>(data.set_Lot, data.set_Operation, data.set_Lot, data.set_Operation))
-                .AddVariables(engine => engine.BuildVars<VariableX_Start>(data.set_Lot, data.set_Operation))
-                .AddVariables(engine => engine.BuildVars<VariableX_Complete>(data.set_Lot, data.set_Operation))
-                .AddVariables(engine => engine.BuildVars<VariableX_Makespan>())
+                .AddVariables(engine => engine.BuildVars<VariableC_Start>(data.set_Lot, data.set_Operation))
+                .AddVariables(engine => engine.BuildVars<VariableC_Complete>(data.set_Lot, data.set_Operation))
+                .AddVariables(engine => engine.BuildVars<VariableC_Makespan>())
                 .AddObjective(engine => new ObjectiveFunction().Build(engine))
                 .AddConstraints(engine => new Constraint_AssignOneEqp(data.set_Lot, data.set_Operation, data.set_Eqp, exactlyOne).Build(engine))
                 .AddConstraints(engine => new Constraint_CompleteDef(data.set_Lot, data.set_Operation, data.set_Eqp, data.parameter_ProcessTime).Build(engine))
@@ -72,9 +72,9 @@ namespace FJSP_BASIC_BRICK
                 var softModel = new OptModel("Canonical-SoftMakespanDemo")
                     .AddVariables(engine => engine.BuildVars<VariableB_Assign>(data.set_Lot, data.set_Operation, data.set_Eqp))
                     .AddVariables(engine => engine.BuildVars<VariableB_Precede>(data.set_Lot, data.set_Operation, data.set_Lot, data.set_Operation))
-                    .AddVariables(engine => engine.BuildVars<VariableX_Start>(data.set_Lot, data.set_Operation))
-                    .AddVariables(engine => engine.BuildVars<VariableX_Complete>(data.set_Lot, data.set_Operation))
-                    .AddVariables(engine => engine.BuildVars<VariableX_Makespan>())
+                    .AddVariables(engine => engine.BuildVars<VariableC_Start>(data.set_Lot, data.set_Operation))
+                    .AddVariables(engine => engine.BuildVars<VariableC_Complete>(data.set_Lot, data.set_Operation))
+                    .AddVariables(engine => engine.BuildVars<VariableC_Makespan>())
                     .AddObjective(engine => new ObjectiveFunction().Build(engine))
                     .AddConstraints(engine => new Constraint_AssignOneEqp(data.set_Lot, data.set_Operation, data.set_Eqp, exactlyOne).Build(engine))
                     .AddConstraints(engine => new Constraint_CompleteDef(data.set_Lot, data.set_Operation, data.set_Eqp, data.parameter_ProcessTime).Build(engine))
@@ -88,9 +88,9 @@ namespace FJSP_BASIC_BRICK
                 var infeasibleModel = new OptModel("Canonical-InfeasibleCapDemo")
                     .AddVariables(engine => engine.BuildVars<VariableB_Assign>(data.set_Lot, data.set_Operation, data.set_Eqp))
                     .AddVariables(engine => engine.BuildVars<VariableB_Precede>(data.set_Lot, data.set_Operation, data.set_Lot, data.set_Operation))
-                    .AddVariables(engine => engine.BuildVars<VariableX_Start>(data.set_Lot, data.set_Operation))
-                    .AddVariables(engine => engine.BuildVars<VariableX_Complete>(data.set_Lot, data.set_Operation))
-                    .AddVariables(engine => engine.BuildVars<VariableX_Makespan>())
+                    .AddVariables(engine => engine.BuildVars<VariableC_Start>(data.set_Lot, data.set_Operation))
+                    .AddVariables(engine => engine.BuildVars<VariableC_Complete>(data.set_Lot, data.set_Operation))
+                    .AddVariables(engine => engine.BuildVars<VariableC_Makespan>())
                     .AddObjective(engine => new ObjectiveFunction().Build(engine))
                     .AddConstraints(engine => new Constraint_AssignOneEqp(data.set_Lot, data.set_Operation, data.set_Eqp, exactlyOne).Build(engine))
                     .AddConstraints(engine => new Constraint_CompleteDef(data.set_Lot, data.set_Operation, data.set_Eqp, data.parameter_ProcessTime).Build(engine))

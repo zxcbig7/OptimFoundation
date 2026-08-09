@@ -29,10 +29,10 @@ namespace OptimFoundation.Cplex.Tests.Unit
             var names = VariableBuilder.GetVarNames<VarDG>([dates, groups]).ToList();
 
             Assert.Equal(4, names.Count);
-            Assert.Equal("VarDG@2026-01-01@D", names[0]);
-            Assert.Equal("VarDG@2026-01-01@N", names[1]);
-            Assert.Equal("VarDG@2026-01-02@D", names[2]);
-            Assert.Equal("VarDG@2026-01-02@N", names[3]);
+            Assert.Equal("VarDG@2026_01_01@D", names[0]);
+            Assert.Equal("VarDG@2026_01_01@N", names[1]);
+            Assert.Equal("VarDG@2026_01_02@D", names[2]);
+            Assert.Equal("VarDG@2026_01_02@N", names[3]);
         }
 
         [Fact]
@@ -57,7 +57,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
         {
             var lists = VariableBuilder.ConvertSetsToStringLists(
                 new List<DateTime> { new(2026, 3, 5) });
-            Assert.Equal("2026-03-05", lists[0][0]);
+            Assert.Equal("2026_03_05", lists[0][0]);
         }
 
         [Fact]
@@ -102,7 +102,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
                 new[] { 1, 2 },
                 new[] { new DateTime(2026, 3, 5) });
             Assert.Equal(new List<string> { "1", "2" }, lists[0]);
-            Assert.Equal("2026-03-05", lists[1][0]);
+            Assert.Equal("2026_03_05", lists[1][0]);
         }
 
         [Fact]

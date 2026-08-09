@@ -6,10 +6,10 @@ namespace FJSP_BASIC_BRICK
     /// <summary>[LB] ∀ lot ∈ Lot, 相鄰道次 (op → nextOp)：Start_{lot,nextOp} ≥ Complete_{lot,op}</summary>
     public sealed class Constraint_RoutePrecedence : ConstraintBase
     {
-        private readonly Set_Lot _lots;
-        private readonly Set_Operation _operations; // 行序＝加工順序
+        private readonly List<Set_Lot> _lots;
+        private readonly List<Set_Operation> _operations; // 行序＝加工順序
 
-        public Constraint_RoutePrecedence(Set_Lot lots, Set_Operation operations)
+        public Constraint_RoutePrecedence(List<Set_Lot> lots, List<Set_Operation> operations)
         {
             _lots = lots;
             _operations = operations;
@@ -24,9 +24,9 @@ namespace FJSP_BASIC_BRICK
                     var op = _operations[i];
                     var nextOp = _operations[i + 1];
 
-                    engine.AddLHS(1.0, new VariableX_Start { Lot = lot, Operation = nextOp });
-                    engine.AddRHS(1.0, new VariableX_Complete { Lot = lot, Operation = op });
-                    engine.CreateGreatEqual($"{ConstraintName}@{lot}@{op}@{nextOp}");
+                    engine.AddLHS(1.0, new VariableC_Start { Lot = lot, Operation = nextOp });
+                    engine.AddRHS(1.0, new VariableC_Complete { Lot = lot, Operation = op });
+                    engine.CreateGreatEqual(this, lot, op, nextOp);
                 }
             }
         }

@@ -37,7 +37,7 @@ namespace Sudoku_SHC279
                         });
 
                     engine.AddRHS(_exactlyOne);
-                    engine.CreateEqual($"{ConstraintName}@{column}@{digit}");
+                    engine.CreateEqual(this, column, digit);
                 }
         }
     }

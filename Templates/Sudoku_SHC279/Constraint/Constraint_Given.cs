@@ -27,7 +27,7 @@ namespace Sudoku_SHC279
                 });
 
                 engine.AddRHS(_exactlyOne);
-                engine.CreateEqual($"{ConstraintName}@{given.Row}@{given.Column}@{given.Digit}");
+                engine.CreateEqual(this, given.Row, given.Column, given.Digit);
             }
         }
     }

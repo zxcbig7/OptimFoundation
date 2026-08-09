@@ -1,6 +1,9 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using OptimFoundation.Core;
+using OptimFoundation.Core.IO;
 using OptimFoundation.Modeling;
 using Xunit;
 
@@ -37,6 +40,18 @@ namespace OptimFoundation.Cplex.Tests.Unit
     {
     }
 
+    [OptVar]
+    [OptDim<string>("GncItem")]
+    public partial class VariableC_GncAmount
+    {
+    }
+
+    [OptVar]
+    [OptDim<string>("GncItem")]
+    public partial class VariableI_GncCount
+    {
+    }
+
     public partial class GncDataload : DataContext
     {
         public List<Set_GncItem> GncItemSet = new();
@@ -52,6 +67,30 @@ namespace OptimFoundation.Cplex.Tests.Unit
     public class GeneratorNumericCoverageTests
     {
         [Fact]
+        public void CsvSource_Load_UsesExplicitFileNameInsteadOfRowClassName()
+        {
+            string fileName = $"product-master-{Guid.NewGuid():N}.csv";
+            string path = FolderDir.Data.GetFilePath(fileName);
+
+            try
+            {
+                CsvCtrl.WriteRows(
+                    new[] { new Set_GncItem { GncItem = "Desk" } },
+                    fileName);
+
+                IDataSource source = new CsvDataSource();
+                var rows = source.Load<Set_GncItem>(fileName);
+
+                var row = Assert.Single(rows);
+                Assert.Equal("Desk", row.GncItem);
+            }
+            finally
+            {
+                if (File.Exists(path)) File.Delete(path);
+            }
+        }
+
+        [Fact]
         public void OptParam_AlwaysGeneratesQty()
         {
             Assert.NotNull(typeof(Parameter_GncProfit).GetProperty("QTY"));
@@ -63,6 +102,20 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Equal(typeof(ParameterBase), typeof(Parameter_GncScalar).BaseType);
             Assert.NotNull(typeof(Parameter_GncScalar).GetProperty("QTY"));
             Assert.Null(typeof(Parameter_GncScalar).GetProperty("GncItem"));
+        }
+
+        [Fact]
+        public void OptVar_PrefixC_GeneratesContinuousVariableModel()
+        {
+            Assert.Equal(typeof(VariableBase), typeof(VariableC_GncAmount).BaseType);
+            Assert.NotNull(typeof(VariableC_GncAmount).GetProperty("GncItem"));
+        }
+
+        [Fact]
+        public void OptVar_PrefixI_GeneratesIntegerVariableModel()
+        {
+            Assert.Equal(typeof(VariableBase), typeof(VariableI_GncCount).BaseType);
+            Assert.NotNull(typeof(VariableI_GncCount).GetProperty("GncItem"));
         }
 
         [Theory]
@@ -90,6 +143,20 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             Assert.Single(result.ProfitRows);
             Assert.Equal(12.5, result.ProfitRows[0].Profit);
+        }
+
+        [Fact]
+        public void DuplicateSetKey_IsRegisteredByGeneratorAndRejected()
+        {
+            var ex = Assert.Throws<DataValidationException>(() =>
+                OptData.Load(() => new GncDataload(
+                    new[] { "Desk", "Desk" },
+                    new[] { new Parameter_GncProfit { GncItem = "Desk", Profit = 12.5 } })));
+
+            Assert.Contains(ex.Issues, issue =>
+                issue.Kind == DataIssueKind.DuplicateKey
+                && issue.Parameter == nameof(Set_GncItem)
+                && issue.Detail.Contains("duplicate Set key"));
         }
     }
 }

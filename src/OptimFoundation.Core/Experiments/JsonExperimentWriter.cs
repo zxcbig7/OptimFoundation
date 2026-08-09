@@ -8,7 +8,7 @@ namespace OptimFoundation.Core
 {
     /// <summary>
     /// 巢狀 JSON（含 config 快照與 convergence 軌跡），LLM 友善、機器可讀。
-    /// 使用 System.Text.Json（net48 相容）。同名實驗 Read → 合併 → Write 整檔。
+    /// 使用 System.Text.Json。同名實驗 Read → 合併 → Write 整檔。
     /// </summary>
     public sealed class JsonExperimentWriter : IExperimentWriter
     {

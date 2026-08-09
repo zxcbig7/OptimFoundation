@@ -18,7 +18,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
         {
             var config = new CplexConfig
             {
-                timeLimit = timeLimit,
+                TimeLimit = timeLimit,
             };
             var projectConfig = new ProjectConfig { EnableSolverLog = false };
             var engine = new OptEngine(config, projectConfig);
@@ -47,11 +47,11 @@ namespace OptimFoundation.Cplex.Tests.Integration
                     engine.CreateMinimize();
                 });
             using var project = new OptProject(model, projectName, retentionDays: 0)
-                .UseConfig(() => new CplexConfig { timeLimit = 30 })
+                .UseConfig(() => new CplexConfig { TimeLimit = 30 })
                 .UseConfig(() => projectConfig);
 
             Assert.True(project.Execute());
-            Assert.Equal(projectName, project.optEngine.ModelName);
+            Assert.Equal(projectName, project.Engine.ModelName);
 
             string logFile = Directory.GetFiles(FolderDir.Log.GetPath(), $"{projectName}_*.txt")
                 .OrderByDescending(File.GetLastWriteTimeUtc)
@@ -176,7 +176,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
             engine.BuildBVs<VarDG>(dates, emps);
 
-            Assert.Equal(50, engine.varCount);  // 10 × 5
+            Assert.Equal(50, engine.VariableCount);  // 10 × 5
         }
 
         [Fact(DisplayName = "GetSetVarNames 回傳正確格式")]
@@ -307,7 +307,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
                 .OnSolved(_ => calls++);
 
             Assert.False(project.Execute());
-            Assert.Equal(SolveStatus.Infeasible, project.optEngine.Status);
+            Assert.Equal(SolveStatus.Infeasible, project.Engine.Status);
             Assert.Equal(0, calls);
         }
 
@@ -320,7 +320,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
                 .UseConfig(() => new ProjectConfig { EnableSolverLog = false });
 
             Assert.True(project.Execute());
-            Assert.Equal(SolveStatus.Optimal, project.optEngine.Status);
+            Assert.Equal(SolveStatus.Optimal, project.Engine.Status);
             Assert.Contains("[MODEL_EMPTY]", ReadLatestLog(tag));
         }
 
@@ -334,7 +334,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             try
             {
                 Experiment result = new OptExperiment(tag, "empty model")
-                    .AddTrial(new OptModel("Empty"), "default", new CplexConfig { timeLimit = 30 })
+                    .AddTrial(new OptModel("Empty"), "default", new CplexConfig { TimeLimit = 30 })
                     .Run();
 
                 Trial trial = Assert.Single(result.Trials);

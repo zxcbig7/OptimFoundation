@@ -30,8 +30,8 @@ namespace RosteringProblem
             var doubleOffLT2 = engine.GetSetVarValues<VariableB_DoubleOffLT2>();
             var off1Day = engine.GetSetVarValues<VariableB_Off1Day>();
             var sixDayWork = engine.GetSetVarValues<VariableB_SixDayWork>();
-            var belowAvg = engine.GetSetVarValues<VariableX_BelowAVG>();
-            var weekendLT4 = engine.GetSetVarValues<VariableX_WeekendLT4>();
+            var belowAvg = engine.GetSetVarValues<VariableC_BelowAVG>();
+            var weekendLT4 = engine.GetSetVarValues<VariableC_WeekendLT4>();
 
             ValidateRules(data, assign, groupMismatch, nightToDay, doubleOffFlag, doubleOffLT2, off1Day, sixDayWork, belowAvg, weekendLT4);
 
@@ -66,22 +66,28 @@ namespace RosteringProblem
             double doubleOffThreshold = data.parameter_DoubleOffThreshold.Single().QTY;
             double weekendOffThreshold = data.parameter_WeekendOffThreshold.Single().QTY;
 
+            var dates = data.set_Date.Select(row => row.Date).ToList();
+            var employees = data.set_Employee.Select(row => row.Employee).ToList();
+            var shiftGroups = data.set_Group.Select(row => row.Group).ToList();
+
             // 1. FullfillDemand
-            foreach (var date in data.set_Date)
-                foreach (var group in data.set_Group)
+            foreach (var date in dates)
+                foreach (var group in shiftGroups)
                 {
                     if (group == "O") continue;
-                    double total = data.set_Employee.Sum(e => Assign(assign, date, e, group));
-                    double demand = data.parameter_ShiftDemand.FirstOrDefault(x => x.Date == date && x.Group == group)?.QTY ?? 0.0;
+                    double total = employees.Sum(e => Assign(assign, date, e, group));
+                    double demand = data.parameter_ShiftDemand.FindParameterOrLog(
+                        x => x.Date == date && x.Group == group,
+                        date, group)?.QTY ?? 0.0;
                     if (Math.Abs(total - demand) > Tolerance)
                         throw new InvalidOperationException($"FullfillDemand 違反：{date:yyyy-MM-dd}/{group} 實際 {total}，需求 {demand}。");
                 }
 
             // 2. OneGroup
-            foreach (var date in data.set_Date)
-                foreach (var employee in data.set_Employee)
+            foreach (var date in dates)
+                foreach (var employee in employees)
                 {
-                    double total = data.set_Group.Sum(g => Assign(assign, date, employee, g));
+                    double total = shiftGroups.Sum(g => Assign(assign, date, employee, g));
                     if (Math.Abs(total - one) > Tolerance)
                         throw new InvalidOperationException($"OneGroup 違反：{employee}@{date:yyyy-MM-dd} 共排入 {total} 個班別，預期恰好 1 個。");
                 }
@@ -92,8 +98,8 @@ namespace RosteringProblem
                     throw new InvalidOperationException($"PreAssign 違反：{p.Employee}@{p.Date:yyyy-MM-dd} 未依預排班指派為 {p.Group}。");
 
             // 4. CrossGroup
-            foreach (var date in data.set_Date)
-                foreach (var employee in data.set_Employee)
+            foreach (var date in dates)
+                foreach (var employee in employees)
                 {
                     double mismatch = groupMismatch.TryGetValue(new VariableB_GroupMismatch { Date = date, Employee = employee }.ToString(), out var gm) ? gm : 0.0;
                     foreach (var rule in data.parameter_CrossGroup.Where(p => p.Employee == employee))
@@ -102,10 +108,10 @@ namespace RosteringProblem
                 }
 
             // 5. SixDayWork
-            foreach (var date in data.set_Date)
-                foreach (var employee in data.set_Employee)
+            foreach (var date in dates)
+                foreach (var employee in employees)
                 {
-                    var window = data.set_Date.Where(sd => date.AddDays(-sixDayWindow) < sd && sd <= date).ToList();
+                    var window = dates.Where(sd => date.AddDays(-sixDayWindow) < sd && sd <= date).ToList();
                     if (window.Count < sixDayWindow) continue;
 
                     double flag = sixDayWork.TryGetValue(new VariableB_SixDayWork { Date = date, Employee = employee }.ToString(), out var sw) ? sw : 0.0;
@@ -119,10 +125,10 @@ namespace RosteringProblem
                 }
 
             // 6. NightToDay
-            foreach (var date in data.set_Date)
-                foreach (var employee in data.set_Employee)
+            foreach (var date in dates)
+                foreach (var employee in employees)
                 {
-                    var window = data.set_Date.Where(sd => date.AddDays(-nightToDayWindow) < sd && sd <= date).ToList();
+                    var window = dates.Where(sd => date.AddDays(-nightToDayWindow) < sd && sd <= date).ToList();
                     if (window.Count < nightToDayWindow) continue;
 
                     var preDate = date.AddDays(-1);
@@ -137,10 +143,10 @@ namespace RosteringProblem
                 }
 
             // 7. OffOneDay（做休做）
-            foreach (var date in data.set_Date)
-                foreach (var employee in data.set_Employee)
+            foreach (var date in dates)
+                foreach (var employee in employees)
                 {
-                    var window = data.set_Date.Where(sd => date.AddDays(-offOneDayWindow) < sd && sd <= date).ToList();
+                    var window = dates.Where(sd => date.AddDays(-offOneDayWindow) < sd && sd <= date).ToList();
                     if (window.Count < offOneDayWindow) continue;
 
                     var preDate = date.AddDays(-1);
@@ -154,34 +160,34 @@ namespace RosteringProblem
                 }
 
             // 8. BelowAVG
-            double allShift = data.set_Employee.Count * data.set_Date.Count;
+            double allShift = employees.Count * dates.Count;
             double allDemand = data.parameter_ShiftDemand.Where(w => w.Group != "O").Sum(s => s.QTY);
-            double avgOff = Math.Floor((allShift - allDemand) / data.set_Employee.Count) - 1;
-            foreach (var employee in data.set_Employee)
+            double avgOff = Math.Floor((allShift - allDemand) / employees.Count) - 1;
+            foreach (var employee in employees)
             {
-                double offCount = data.set_Date.Sum(d => Assign(assign, d, employee, "O"));
-                double gap = belowAvg.TryGetValue(new VariableX_BelowAVG { Employee = employee }.ToString(), out var ba) ? ba : 0.0;
+                double offCount = dates.Sum(d => Assign(assign, d, employee, "O"));
+                double gap = belowAvg.TryGetValue(new VariableC_BelowAVG { Employee = employee }.ToString(), out var ba) ? ba : 0.0;
                 if (offCount + gap < avgOff - Tolerance)
                     throw new InvalidOperationException($"BelowAVG 違反：{employee} off={offCount} gap={gap} avgOff={avgOff}。");
             }
 
             // 9. WeekendLT4
-            var weekends = data.set_Date.Where(d => d.DayOfWeek == DayOfWeek.Saturday || d.DayOfWeek == DayOfWeek.Sunday).ToList();
-            foreach (var employee in data.set_Employee)
+            var weekends = dates.Where(d => d.DayOfWeek == DayOfWeek.Saturday || d.DayOfWeek == DayOfWeek.Sunday).ToList();
+            foreach (var employee in employees)
             {
                 double weekendOff = weekends.Sum(d => Assign(assign, d, employee, "O"));
-                double gap = weekendLT4.TryGetValue(new VariableX_WeekendLT4 { Employee = employee }.ToString(), out var wl) ? wl : 0.0;
+                double gap = weekendLT4.TryGetValue(new VariableC_WeekendLT4 { Employee = employee }.ToString(), out var wl) ? wl : 0.0;
                 if (gap + weekendOff < weekendOffThreshold - Tolerance)
                     throw new InvalidOperationException($"WeekendLT4 違反：{employee} weekendOff={weekendOff} gap={gap} threshold={weekendOffThreshold}。");
             }
 
             // 10. DoubleOffLT2
-            foreach (var date in data.set_Date)
+            foreach (var date in dates)
             {
-                var window = data.set_Date.Where(sd => date.AddDays(-doubleOffWindow) < sd && sd <= date).ToList();
+                var window = dates.Where(sd => date.AddDays(-doubleOffWindow) < sd && sd <= date).ToList();
                 if (window.Count < 2) continue;
 
-                foreach (var employee in data.set_Employee)
+                foreach (var employee in employees)
                 {
                     double flag = doubleOffFlag.TryGetValue(new VariableB_DoubleOffFlag { Date = date, Employee = employee }.ToString(), out var df) ? df : 0.0;
                     double rhs;
@@ -204,9 +210,9 @@ namespace RosteringProblem
                 }
             }
 
-            foreach (var employee in data.set_Employee)
+            foreach (var employee in employees)
             {
-                double flagSum = data.set_Date.Sum(d => doubleOffFlag.TryGetValue(new VariableB_DoubleOffFlag { Date = d, Employee = employee }.ToString(), out var df) ? df : 0.0);
+                double flagSum = dates.Sum(d => doubleOffFlag.TryGetValue(new VariableB_DoubleOffFlag { Date = d, Employee = employee }.ToString(), out var df) ? df : 0.0);
                 double lt2 = doubleOffLT2.TryGetValue(new VariableB_DoubleOffLT2 { Employee = employee }.ToString(), out var l2) ? l2 : 0.0;
                 if (flagSum + doubleOffThreshold * lt2 < doubleOffThreshold - Tolerance)
                     throw new InvalidOperationException($"DoubleOffLT2（彙總式）違反：{employee} flagSum={flagSum} lt2={lt2}。");
@@ -216,10 +222,14 @@ namespace RosteringProblem
         /// <summary>依日期列印每位員工的班別（O = 休假）。</summary>
         public void Print()
         {
-            foreach (var employee in data.set_Employee)
+            var dates = data.set_Date.Select(row => row.Date).ToList();
+            var employees = data.set_Employee.Select(row => row.Employee).ToList();
+            var shiftGroups = data.set_Group.Select(row => row.Group).ToList();
+
+            foreach (var employee in employees)
             {
-                var groups = data.set_Date.Select(date =>
-                    data.set_Group.FirstOrDefault(g => Assign(assign, date, employee, g) > 0.5) ?? "?");
+                var groups = dates.Select(date =>
+                    shiftGroups.FirstOrDefault(g => Assign(assign, date, employee, g) > 0.5) ?? "?");
                 Console.WriteLine($"{employee}: {string.Join(" ", groups)}");
             }
         }

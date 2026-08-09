@@ -3,15 +3,15 @@ using OptimFoundation.Core.IO;
 
 namespace RosteringProblem
 {
-    /// <summary>資料唯一入口：把 Data/*.csv 讀成積木，再由 DataContext 驗證。</summary>
+    /// <summary>資料唯一入口：把 Data/*.csv 讀成 Set/Parameter rows，再由 DataContext 驗證 Parameter。</summary>
     public sealed partial class Dataload : DataContext
     {
         /// <summary>班別群組列舉，只用於 import 模式產生 Set_Group 的固定成員順序（O,D,E,N,C）。</summary>
         private enum GroupE { O, D, E, N, C }
 
-        public Set_Employee set_Employee = new();
-        public Set_Group set_Group = new();
-        public Set_Date set_Date = new();
+        public List<Set_Employee> set_Employee = new();
+        public List<Set_Group> set_Group = new();
+        public List<Set_Date> set_Date = new();
 
         public List<Parameter_ShiftDemand> parameter_ShiftDemand = new();
         public List<Parameter_CrossGroup> parameter_CrossGroup = new();
@@ -41,9 +41,9 @@ namespace RosteringProblem
         /// <summary>標準接口：一行載一顆，只讀不算。換 CSV / Oracle / 記憶體只換 source。</summary>
         public Dataload(IDataSource source)
         {
-            set_Employee.Load(source, "Set_Employee");
-            set_Group.Load(source, "Set_Group");
-            set_Date.Load(source, "Set_Date");
+            set_Employee = source.Load<Set_Employee>("Set_Employee");
+            set_Group = source.Load<Set_Group>("Set_Group");
+            set_Date = source.Load<Set_Date>("Set_Date");
 
             parameter_ShiftDemand = source.Load<Parameter_ShiftDemand>("Parameter_ShiftDemand");
             parameter_CrossGroup = source.Load<Parameter_CrossGroup>("Parameter_CrossGroup");
@@ -191,9 +191,9 @@ namespace RosteringProblem
                 new Parameter_PreAssign { Date = new DateTime(2026, 1, 2), Employee = "E3", Group = "E" },
             };
 
-            set_Employee.LoadFrom(employeeNames);
-            set_Group.LoadFrom(groupNames);
-            set_Date.LoadFrom(dateList);
+            set_Employee = employeeNames.Select(Employee => new Set_Employee { Employee = Employee }).ToList();
+            set_Group = groupNames.Select(Group => new Set_Group { Group = Group }).ToList();
+            set_Date = dateList.Select(Date => new Set_Date { Date = Date }).ToList();
 
             parameter_ShiftDemand = shiftDemand;
             parameter_CrossGroup = crossGroup;
@@ -218,12 +218,12 @@ namespace RosteringProblem
             parameter_Weekend4DayPenalty.Add(new Parameter_Weekend4DayPenalty { QTY = weekend4DayPenalty });
         }
 
-        /// <summary>把 import ctor 產生的資料輸出成求解流程使用的 canonical CSV。</summary>
+        /// <summary>把 import ctor 產生的資料輸出成求解流程使用的 Template CSV。</summary>
         public void Export()
         {
-            CsvCtrl.WriteSet(set_Employee, "Set_Employee");
-            CsvCtrl.WriteSet(set_Group, "Set_Group");
-            CsvCtrl.WriteSet(set_Date, "Set_Date");
+            CsvCtrl.WriteRows(set_Employee, "Set_Employee");
+            CsvCtrl.WriteRows(set_Group, "Set_Group");
+            CsvCtrl.WriteRows(set_Date, "Set_Date");
 
             CsvCtrl.WriteRows(parameter_ShiftDemand, "Parameter_ShiftDemand");
             CsvCtrl.WriteRows(parameter_CrossGroup, "Parameter_CrossGroup");

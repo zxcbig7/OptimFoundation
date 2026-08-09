@@ -35,7 +35,7 @@
 | Operation | 作業道次（Set_Operation.csv 行序 = 加工順序） | OP1..OP{M}（預設 3） | `List<string>` / `string[]` |
 | Eqp | 機台 | EQP1..EQP{K}（預設 4） | `List<string>` / `string[]` |
 
-Set 由 `IDataSource.LoadSet` 讀入（CSV = `Data/Set_{Name}.csv`，一行一成員、無表頭）；`Dataload` 載入時檢查 parameter 出現的值 ⊆ 對應 set，失同步即 fail fast。
+Set 與 Parameter 都由 `IDataSource.Load<T>` 讀入；CSV 必須有與 generated properties 對應的表頭。`DataContext` 自動檢查兩者的 duplicate key，但不推導 Parameter→Set 關聯；Set-driven lookup 使用 `FindParameterOrLog`，缺值只留 Warning。
 
 ## PARAM
 
@@ -66,7 +66,7 @@ BigM 推導：`Σ_{lot,op} max_eqp ProcessTime`（最壞情況全序列排程長
 | Makespan | 最晚完工時間（小時） | -（單一成員 set） | Continuous | 0 | INFTY |
 
 轉譯 metadata：
-- `VariableB_Assign`、`VariableX_Start`、`VariableX_Complete`、`VariableB_Precede`、`VariableX_Makespan`
+- `VariableB_Assign`、`VariableC_Start`、`VariableC_Complete`、`VariableB_Precede`、`VariableC_Makespan`
 - Precede 以 (Lot, Operation, Lot, Operation) 全笛卡兒積建立；constraint 只引用 lotA < lotB（字典序）的跨批次組合，其餘為未引用變數（presolve 自動剪除）
 - Makespan 為 scalar：以單一成員 set（如 `["Total"]`）建立
 

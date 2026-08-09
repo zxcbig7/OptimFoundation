@@ -6,5 +6,5 @@ namespace FJSP_BASIC_BRICK
     [OptVar]
     [OptDim<string>("Lot")]
     [OptDim<string>("Operation")]
-    public sealed partial class VariableX_Complete { }
+    public sealed partial class VariableC_Complete { }
 }

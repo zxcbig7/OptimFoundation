@@ -32,8 +32,29 @@ namespace OptimFoundation.Core
         /// <param name="note">選填備註</param>
         public static Trial Capture(ISolverEngine engine, string label, Func<bool> solveAction, string note = null)
         {
-            if (engine == null) throw new ArgumentNullException(nameof(engine));
-            if (solveAction == null) throw new ArgumentNullException(nameof(solveAction));
+            if (engine == null)
+                throw Logging.ErrorOnce(
+                    new ArgumentNullException(nameof(engine)),
+                    "TRIAL_CAPTURE_INVALID", "實驗紀錄擷取失敗", nameof(Capture), label, "engine_is_null");
+            if (solveAction == null)
+                throw Logging.ErrorOnce(
+                    new ArgumentNullException(nameof(solveAction)),
+                    "TRIAL_CAPTURE_INVALID", "實驗紀錄擷取失敗", nameof(Capture), label, "solve_action_is_null");
+
+            try
+            {
+                return CaptureCore(engine, label, solveAction, note);
+            }
+            catch (Exception ex)
+            {
+                Logging.ErrorOnce(ex, "TRIAL_CAPTURE_FAILED", "公開 API 執行失敗", nameof(Capture), label,
+                    ex.GetBaseException().Message);
+                throw;
+            }
+        }
+
+        private static Trial CaptureCore(ISolverEngine engine, string label, Func<bool> solveAction, string note)
+        {
 
             var snapshot = ConfigSnapshot.From(engine.Config);
 

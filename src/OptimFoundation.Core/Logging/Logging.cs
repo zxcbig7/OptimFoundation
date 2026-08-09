@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Text;
 
@@ -11,6 +12,7 @@ namespace OptimFoundation.Core
     /// </summary>
     public static class Logging
     {
+        private const string ErrorLoggedDataKey = "OptimFoundation.ErrorLogged";
         private static readonly string _logDir = FolderDir.Log.GetPath();
         private static string _logFile = FolderDir.Log.GetFilePath($"Log_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.txt");
         private static readonly object _lock = new object();
@@ -63,6 +65,57 @@ namespace OptimFoundation.Core
 
         /// <summary>錯誤：通常伴隨例外拋出，訊息格式為 [ERROR_CODE] 說明 | key=value。</summary>
         public static void Error(string message) => Write("ERROR", message);
+
+        /// <summary>
+        /// 記錄框架即將中止的例外。同一個例外物件只會記錄一次，外層公開 API
+        /// 可安全地再次呼叫後用 <c>throw;</c> 原樣拋出。
+        /// </summary>
+        public static TException ErrorOnce<TException>(
+            TException exception,
+            string eventCode,
+            string description,
+            string context,
+            object value,
+            string reason,
+            string details = null)
+            where TException : Exception
+        {
+            lock (exception.Data)
+            {
+                if (exception.Data.Contains(ErrorLoggedDataKey))
+                    return exception;
+
+                exception.Data[ErrorLoggedDataKey] = true;
+            }
+
+            string code = NormalizeEventCode(eventCode);
+            string extra = string.IsNullOrWhiteSpace(details) ? string.Empty : " " + FormatField(details);
+            Error($"[{code}] {description} | context={FormatField(context)} value={FormatField(value)} reason={FormatField(reason)}{extra} result=aborted");
+            return exception;
+        }
+
+        private static string NormalizeEventCode(string eventCode)
+        {
+            string code = (eventCode ?? "FRAMEWORK_ERROR").Trim();
+            if (code.StartsWith("[", StringComparison.Ordinal)) code = code.Substring(1);
+            if (code.EndsWith("]", StringComparison.Ordinal)) code = code.Substring(0, code.Length - 1);
+            return string.IsNullOrWhiteSpace(code) ? "FRAMEWORK_ERROR" : code;
+        }
+
+        private static string FormatField(object value)
+        {
+            string text;
+            if (value == null)
+                text = "<null>";
+            else if (value is IFormattable formattable)
+                text = formattable.ToString(null, CultureInfo.InvariantCulture) ?? "<null>";
+            else
+                text = value.ToString() ?? "<null>";
+
+            return text
+                .Replace("\r", "\\r")
+                .Replace("\n", "\\n");
+        }
 
         /// <summary>
         /// 印訊息並附上 Stopwatch 的經過時間。

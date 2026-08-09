@@ -20,7 +20,7 @@ namespace Sudoku_SHC279
 
         public Dataload() : this(new CsvDataSource()) { }
 
-        /// <summary>讀取已就位的 canonical CSV；此建構子只做資料載入。</summary>
+        /// <summary>讀取已就位的 Template CSV；此建構子只做資料載入。</summary>
         public Dataload(IDataSource source)
         {
             set_Row = source.Load<Set_Row>("Set_Row");
@@ -76,7 +76,7 @@ namespace Sudoku_SHC279
             set_Given = givens.Select(x => new Set_Given { Row = x.Row, Column = x.Column, Digit = x.Digit }).ToList();
         }
 
-        /// <summary>把 import ctor 產生的資料輸出成求解流程使用的 canonical CSV。</summary>
+        /// <summary>把 import ctor 產生的資料輸出成求解流程使用的 Template CSV。</summary>
         public void Export()
         {
             CsvCtrl.WriteRows(set_Row, "Set_Row");

@@ -49,13 +49,13 @@ namespace RosteringProblem
                 ExportMPS = true,
             };
             // 唯一 production baseline/champion；experiment clone 它，prod 直接使用它。
-            // Provenance：沿用原始 Template_CPLEX 的手動設定（epGap=0.03, timeLimit=100, workThreads=10），
+            // Provenance：沿用原始 Template_CPLEX 的手動設定（MipGap=0.03, TimeLimit=100, Threads=10），
             // 尚未經過 §8 Tuning 流程重新驗證；日後 promotion 時同步更新本註解與 TuningHistory.md。
             var productionBaseline = new CplexConfig
             {
-                epGap = 0.03,
-                timeLimit = 100,
-                workThreads = 10,
+                MipGap = 0.03,
+                TimeLimit = 100,
+                Threads = 10,
             };
 
             // ── 2. 模型 ────────────────────────────────────────────
@@ -67,8 +67,8 @@ namespace RosteringProblem
                 .AddVariables(engine => engine.BuildVars<VariableB_DoubleOffLT2>(data.set_Employee))
                 .AddVariables(engine => engine.BuildVars<VariableB_Off1Day>(data.set_Date, data.set_Employee))
                 .AddVariables(engine => engine.BuildVars<VariableB_SixDayWork>(data.set_Date, data.set_Employee))
-                .AddVariables(engine => engine.BuildVars<VariableX_BelowAVG>(data.set_Employee))
-                .AddVariables(engine => engine.BuildVars<VariableX_WeekendLT4>(data.set_Employee))
+                .AddVariables(engine => engine.BuildVars<VariableC_BelowAVG>(data.set_Employee))
+                .AddVariables(engine => engine.BuildVars<VariableC_WeekendLT4>(data.set_Employee))
                 .AddObjective(engine => new ObjectiveFunction(
                     data.set_Date,
                     data.set_Employee,
@@ -104,17 +104,42 @@ namespace RosteringProblem
             // 模式 2：exp——掃 solver 設定，不做正式求解
             if (isExperiment)
             {
-                var baseline = productionBaseline.Clone();
-                var feasible = baseline.Clone();
-                feasible.Emphasis = 1;
-                var optimal = baseline.Clone();
-                optimal.Emphasis = 2;
+                // S2 R0 校準：環境已定版（Threads=10, ParallelMode=1），baseline × 5 tuning seeds 量 θ 與剖面。
+                // seeds 6/7/8 保留為 holdout，全程不參與調參。
+                var warmup = productionBaseline.Clone();
+                warmup.ParallelMode = 1;
 
-                var result = new OptExperiment("RosteringProblem-tuning-r1", "baseline vs emphasis=feasible vs emphasis=optimal")
+                CplexConfig Seeded(int seed)
+                {
+                    var config = productionBaseline.Clone();
+                    config.ParallelMode = 1;
+                    config.Seed = seed;
+                    return config;
+                }
+
+                // S3 R3：剖面 Dual-bound → 候選 Symmetry=3（同質員工的對稱性消除）。一輪一顆，seed 為共同因子。
+                CplexConfig SymmetryBreaking(int seed)
+                {
+                    var config = Seeded(seed);
+                    config.Symmetry = 3;
+                    return config;
+                }
+
+                var result = new OptExperiment(
+                        "RosteringProblem-tuning-r3",
+                        "S3 R3: baseline vs Symmetry=3 x 5 seeds, rotated order")
                     .AddModel(model)
-                    .AddConfig("r1-baseline", baseline)
-                    .AddConfig("r1-emphasis=feasible", feasible)
-                    .AddConfig("r1-emphasis=optimal", optimal)
+                    .AddConfig("warmup-exclude", warmup)
+                    .AddConfig("r3-s1-baseline", Seeded(1))
+                    .AddConfig("r3-s1-symmetry3", SymmetryBreaking(1))
+                    .AddConfig("r3-s2-symmetry3", SymmetryBreaking(2))
+                    .AddConfig("r3-s2-baseline", Seeded(2))
+                    .AddConfig("r3-s3-baseline", Seeded(3))
+                    .AddConfig("r3-s3-symmetry3", SymmetryBreaking(3))
+                    .AddConfig("r3-s4-symmetry3", SymmetryBreaking(4))
+                    .AddConfig("r3-s4-baseline", Seeded(4))
+                    .AddConfig("r3-s5-baseline", Seeded(5))
+                    .AddConfig("r3-s5-symmetry3", SymmetryBreaking(5))
                     .Run();
 
                 foreach (var trial in result.Trials)

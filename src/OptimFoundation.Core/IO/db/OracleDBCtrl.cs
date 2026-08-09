@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using System.Linq;
 using Oracle.ManagedDataAccess.Client;
 using OptimFoundation.Core;
@@ -30,53 +31,83 @@ namespace OptimFoundation.Db.Oracle
         /// <summary>執行查詢並回傳整張 DataTable。transaction 進行中會自動沿用 ambient 連線與交易。</summary>
         public override DataTable Query(string sql, params (string name, object value)[] parameters)
         {
-            var conn = AcquireConnection(out bool owned);
-            try
+            return AtPublicBoundary(nameof(Query), sql, () =>
             {
-                using var cmd = BuildCommand(sql, conn, AmbientTransactionOracle, parameters);
-                using var adpt = new OracleDataAdapter(cmd);
-                var dt = new DataTable();
-                adpt.Fill(dt);
-                return dt;
-            }
-            finally
-            {
-                if (owned) conn.Dispose();
-            }
+                var conn = AcquireConnection(out bool owned);
+                try
+                {
+                    using var cmd = BuildCommand(sql, conn, AmbientTransactionOracle, parameters);
+                    using var adpt = new OracleDataAdapter(cmd);
+                    var dt = new DataTable();
+                    adpt.Fill(dt);
+                    return dt;
+                }
+                finally
+                {
+                    if (owned) conn.Dispose();
+                }
+            });
         }
 
         /// <summary>執行 INSERT / UPDATE / DELETE / DDL 並回傳受影響列數（會寫一行 log）。</summary>
         public override int Execute(string sql, params (string name, object value)[] parameters)
         {
-            var conn = AcquireConnection(out bool owned);
-            try
+            return AtPublicBoundary(nameof(Execute), sql, () =>
             {
-                using var cmd = BuildCommand(sql, conn, AmbientTransactionOracle, parameters);
-                int rows = cmd.ExecuteNonQuery();
-                Logging.Info($"[OracleDBCtrl] Execute ({rows} row(s))");
-                return rows;
-            }
-            finally
-            {
-                if (owned) conn.Dispose();
-            }
+                var conn = AcquireConnection(out bool owned);
+                try
+                {
+                    using var cmd = BuildCommand(sql, conn, AmbientTransactionOracle, parameters);
+                    int rows = cmd.ExecuteNonQuery();
+                    Logging.Info($"[OracleDBCtrl] Execute ({rows} row(s))");
+                    return rows;
+                }
+                finally
+                {
+                    if (owned) conn.Dispose();
+                }
+            });
         }
 
         /// <summary>取第一列第一欄並轉成 TResult。無資料列時 Convert.ChangeType 會丟例外（不回預設值）。</summary>
         public override TResult QueryScalar<TResult>(string sql, params (string name, object value)[] parameters)
         {
-            var conn = AcquireConnection(out bool owned);
+            return AtPublicBoundary(nameof(QueryScalar), sql, () =>
+            {
+                var conn = AcquireConnection(out bool owned);
+                try
+                {
+                    using var cmd = BuildCommand(sql, conn, AmbientTransactionOracle, parameters);
+                    object result = cmd.ExecuteScalar();
+                    return (TResult)Convert.ChangeType(result, typeof(TResult));
+                }
+                finally
+                {
+                    if (owned) conn.Dispose();
+                }
+            });
+        }
+
+        private T AtPublicBoundary<T>(string context, object value, Func<T> action)
+        {
             try
             {
-                using var cmd = BuildCommand(sql, conn, AmbientTransactionOracle, parameters);
-                object result = cmd.ExecuteScalar();
-                return (TResult)Convert.ChangeType(result, typeof(TResult));
+                return action();
             }
-            finally
+            catch (Exception ex)
             {
-                if (owned) conn.Dispose();
+                Logging.ErrorOnce(ex, "ORACLE_API_FAILED", "公開 API 執行失敗", context, value,
+                    ex.GetBaseException().Message);
+                throw;
             }
         }
+
+        private void AtPublicBoundary(string context, object value, Action action)
+            => AtPublicBoundary(context, value, () =>
+            {
+                action();
+                return true;
+            });
 
         // 交易編排（ambient 連線/交易、巢狀參與外層、commit/rollback）與 Oracle 無關，
         // 已下沉到 DBCtrlBase.ExecuteInTransaction；這裡只提供 Oracle 專屬的連線建立方式。
@@ -294,17 +325,19 @@ namespace OptimFoundation.Db.Oracle
         public override void ExecuteBatch(string sql, IReadOnlyList<(string name, object value)[]> rows)
         {
             if (rows == null || rows.Count == 0) return;
-
-            string[] names = rows[0].Select(p => p.name).ToArray();
-            var columns = new List<(string name, OracleDbType type, object[] values)>();
-            for (int col = 0; col < names.Length; col++)
+            AtPublicBoundary(nameof(ExecuteBatch), sql, () =>
             {
-                object[] values = rows.Select(r => r[col].value ?? DBNull.Value).ToArray();
-                columns.Add((names[col], InferOracleDbType(values), values));
-            }
+                string[] names = rows[0].Select(p => p.name).ToArray();
+                var columns = new List<(string name, OracleDbType type, object[] values)>();
+                for (int col = 0; col < names.Length; col++)
+                {
+                    object[] values = rows.Select(r => r[col].value ?? DBNull.Value).ToArray();
+                    columns.Add((names[col], InferOracleDbType(values), values));
+                }
 
-            ExecuteArrayBind(sql, rows.Count, columns);
-            Logging.Info($"[OracleDBCtrl] ExecuteBatch ({rows.Count} row(s))");
+                ExecuteArrayBind(sql, rows.Count, columns);
+                Logging.Info($"[OracleDBCtrl] ExecuteBatch ({rows.Count} row(s))");
+            });
         }
 
         // SaveToDB 與 ExecuteBatch 共用的 array-bind 送出邏輯：建 command、設 ArrayBindCount、
@@ -351,11 +384,20 @@ namespace OptimFoundation.Db.Oracle
             if (t == typeof(string)) return raw.ToUpper();
             if (t == typeof(double) && double.TryParse(raw, out double d)) return d;
             if (t == typeof(int) && int.TryParse(raw, out int n)) return n;
-            if (t == typeof(DateTime) && DateTime.TryParse(raw, out DateTime dt)) return dt;
+            if (t == typeof(DateTime))
+            {
+                if (DateTime.TryParseExact(raw, ModelNaming.DateFormat, CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out DateTime modelDate))
+                    return modelDate;
+                if (DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime dataDate))
+                    return dataDate;
+            }
 
             string message = $"Cannot convert '{raw}' to {t.FullName} for Oracle persistence.";
-            Logging.Error($"[ORACLE_CONVERSION_FAILED] Oracle 資料轉型失敗 | type={t.FullName} value={raw} result=write_aborted");
-            throw new FormatException(message);
+            throw Logging.ErrorOnce(
+                new FormatException(message),
+                "ORACLE_CONVERSION_FAILED", "Oracle 資料轉型失敗", nameof(ConvertToDbType), raw,
+                "unsupported_or_invalid_value", $"type={t.FullName}");
         }
 
         #endregion
@@ -377,8 +419,12 @@ namespace OptimFoundation.Db.Oracle
         /// <exception cref="ArgumentNullException">db 或 tableName 為 null。</exception>
         public OracleSolutionSink(IDbCtrl db, string tableName)
         {
-            _db = db ?? throw new ArgumentNullException(nameof(db));
-            _tableName = tableName ?? throw new ArgumentNullException(nameof(tableName));
+            _db = db ?? throw Logging.ErrorOnce(
+                new ArgumentNullException(nameof(db)),
+                "ORACLE_SINK_INVALID", "Oracle 解答輸出設定不合法", nameof(OracleSolutionSink), null, "db_is_null");
+            _tableName = tableName ?? throw Logging.ErrorOnce(
+                new ArgumentNullException(nameof(tableName)),
+                "ORACLE_SINK_INVALID", "Oracle 解答輸出設定不合法", nameof(OracleSolutionSink), null, "table_name_is_null");
         }
 
         /// <summary>
@@ -386,7 +432,18 @@ namespace OptimFoundation.Db.Oracle
         /// 多個型別要一起成敗 ALWAYS 改用 <see cref="BeginBatch"/>。
         /// </summary>
         public void WriteSolution<TVariableClass>(ISolverEngine engine, string dataId = null, string userId = null)
-            => WriteRows<TVariableClass>(_db, engine, dataId ?? "", userId ?? "");
+        {
+            try
+            {
+                WriteRows<TVariableClass>(_db, engine, dataId ?? "", userId ?? "");
+            }
+            catch (Exception ex)
+            {
+                Logging.ErrorOnce(ex, "ORACLE_SOLUTION_WRITE_FAILED", "公開 API 執行失敗", nameof(WriteSolution), typeof(TVariableClass).Name,
+                    ex.GetBaseException().Message);
+                throw;
+            }
+        }
 
         /// <summary>開一個批次：多變數型別的寫入先緩衝，Commit() 時把全部緩衝包進單一 ExecuteInTransaction 原子寫入。</summary>
         public ISolutionBatch BeginBatch(string dataId = null, string userId = null)
@@ -451,7 +508,10 @@ namespace OptimFoundation.Db.Oracle
             public void Write<TVariableClass>(ISolverEngine engine)
             {
                 if (_committed)
-                    throw new InvalidOperationException("[OracleSolutionSink] 批次已 Commit，不可再 Write。");
+                    throw Logging.ErrorOnce(
+                        new InvalidOperationException("[OracleSolutionSink] 批次已 Commit，不可再 Write。"),
+                        "ORACLE_BATCH_INVALID", "Oracle 批次操作不合法", nameof(Write), typeof(TVariableClass).Name,
+                        "batch_already_committed");
                 _pending.Add(ctrl => _sink.WriteRows<TVariableClass>(ctrl, engine, _dataId, _userId));
             }
 
@@ -460,12 +520,24 @@ namespace OptimFoundation.Db.Oracle
             public void Commit()
             {
                 if (_committed)
-                    throw new InvalidOperationException("[OracleSolutionSink] 批次已 Commit，不可重複 Commit。");
-                _sink._db.ExecuteInTransaction(ctrl =>
+                    throw Logging.ErrorOnce(
+                        new InvalidOperationException("[OracleSolutionSink] 批次已 Commit，不可重複 Commit。"),
+                        "ORACLE_BATCH_INVALID", "Oracle 批次操作不合法", nameof(Commit), _pending.Count,
+                        "batch_already_committed");
+                try
                 {
-                    foreach (var write in _pending) write(ctrl);
-                });
-                _committed = true;
+                    _sink._db.ExecuteInTransaction(ctrl =>
+                    {
+                        foreach (var write in _pending) write(ctrl);
+                    });
+                    _committed = true;
+                }
+                catch (Exception ex)
+                {
+                    Logging.ErrorOnce(ex, "ORACLE_BATCH_FAILED", "公開 API 執行失敗", nameof(Commit), _pending.Count,
+                        ex.GetBaseException().Message);
+                    throw;
+                }
             }
 
             /// <summary>清掉緩衝。未 Commit 就 Dispose = 完全沒寫進 DB（不是寫了再回滾）。</summary>

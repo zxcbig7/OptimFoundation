@@ -1,124 +1,74 @@
 # OptimFoundation
 
-A .NET framework for building mixed-integer programming (MIP) optimization models with a clean, solver-agnostic API.
+OptimFoundation 是以 .NET 8 建立 MILP 模型的 solver-agnostic framework，目前提供 IBM CPLEX 與 Gurobi adapter。
 
 ## Packages
 
-| Package | Description |
+| Package | Responsibility |
 | --- | --- |
-| `OptimFoundation.Core` | Abstract base classes, engine contract, variable builder, Oracle DB utilities |
-| `OptimFoundation.Cplex` | IBM CPLEX solver implementation |
-| `OptimFoundation.Gurobi` | Gurobi solver implementation |
+| `OptimFoundation.Core` | 資料列、IO、命名、變數/限制式通用邏輯、logging、experiments |
+| `OptimFoundation.Generators` | Set / Parameter / Variable source generator |
+| `OptimFoundation.Cplex` | IBM CPLEX adapter |
+| `OptimFoundation.Gurobi` | Gurobi adapter |
 
-## Quick Example
+## Quick example
 
 ```csharp
-// 1. Define a variable class (properties only, no constructor)
-public class VariableB_Assign : VariableBase
-{
-    public DateTime Date     { get; set; }
-    public string   Employee { get; set; }
-    public string   Shift    { get; set; }
-}
+using OptimFoundation.Core;
+using OptimFoundation.Core.IO;
+using OptimFoundation.Modeling;
+using OptimFoundation.Cplex;
 
-// 2. Build variables
-optEngine.BuildBVs<VariableB_Assign>(dates, employees, shifts);
+[OptSet]
+[OptDim<string>("Employee")]
+public sealed partial class Set_Employee { }
 
-// 3. Write a constraint
-employees.ForEach(e =>
-{
-    shifts.ForEach(s =>
-        engine.AddLHS(1, new VariableB_Assign { Date = d, Employee = e, Shift = s }));
-    engine.AddRHS(1);
-    engine.CreateEqual($"OneShift@{d:yyyy_MM_dd}@{e}");
-});
+[OptSet]
+[OptDim<DateTime>("Date")]
+public sealed partial class Set_Date { }
 
-// 4. Solve
-bool solved = optEngine.Solve();
+[OptVar]
+[OptDim<DateTime>("Date")]
+[OptDim<string>("Employee")]
+public sealed partial class VariableB_Assign { }
+
+var data = OptData.Load(() => new Dataload());
+
+var model = new OptModel("Canonical")
+    .AddVariables(engine =>
+        engine.BuildVars<VariableB_Assign>(data.set_Date, data.set_Employee))
+    .AddObjective(engine => new ObjectiveFunction(/* dependencies */).Build(engine))
+    .AddConstraints(engine => new Constraint_Assign(/* dependencies */).Build(engine));
+
+using var project = new OptProject(model)
+    .UseConfig(() => new ProjectConfig { ProjectName = "Example" })
+    .UseConfig(() => new CplexConfig());
+
+bool solved = project.Execute();
 ```
 
-## Getting Started
+資料載入對 Set 與 Parameter 使用同一個入口：
 
-See [specs/developer-guide.md](specs/developer-guide.md) for the full development guide.
-
-## Requirements
-
-- **OptimFoundation 函式庫**：.NET Framework 4.8（所有套件均 target `net48`）
-- **消費端專案**：.NET Framework 4.8 或 .NET 8+（可直接 reference `net48` DLL）
-- IBM CPLEX 或 Gurobi 授權（依使用的 solver 而定）
-
----
-
-## DLL 參考設定
-
-OptimFoundation 不內附 solver DLL，使用前需自行將以下 DLL 加入專案參考。
-
-### IBM CPLEX
-
-需要自行安裝 IBM ILOG CPLEX Optimization Studio，並 reference 以下兩個 DLL：
-
-| DLL | 預設安裝路徑 |
-| --- | --- |
-| `ILOG.Concert.dll` | `C:\Program Files\IBM\ILOG\CPLEX_StudioXXXX\cplex\bin\x64_win64\` |
-| `ILOG.CPLEX.dll` | 同上 |
-
-**.csproj 設定範例：**
-
-```xml
-<ItemGroup>
-  <Reference Include="ILOG.Concert">
-    <HintPath>path\to\ILOG.Concert.dll</HintPath>
-  </Reference>
-  <Reference Include="ILOG.CPLEX">
-    <HintPath>path\to\ILOG.CPLEX.dll</HintPath>
-  </Reference>
-  <Reference Include="OptimFoundation.Core">
-    <HintPath>path\to\OptimFoundation.Core.dll</HintPath>
-  </Reference>
-  <Reference Include="OptimFoundation.Cplex">
-    <HintPath>path\to\OptimFoundation.Cplex.dll</HintPath>
-  </Reference>
-</ItemGroup>
+```csharp
+set_Employee = source.Load<Set_Employee>("employees.csv");
+parameter_Demand = source.Load<Parameter_Demand>("demand-2026.csv");
 ```
 
-### Gurobi
+所有輸入 CSV 都必須有與 generated properties 對應的表頭。
 
-需要自行安裝 Gurobi Optimizer，並 reference 以下 DLL：
-
-| DLL | 預設安裝路徑 |
-| --- | --- |
-| `Gurobi110.NET.dll` | `C:\gurobi1100\win64\bin\`（版本號依安裝版本調整） |
-
-**.csproj 設定範例：**
-
-```xml
-<ItemGroup>
-  <Reference Include="Gurobi110.NET">
-    <HintPath>path\to\Gurobi110.NET.dll</HintPath>
-  </Reference>
-  <Reference Include="OptimFoundation.Core">
-    <HintPath>path\to\OptimFoundation.Core.dll</HintPath>
-  </Reference>
-  <Reference Include="OptimFoundation.Gurobi">
-    <HintPath>path\to\OptimFoundation.Gurobi.dll</HintPath>
-  </Reference>
-</ItemGroup>
-```
-
-### OptimFoundation DLL 取得方式
-
-從 source code build：
+## Build and test
 
 ```powershell
-# 先 build Core
-cd src\OptimFoundation.Core
-dotnet build -c Debug
-
-# 再 build 所需 solver
-cd ..\OptimFoundation.Cplex
-# 需透過 Visual Studio MSBuild（dotnet build 無法解析 CPLEX HintPath）
-& "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" .\OptimFoundation.Cplex.csproj /p:Configuration=Debug
+dotnet build OptimFoundation.sln
+dotnet test tests/OptimFoundation.Cplex.Tests/OptimFoundation.Cplex.Tests.csproj
 ```
 
-> **注意**：`OptimFoundation.Cplex` 只能用 Visual Studio MSBuild 建置，因為 CPLEX DLL 路徑需要對應實際安裝位置。
-> 建置後的 DLL 位於 `src\OptimFoundation.Cplex\bin\Debug\net48\`。
+Solver managed/native libraries 與 license 不在 repository 內。CPLEX 使用 `CplexDir`，Gurobi 使用 `GUROBI_HOME`；不得 commit solver DLL 或 license。
+
+## Documentation
+
+- [開發者指南](specs/developer-guide.md)
+- [架構盤查](specs/2026-08-09-api-architecture-audit.md)
+- [多維 Set 規格](specs/2026-08-08-multidim-set.md)
+- [IO 規格](specs/2026-08-08-io-read-surface.md)
+- [Tutorial template](Templates/Tutorial/README.md)

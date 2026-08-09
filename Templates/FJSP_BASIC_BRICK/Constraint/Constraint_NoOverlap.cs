@@ -11,17 +11,17 @@ namespace FJSP_BASIC_BRICK
     /// </summary>
     public sealed class Constraint_NoOverlap : ConstraintBase
     {
-        private readonly Set_Lot _lots;
-        private readonly Set_Operation _operations;
-        private readonly Set_Eqp _eqps;
+        private readonly List<Set_Lot> _lots;
+        private readonly List<Set_Operation> _operations;
+        private readonly List<Set_Eqp> _eqps;
         private readonly double _bigM;
         private readonly double _forwardOffset;
         private readonly double _backwardOffset;
 
         public Constraint_NoOverlap(
-            Set_Lot lots,
-            Set_Operation operations,
-            Set_Eqp eqps,
+            List<Set_Lot> lots,
+            List<Set_Operation> operations,
+            List<Set_Eqp> eqps,
             double bigM,
             double forwardOffset,
             double backwardOffset)
@@ -54,22 +54,22 @@ namespace FJSP_BASIC_BRICK
                                 var assignB = new VariableB_Assign { Lot = lotB, Operation = opB, Eqp = eqp };
 
                                 // Forward: Complete_A <= Start_B + BigM*(ForwardOffset - Precede - Assign_A - Assign_B)
-                                engine.AddLHS(1.0, new VariableX_Complete { Lot = lotA, Operation = opA });
-                                engine.AddRHS(1.0, new VariableX_Start { Lot = lotB, Operation = opB });
+                                engine.AddLHS(1.0, new VariableC_Complete { Lot = lotA, Operation = opA });
+                                engine.AddRHS(1.0, new VariableC_Start { Lot = lotB, Operation = opB });
                                 engine.AddRHS(_forwardOffset * _bigM);
                                 engine.AddRHS(-_bigM, precede);
                                 engine.AddRHS(-_bigM, assignA);
                                 engine.AddRHS(-_bigM, assignB);
-                                engine.CreateLessEqual($"{ConstraintName}_Fwd@{lotA}@{opA}@{lotB}@{opB}@{eqp}");
+                                engine.CreateLessEqual(this, "Fwd", lotA, opA, lotB, opB, eqp);
 
                                 // Backward: Complete_B <= Start_A + BigM*(BackwardOffset + Precede - Assign_A - Assign_B)
-                                engine.AddLHS(1.0, new VariableX_Complete { Lot = lotB, Operation = opB });
-                                engine.AddRHS(1.0, new VariableX_Start { Lot = lotA, Operation = opA });
+                                engine.AddLHS(1.0, new VariableC_Complete { Lot = lotB, Operation = opB });
+                                engine.AddRHS(1.0, new VariableC_Start { Lot = lotA, Operation = opA });
                                 engine.AddRHS(_backwardOffset * _bigM);
                                 engine.AddRHS(_bigM, precede);
                                 engine.AddRHS(-_bigM, assignA);
                                 engine.AddRHS(-_bigM, assignB);
-                                engine.CreateLessEqual($"{ConstraintName}_Bwd@{lotA}@{opA}@{lotB}@{opB}@{eqp}");
+                                engine.CreateLessEqual(this, "Bwd", lotA, opA, lotB, opB, eqp);
                             }
                         }
                     }

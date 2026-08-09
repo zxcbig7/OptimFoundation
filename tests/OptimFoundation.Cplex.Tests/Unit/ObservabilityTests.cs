@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using OptimFoundation.Core;
 using OptimFoundation.Cplex.Tests.Mocks;
 using OptimFoundation.Db.Oracle;
@@ -12,6 +14,8 @@ namespace OptimFoundation.Cplex.Tests.Unit
     [Collection("Logging")]
     public class ObservabilityTests
     {
+        private sealed class TestConstraint : ConstraintBase { }
+
         private sealed class ThrowingPropertyConfig : ISolverConfig
         {
             public double? TimeLimit { get; set; }
@@ -37,6 +41,28 @@ namespace OptimFoundation.Cplex.Tests.Unit
             using var fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             using var reader = new StreamReader(fs);
             return reader.ReadToEnd();
+        }
+
+        private static void AssertOneNamingError(string log, string context, string value, string reason)
+        {
+            string payload = $"[MODEL_NAME_INVALID] 模型名稱驗證失敗 | context={context} value={value} reason={reason} result=aborted";
+            int count = 0;
+            int offset = 0;
+            while ((offset = log.IndexOf(payload, offset, StringComparison.Ordinal)) >= 0)
+            {
+                count++;
+                offset += payload.Length;
+            }
+            Assert.Equal(1, count);
+        }
+
+        private static void AssertErrorCodeCount(string log, string eventCode, int expected)
+        {
+            string marker = $"[{eventCode}]";
+            int count = log.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
+                .Count(line => line.Contains("| ERROR |", StringComparison.Ordinal)
+                    && line.Contains(marker, StringComparison.Ordinal));
+            Assert.Equal(expected, count);
         }
 
         [Fact]
@@ -139,6 +165,197 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         [Fact]
+        public void BuildVars_InvalidPrefix_LogsBeforeThrow()
+        {
+            string tag = StartLog("VariablePrefixUnknown");
+            var engine = new MockEngine();
+            engine.Build();
+
+            Assert.Throws<ArgumentException>(() => engine.BuildVars<VarS>(new[] { "A" }));
+
+            string log = ReadLog(tag);
+            Assert.Contains("VARIABLE_TYPE_UNKNOWN", log);
+            Assert.Contains("type=VarS", log);
+            Assert.Contains("result=aborted", log);
+        }
+
+        [Fact]
+        public void ExplicitBuild_TypeMismatch_LogsBeforeThrow()
+        {
+            string tag = StartLog("VariableTypeMismatch");
+            var engine = new MockEngine();
+            engine.Build();
+
+            Assert.Throws<ArgumentException>(
+                () => engine.BuildBVs<VariableC_Amt>(new[] { "A" }));
+
+            string log = ReadLog(tag);
+            Assert.Contains("VARIABLE_TYPE_MISMATCH", log);
+            Assert.Contains("type=VariableC_Amt", log);
+            Assert.Contains("declared=Continuous", log);
+            Assert.Contains("requested=Binary", log);
+            Assert.Contains("result=aborted", log);
+        }
+
+        [Fact]
+        public void VariableKeyGenerationFailure_LogsBeforeThrow()
+        {
+            string tag = StartLog("VariableBuildFailure");
+            var engine = new MockEngine();
+            engine.Build();
+
+            Assert.Throws<ArgumentException>(
+                () => engine.BuildVars<VariableC_Amt>(new[] { true }));
+
+            string log = ReadLog(tag);
+            Assert.Contains("VARIABLE_SET_INVALID", log);
+            Assert.Contains("value=System.Boolean[]", log);
+            Assert.Contains("reason=unsupported_set_type", log);
+            Assert.Contains("result=aborted", log);
+            AssertErrorCodeCount(log, "VARIABLE_SET_INVALID", 1);
+        }
+
+        [Fact]
+        public void EdgeCase1_ReservedCharacter_LogsOneErrorBeforeThrow()
+        {
+            string tag = StartLog("NamingEdge1");
+            var engine = new MockEngine();
+            engine.Build();
+
+            Assert.Throws<ArgumentException>(() => engine.BuildCVs<VariableC_Amt>(new[] { "E-01" }));
+
+            AssertOneNamingError(ReadLog(tag), "Set #1", "E-01", "contains_reserved_character");
+        }
+
+        [Fact]
+        public void EdgeCase2_NegativeDimension_LogsOneErrorBeforeThrow()
+        {
+            string tag = StartLog("NamingEdge2");
+            var engine = new MockEngine();
+            engine.Build();
+
+            Assert.Throws<ArgumentException>(() => engine.BuildCVs<VariableC_Amt>(new[] { -5 }));
+
+            AssertOneNamingError(ReadLog(tag), "Set #1", "-5", "contains_reserved_character");
+        }
+
+        [Fact]
+        public void EdgeCase4_DateTimeWithTime_LogsOneErrorBeforeThrow()
+        {
+            string tag = StartLog("NamingEdge4");
+            var engine = new MockEngine();
+            engine.Build();
+
+            Assert.Throws<ArgumentException>(() => engine.BuildCVs<VarDG>(
+                new[] { new DateTime(2026, 8, 9, 1, 2, 3, DateTimeKind.Utc) }, new[] { "A" }));
+
+            AssertOneNamingError(ReadLog(tag), "Set #1", "2026-08-09T01:02:03.0000000Z", "datetime_contains_time");
+        }
+
+        [Fact]
+        public void EdgeCase10_NullDimensions_LogsOneErrorBeforeThrow()
+        {
+            string tag = StartLog("NamingEdge10");
+            var engine = new MockEngine();
+            engine.Build();
+
+            Assert.Throws<ArgumentException>(() => engine.CreateEqual(new TestConstraint(), null!));
+
+            AssertOneNamingError(ReadLog(tag), nameof(TestConstraint), "<null>", "dimensions_array_is_null");
+        }
+
+        [Fact]
+        public void EdgeCase11_InvalidExplicitName_LogsOneErrorBeforeThrow()
+        {
+            string tag = StartLog("NamingEdge11");
+            var engine = new MockEngine();
+            engine.Build();
+
+            Assert.Throws<ArgumentException>(() => engine.CreateEqual("Demand@2026-08-09"));
+
+            AssertOneNamingError(ReadLog(tag), "CreateEqual token #1", "2026-08-09", "contains_reserved_character");
+        }
+
+        [Fact]
+        public void PublicApiBoundary_UnexpectedException_LogsOnceAndRethrowsOriginal()
+        {
+            string tag = StartLog("UnexpectedBoundary");
+            var original = new InvalidOperationException("boundary boom");
+
+            var thrown = Assert.Throws<InvalidOperationException>(
+                () => OptData.Load<object>(() => throw original));
+
+            Assert.Same(original, thrown);
+            string log = ReadLog(tag);
+            Assert.Contains("[DATA_LOAD_FAILED]", log);
+            Assert.Contains("context=Load", log);
+            Assert.Contains("value=System.Object", log);
+            Assert.Contains("reason=boundary boom", log);
+            Assert.Contains("result=aborted", log);
+            AssertErrorCodeCount(log, "DATA_LOAD_FAILED", 1);
+        }
+
+        [Fact]
+        public void PublicApiBoundary_DoesNotDuplicateAnAlreadyLoggedException()
+        {
+            string tag = StartLog("BoundaryDeduplication");
+            var original = new InvalidOperationException("inner boom");
+
+            var thrown = Assert.Throws<InvalidOperationException>(() =>
+                OptData.Load<object>(() => throw Logging.ErrorOnce(
+                    original, "INNER_FAILURE", "底層失敗", "InnerOperation", "bad-value", "inner_reason")));
+
+            Assert.Same(original, thrown);
+            string log = ReadLog(tag);
+            Assert.Contains("[INNER_FAILURE]", log);
+            Assert.DoesNotContain("[DATA_LOAD_FAILED]", log);
+            AssertErrorCodeCount(log, "INNER_FAILURE", 1);
+        }
+
+        [Fact]
+        public void ParameterLookup_MissingRow_LogsWarningAndReturnsNull()
+        {
+            string tag = StartLog("ParameterMissing");
+            var rows = new List<Parameter_GncProfit>
+            {
+                new Parameter_GncProfit { GncItem = "Desk", QTY = 12.5 }
+            };
+
+            var row = rows.FindParameterOrLog(parameter => parameter.GncItem == "Chair", "Chair");
+
+            Assert.Null(row);
+            string log = ReadLog(tag);
+            Assert.Contains("[PARAMETER_NOT_FOUND]", log);
+            Assert.Contains("context=Parameter_GncProfit", log);
+            Assert.Contains("key=Chair", log);
+            Assert.Contains("reason=no_matching_row", log);
+            Assert.Contains("result=missing", log);
+        }
+
+        [Fact]
+        public void FrameworkSource_ProactiveThrowsMustUseErrorOnce()
+        {
+            var directory = new DirectoryInfo(AppContext.BaseDirectory);
+            while (directory != null && !File.Exists(Path.Combine(directory.FullName, "OptimFoundation.sln")))
+                directory = directory.Parent;
+
+            Assert.NotNull(directory);
+            string sourceRoot = Path.Combine(directory!.FullName, "src");
+            var offenders = Directory.GetFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
+                .SelectMany(file => File.ReadLines(file)
+                    .Select((line, index) => new { File = file, Line = index + 1, Text = line.Trim() }))
+                .Where(item => !item.Text.StartsWith("//", StringComparison.Ordinal)
+                    && (Regex.IsMatch(item.Text, @"\bthrow\s+new\b")
+                        || Regex.IsMatch(item.Text, @"\bthrow\s+[A-Za-z_]\w*\s*;")))
+                .Select(item => $"{Path.GetRelativePath(directory.FullName, item.File)}:{item.Line}: {item.Text}")
+                .ToArray();
+
+            Assert.True(offenders.Length == 0,
+                "Framework throws must use Logging.ErrorOnce and boundary rethrows must use bare throw;:" +
+                Environment.NewLine + string.Join(Environment.NewLine, offenders));
+        }
+
+        [Fact]
         public void ConfigSnapshot_WhenPropertyGetterFails_LogsOmission()
         {
             string tag = StartLog("SnapshotFallback");
@@ -168,7 +385,11 @@ namespace OptimFoundation.Cplex.Tests.Unit
             string log = ReadLog(tag);
             Assert.Contains("ORACLE_CONVERSION_FAILED", log);
             Assert.Contains("Oracle 資料轉型失敗", log);
-            Assert.Contains("result=write_aborted", log);
+            Assert.Contains("context=ConvertToDbType", log);
+            Assert.Contains("value=not-an-int", log);
+            Assert.Contains("reason=unsupported_or_invalid_value", log);
+            Assert.Contains("result=aborted", log);
+            AssertErrorCodeCount(log, "ORACLE_CONVERSION_FAILED", 1);
         }
     }
 }

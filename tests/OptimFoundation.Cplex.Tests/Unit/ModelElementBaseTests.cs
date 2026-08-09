@@ -19,15 +19,14 @@ namespace OptimFoundation.Cplex.Tests.Unit
         public void ToString_DateTime_FormatsAsYYYYMMDD()
         {
             var v = new VarDG { D = new DateTime(2026, 1, 15), G = "N" };
-            Assert.Equal("VarDG@2026-01-15@N", v.ToString());
+            Assert.Equal("VarDG@2026_01_15@N", v.ToString());
         }
 
         [Fact]
-        public void ToString_DefaultValues_ReturnsDefaultStrings()
+        public void ToString_DefaultString_ThrowsBecauseEmptyTokenIsNotAValidName()
         {
-            // 未設定的 string property 預設為 ""
             var v = new VarS();
-            Assert.Equal("VarS@", v.ToString());
+            Assert.Throws<ArgumentException>(() => v.ToString());
         }
 
         // ── InitClassBySets ────────────────────────────────────────────────
