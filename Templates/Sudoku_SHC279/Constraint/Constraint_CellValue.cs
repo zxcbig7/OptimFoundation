@@ -6,15 +6,15 @@ namespace Sudoku_SHC279
     /// <summary>每個列欄格恰好選一個數字；對應 Model.md 的 CellValue。</summary>
     public sealed class Constraint_CellValue : ConstraintBase
     {
-        private readonly Set_Row _rows;
-        private readonly Set_Column _columns;
-        private readonly Set_Digit _digits;
+        private readonly List<Set_Row> _rows;
+        private readonly List<Set_Column> _columns;
+        private readonly List<Set_Digit> _digits;
         private readonly double _exactlyOne;
 
         public Constraint_CellValue(
-            Set_Row rows,
-            Set_Column columns,
-            Set_Digit digits,
+            List<Set_Row> rows,
+            List<Set_Column> columns,
+            List<Set_Digit> digits,
             double exactlyOne)
         {
             _rows = rows;

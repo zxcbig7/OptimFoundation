@@ -9,13 +9,13 @@ namespace Tutorial
     /// </summary>
     public sealed class Constraint_SetupLink : ConstraintBase
     {
-        private readonly Set_Product products;
-        private readonly Set_Date dates;
-        private readonly Set_Shift shifts;
+        private readonly List<Set_Product> products;
+        private readonly List<Set_Date> dates;
+        private readonly List<Set_Shift> shifts;
         private readonly double bigM;
 
         public Constraint_SetupLink(
-            Set_Product products, Set_Date dates, Set_Shift shifts, double bigM)
+            List<Set_Product> products, List<Set_Date> dates, List<Set_Shift> shifts, double bigM)
         {
             this.products = products;
             this.dates = dates;

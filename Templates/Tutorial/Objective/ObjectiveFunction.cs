@@ -6,14 +6,14 @@ namespace Tutorial
     /// <summary>OBJ：max Σ_{p,d,s} UnitProfit_p·Produce_{p,d,s} − Σ_{p,d,s} SetupCost_p·Setup_{p,d,s}（負係數 = 減項，不移項）</summary>
     public sealed class ObjectiveFunction
     {
-        private readonly Set_Product products;
-        private readonly Set_Date dates;
-        private readonly Set_Shift shifts;
+        private readonly List<Set_Product> products;
+        private readonly List<Set_Date> dates;
+        private readonly List<Set_Shift> shifts;
         private readonly List<Parameter_UnitProfit> unitProfit;
         private readonly List<Parameter_SetupCost> setupCost;
 
         public ObjectiveFunction(
-            Set_Product products, Set_Date dates, Set_Shift shifts,
+            List<Set_Product> products, List<Set_Date> dates, List<Set_Shift> shifts,
             List<Parameter_UnitProfit> unitProfit, List<Parameter_SetupCost> setupCost)
         {
             this.products = products;

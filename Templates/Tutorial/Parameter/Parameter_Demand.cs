@@ -7,7 +7,7 @@ namespace Tutorial
     /// [FullGrid]：3 產品 × 2 日本來就滿格，作為框架資料防護規格的完整性檢查活範例。</summary>
     [OptParam]
     [FullGrid]
-    [OptDim<Set_Product>("Product")]
-    [OptDim<Set_Date>("Date")]
+    [OptDim<string>("Product")]
+    [OptDim<DateTime>("Date")]
     public sealed partial class Parameter_Demand { }
 }

@@ -8,9 +8,8 @@ namespace OptimFoundation.Cplex.Tests.Unit
 {
     // ── 端到端鎖住「數值 sanity 涵蓋範圍」的實質漏洞修正（見框架資料防護規格追補）──
     //
-    // 真實專案的值欄位多半不叫 QTY（Profit/Required/Stock…），一律走 [OptParam(HasValue=false)] +
-    // 手寫 double 值欄位，先前 AutoSetsGenerator.ResolveNumberPropNames 只涵蓋「index props 裡型別
-    // 是 double 的」＋「HasValue=true 才有的 QTY」，這類手寫值欄位完全不受數值 sanity 檢查。
+    // 手寫 double 值欄位（Profit/Required/Stock…）也必須受數值 sanity 檢查；Parameter 的
+    // canonical 模型係數仍固定是 generator 產生的 QTY。
     //
     // 這裡刻意讓本檔宣告的 [OptSet]/[OptParam]/DataContext 類別「真的」走 AutoSetsGenerator（見
     // csproj 把 Generators.csproj 掛成 Analyzer），而非像 DataValidatorTests 那樣手動塞
@@ -18,35 +17,54 @@ namespace OptimFoundation.Cplex.Tests.Unit
     // ResolveNumberPropNames 的涵蓋範圍。反向證明：把 ResolveNumberPropNames 還原成舊版
     // （只取 index props + QTY）後，本檔測試必須失敗（Profit 不會被納入 numbersOf，NaN 永遠驗不到）。
 
-    // 刻意用無參數版 [OptSet]（非專案端預設的 [OptSet<string>]）：全 solution 只剩這裡走 generator 的
-    // 非泛型分支，改成泛型就沒有任何測試釘住「[OptSet] = SetBase<string>」這個仍受支援的向後相容行為。
+    // Set 的元素型別一律由同類別上的 OptDim<T> 宣告。
     [OptSet]
+    [OptDim<string>("GncItem")]
     public partial class Set_GncItem
     {
     }
 
-    [OptParam(HasValue = false)]
-    [OptDim<Set_GncItem>("GncItem")]
+    [OptParam]
+    [OptDim<string>("GncItem")]
     public partial class Parameter_GncProfit
     {
         // 使用者在 partial 另一半手寫的 double 值欄位（非 QTY，非 index 屬性）——真實專案的 Profit/Required/Stock 型態。
         public double Profit { get; set; }
     }
 
+    [OptParam]
+    public partial class Parameter_GncScalar
+    {
+    }
+
     public partial class GncDataload : DataContext
     {
-        public Set_GncItem GncItemSet = new();
+        public List<Set_GncItem> GncItemSet = new();
         public List<Parameter_GncProfit> ProfitRows = new();
 
         public GncDataload(IEnumerable<string> items, IEnumerable<Parameter_GncProfit> rows)
         {
-            GncItemSet.LoadInline(items.ToArray());
+            GncItemSet = items.Select(GncItem => new Set_GncItem { GncItem = GncItem }).ToList();
             ProfitRows = rows.ToList();
         }
     }
 
     public class GeneratorNumericCoverageTests
     {
+        [Fact]
+        public void OptParam_AlwaysGeneratesQty()
+        {
+            Assert.NotNull(typeof(Parameter_GncProfit).GetProperty("QTY"));
+        }
+
+        [Fact]
+        public void OptParam_WithoutDims_GeneratesScalarQty()
+        {
+            Assert.Equal(typeof(ParameterBase), typeof(Parameter_GncScalar).BaseType);
+            Assert.NotNull(typeof(Parameter_GncScalar).GetProperty("QTY"));
+            Assert.Null(typeof(Parameter_GncScalar).GetProperty("GncItem"));
+        }
+
         [Theory]
         [InlineData(double.NaN)]
         [InlineData(double.PositiveInfinity)]

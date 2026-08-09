@@ -229,56 +229,6 @@ namespace OptimFoundation.Db.Oracle
 
         #endregion
 
-        #region 資料讀取
-
-        // 以下四個都只取查詢結果的第一欄，差別在轉型；SQL 要自己寫，只 SELECT 一欄即可
-
-        /// <summary>取查詢結果第一欄成 string 清單。</summary>
-        public List<string> ReadStrSet(string sql) => ReadColumn(sql, r => r.ItemArray[0].ToString());
-
-        /// <summary>取查詢結果第一欄成 double 清單（格式不符丟 FormatException）。</summary>
-        public List<double> ReadDoubleSet(string sql) => ReadColumn(sql, r => double.Parse(r.ItemArray[0].ToString()));
-
-        /// <summary>取查詢結果第一欄成 int 清單（格式不符丟 FormatException）。</summary>
-        public List<int> ReadIntSet(string sql) => ReadColumn(sql, r => int.Parse(r.ItemArray[0].ToString()));
-
-        /// <summary>取查詢結果第一欄成 DateTime 清單（格式不符丟 FormatException）。</summary>
-        public List<DateTime> ReadDateSet(string sql) => ReadColumn(sql, r => DateTime.Parse(r.ItemArray[0].ToString()));
-
-        /// <summary>
-        /// 載入 set 的便捷方法：對指定表欄取 DISTINCT 並排序。欄名 / 表名直接拼進 SQL，MUST 為程式內部值。
-        /// </summary>
-        public List<string> ReadSet(string columnName, string tableName)
-            => ReadStrSet($"SELECT DISTINCT {columnName.ToUpper()} FROM {tableName.ToUpper()} ORDER BY 1");
-
-        private List<TValue> ReadColumn<TValue>(string sql, Func<DataRow, TValue> selector)
-            => Query(sql).Rows.Cast<DataRow>().Select(selector).ToList();
-
-        /// <summary>
-        /// 把查詢結果每一列轉成一個參數物件。
-        /// 轉法：整列各欄轉字串後串成 string[]，呼叫 TParameter 接受 string[] 的建構式——
-        /// 所以 SELECT 的**欄位順序 MUST 與該類別的 property 宣告順序一致**（按位置對位，不看欄名）。
-        /// </summary>
-        /// <exception cref="MissingMethodException">TParameter 沒有接受 string[] 的建構式。</exception>
-        public List<TParameter> BuildParameter<TParameter>(string sql)
-        {
-            return Query(sql).Rows.Cast<DataRow>().Select(row =>
-            {
-                string combined = "@" + string.Join("@", row.ItemArray.Select(o => o.ToString()));
-                string[] parts = combined.Split('@').Skip(1).ToArray();
-                return (TParameter)Activator.CreateInstance(typeof(TParameter), new object[] { parts });
-            }).ToList();
-        }
-
-        /// <summary>
-        /// <see cref="BuildParameter{TParameter}(string)"/> 的便捷版：自動組 SELECT。
-        /// columnNames 的順序即對位順序，MUST 與 property 宣告順序一致。
-        /// </summary>
-        public List<TParameter> BuildParameter<TParameter>(string[] columnNames, string tableName)
-            => BuildParameter<TParameter>($"SELECT {string.Join(",", columnNames)} FROM {tableName.ToUpper()}");
-
-        #endregion
-
         #region 解結果寫入
 
         /// <summary>

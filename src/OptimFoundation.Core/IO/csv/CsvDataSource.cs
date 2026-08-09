@@ -2,12 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.IO;
+using System.Text;
 
 namespace OptimFoundation.Core.IO
 {
     /// <summary>
     /// CSV 資料來源：包 CsvCtrl，檔案放 Data/ 資料夾。
-    /// 參數檔名自由（省略則 = 型別名），契約是欄位對得上 class（BuildParameter 表頭缺欄即丟例外）；set 檔 = Set_{name}.csv。
+    /// 參數檔名自由（省略則 = 型別名），契約是欄位對得上 class（LoadParam 表頭缺欄即丟例外）；set 檔 = Set_{name}.csv。
     /// </summary>
     public sealed class CsvDataSource : IDataSource
     {
@@ -18,43 +19,32 @@ namespace OptimFoundation.Core.IO
         /// </summary>
         public CsvDataSource() => FolderDir.Data.CreateFolder();
 
-        /// <summary>
-        /// 從 Data/ 讀一份參數 CSV 成物件清單。表頭按名對位（大小寫不敏感、多餘欄忽略）。
-        /// </summary>
-        /// <param name="file">檔名；省略則用型別名。</param>
-        /// <exception cref="System.IO.InvalidDataException">CSV 缺少某個 property 對應的欄位。</exception>
-        public List<TParamClass> LoadParam<TParamClass>(string file = null) where TParamClass : ModelElementBase, new()
-            => CsvCtrl.BuildParameter<TParamClass>(file);
-
-        /// <summary>Loads complete RFC4180 records from <c>Data/{name}.csv</c>.</summary>
-        public IEnumerable<string[]> LoadRows(string name)
+        /// <summary>從 <c>Data/{name}.csv</c> 載入完整 RFC4180 Set 資料列，包含必填表頭。</summary>
+        private IEnumerable<string[]> LoadRows(string name)
         {
             if (string.IsNullOrWhiteSpace(name)) throw new ArgumentNullException(nameof(name));
 
-            using var reader = new StreamReader(FolderDir.Data.GetFilePath(EnsureCsv(name)));
+            using var reader = new StreamReader(FolderDir.Data.GetFilePath(EnsureCsv(name)), Encoding.UTF8);
             foreach (var row in CsvCtrl.ParseCsv(reader))
                 yield return row;
         }
 
-        /// <summary>從 Data/Set_{name}.csv 讀一個 set 的成員（每列一個）。元素轉型交給 SetBase.ParseElement。</summary>
-        [Obsolete("Use LoadRows for new code. LoadSet is retained for one-column compatibility.")]
-        public List<string> LoadSet(string name)
-            => CsvCtrl.ReadStrSet(SetNaming.File(name));
+        /// <summary>將含 schema 的 CSV 載入為中立 DataTable，不映射至 Set 或 Parameter。</summary>
+        public DataTable LoadData(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) throw new ArgumentNullException(nameof(name));
+            return TabularData.ToDataTable(LoadRows(name), name);
+        }
 
+        /// <summary>依 CSV 表頭與 Parameter 的 public property 對應，載入具型別 Parameter。</summary>
         private static string EnsureCsv(string fileName)
             => fileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) ? fileName : fileName + ".csv";
 
-        /// <summary>
-        /// 讀整張 CSV 成 raw DataTable（第一列 = 欄名、全欄 string），供 set / param 以外的通用用途。
-        /// 非 IDataSource 契約；與 DbDataSource.LoadTable 同名但第一引數是檔名（DB 那邊是 SQL）。
-        /// </summary>
-        public DataTable LoadTable(string file)
-            => CsvCtrl.ReadTable(file);
     }
 
     /// <summary>
     /// CSV 解輸出：包 CsvCtrl.WriteSolution，寫到 Solution/{變數型別名}.csv。
-    /// 輸出帶表頭，可直接被 CsvCtrl.BuildParameter 讀回（round-trip）。
+    /// 輸出帶表頭，可直接由 CsvDataSource.LoadParam 讀回（round-trip）。
     /// </summary>
     public sealed class CsvSolutionSink : ISolutionSink
     {

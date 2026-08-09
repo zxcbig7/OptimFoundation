@@ -88,6 +88,20 @@ namespace OptimFoundation.Core
             var result = new List<string[]>[sets.Length];
             for (int i = 0; i < sets.Length; i++)
             {
+                if (sets[i] is System.Collections.IEnumerable rowSequence)
+                {
+                    var setRows = rowSequence.Cast<object>().ToList();
+                    if (setRows.All(row => row is SetRowBase))
+                    {
+                        result[i] = setRows.Select(row => row.GetType()
+                            .GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                            .Where(property => property.CanRead && property.GetIndexParameters().Length == 0)
+                            .Select(property => FormatKeyToken($"Set row #{i + 1}", property.GetValue(row)))
+                            .ToArray()).ToList();
+                        continue;
+                    }
+                }
+
                 if (GetValueTupleElementType(sets[i]) != null)
                 {
                     if (sets[i] is not System.Collections.IEnumerable sequence)

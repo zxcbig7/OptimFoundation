@@ -9,13 +9,13 @@ namespace Tutorial
     /// </summary>
     public sealed class Constraint_BatchDef : ConstraintBase
     {
-        private readonly Set_Product products;
-        private readonly Set_Date dates;
-        private readonly Set_Shift shifts;
+        private readonly List<Set_Product> products;
+        private readonly List<Set_Date> dates;
+        private readonly List<Set_Shift> shifts;
         private readonly List<Parameter_BatchSize> batchSize;
 
         public Constraint_BatchDef(
-            Set_Product products, Set_Date dates, Set_Shift shifts,
+            List<Set_Product> products, List<Set_Date> dates, List<Set_Shift> shifts,
             List<Parameter_BatchSize> batchSize)
         {
             this.products = products;

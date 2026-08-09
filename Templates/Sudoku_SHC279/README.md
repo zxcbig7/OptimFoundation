@@ -6,8 +6,8 @@
 
 專案採 canonical 積木結構與單一 `Sudoku_SHC279` namespace：
 
-- `Set/`：ROW、COLUMN、DIGIT、BLOCK，一個 generator 型別一檔。
-- `Parameter/`：Given、BlockCell、ExactlyOne、ObjCoef。
+- `Set/`：ROW、COLUMN、DIGIT、BLOCK、Given、BlockCell，一個 generator 型別一檔。
+- `Parameter/`：ExactlyOne、ObjCoef。
 - `Variable/`：`VariableB_CellDigit{Row,Column,Digit}`。
 - `Objective/`：逐項套用 `ObjCoef`；目前全為零，因此是純可行性問題。
 - `Constraint/`：CellValue、RowDigit、ColumnDigit、BlockDigit、Given 五組限制式。
@@ -15,19 +15,19 @@
 - `Solution/`：讀解後逐條驗證 givens、列、欄與宮規則。
 - `Program.cs`：唯一組裝點，依序建立材料、`OptModel("Canonical")` 與執行環境。
 
-宮的結構不寫死在限制式或解驗證中。`Parameter_BlockCell.csv` 明確列出每個 BLOCK 所含的 `(Row,Column)`；`Parameter_ExactlyOne.csv` 提供所有等式右側；`Parameter_ObjCoef.csv` 提供目標係數。換成其他完全平方邊長的標準 Sudoku 時，求解程式不必修改。
+宮的結構不寫死在限制式或解驗證中。`Set_BlockCell.csv` 明確列出每個 BLOCK 所含的 `(Row,Column)`；`Parameter_ExactlyOne.csv` 提供所有等式右側；`Parameter_ObjCoef.csv` 提供目標係數。換成其他完全平方邊長的標準 Sudoku 時，求解程式不必修改。
 
 ## 資料
 
 求解模式只讀以下已就位的 canonical CSV：
 
 - `Set_Row.csv`、`Set_Column.csv`、`Set_Digit.csv`、`Set_Block.csv`
-- `Parameter_Given.csv`
-- `Parameter_BlockCell.csv`
+- `Set_Given.csv`
+- `Set_BlockCell.csv`
 - `Parameter_ExactlyOne.csv`
 - `Parameter_ObjCoef.csv`
 
-`Parameter_Given` 與 `Parameter_BlockCell` 是純 key parameter，沒有 `QTY`。`Parameter_ExactlyOne` 是恰好一列的 scalar；`Parameter_ObjCoef` 依 DIGIT 各有一列。
+`Set_Given` 與 `Set_BlockCell` 是無值 tuple Set。`Parameter_ExactlyOne` 是恰好一列的 scalar；`Parameter_ObjCoef` 依 DIGIT 各有一列。
 
 ## 執行
 

@@ -9,13 +9,13 @@ namespace Tutorial
     /// </summary>
     public sealed class Constraint_Demand : ConstraintBase
     {
-        private readonly Set_Product products;
-        private readonly Set_Date dates;
-        private readonly Set_Shift shifts;
+        private readonly List<Set_Product> products;
+        private readonly List<Set_Date> dates;
+        private readonly List<Set_Shift> shifts;
         private readonly List<Parameter_Demand> demand;
 
         public Constraint_Demand(
-            Set_Product products, Set_Date dates, Set_Shift shifts,
+            List<Set_Product> products, List<Set_Date> dates, List<Set_Shift> shifts,
             List<Parameter_Demand> demand)
         {
             this.products = products;

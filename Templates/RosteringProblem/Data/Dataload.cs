@@ -45,27 +45,27 @@ namespace RosteringProblem
             set_Group.Load(source, "Set_Group");
             set_Date.Load(source, "Set_Date");
 
-            parameter_ShiftDemand = source.LoadParam<Parameter_ShiftDemand>("Parameter_ShiftDemand");
-            parameter_CrossGroup = source.LoadParam<Parameter_CrossGroup>("Parameter_CrossGroup");
-            parameter_NightToDay = source.LoadParam<Parameter_NightToDay>("Parameter_NightToDay");
-            parameter_PreAssign = source.LoadParam<Parameter_PreAssign>("Parameter_PreAssign");
-            parameter_BackupGroup = source.LoadParam<Parameter_BackupGroup>("Parameter_BackupGroup");
+            parameter_ShiftDemand = source.Load<Parameter_ShiftDemand>("Parameter_ShiftDemand");
+            parameter_CrossGroup = source.Load<Parameter_CrossGroup>("Parameter_CrossGroup");
+            parameter_NightToDay = source.Load<Parameter_NightToDay>("Parameter_NightToDay");
+            parameter_PreAssign = source.Load<Parameter_PreAssign>("Parameter_PreAssign");
+            parameter_BackupGroup = source.Load<Parameter_BackupGroup>("Parameter_BackupGroup");
 
-            parameter_One = source.LoadParam<Parameter_One>("Parameter_One");
-            parameter_SixDayWindow = source.LoadParam<Parameter_SixDayWindow>("Parameter_SixDayWindow");
-            parameter_NightToDayWindow = source.LoadParam<Parameter_NightToDayWindow>("Parameter_NightToDayWindow");
-            parameter_OffOneDayWindow = source.LoadParam<Parameter_OffOneDayWindow>("Parameter_OffOneDayWindow");
-            parameter_DoubleOffWindow = source.LoadParam<Parameter_DoubleOffWindow>("Parameter_DoubleOffWindow");
-            parameter_DoubleOffThreshold = source.LoadParam<Parameter_DoubleOffThreshold>("Parameter_DoubleOffThreshold");
-            parameter_WeekendOffThreshold = source.LoadParam<Parameter_WeekendOffThreshold>("Parameter_WeekendOffThreshold");
+            parameter_One = source.Load<Parameter_One>("Parameter_One");
+            parameter_SixDayWindow = source.Load<Parameter_SixDayWindow>("Parameter_SixDayWindow");
+            parameter_NightToDayWindow = source.Load<Parameter_NightToDayWindow>("Parameter_NightToDayWindow");
+            parameter_OffOneDayWindow = source.Load<Parameter_OffOneDayWindow>("Parameter_OffOneDayWindow");
+            parameter_DoubleOffWindow = source.Load<Parameter_DoubleOffWindow>("Parameter_DoubleOffWindow");
+            parameter_DoubleOffThreshold = source.Load<Parameter_DoubleOffThreshold>("Parameter_DoubleOffThreshold");
+            parameter_WeekendOffThreshold = source.Load<Parameter_WeekendOffThreshold>("Parameter_WeekendOffThreshold");
 
-            parameter_OffOneDayPenalty = source.LoadParam<Parameter_OffOneDayPenalty>("Parameter_OffOneDayPenalty");
-            parameter_SixDayPenalty = source.LoadParam<Parameter_SixDayPenalty>("Parameter_SixDayPenalty");
-            parameter_GroupMismatchPenalty = source.LoadParam<Parameter_GroupMismatchPenalty>("Parameter_GroupMismatchPenalty");
-            parameter_NightToDayPenalty = source.LoadParam<Parameter_NightToDayPenalty>("Parameter_NightToDayPenalty");
-            parameter_DoubleOffLT2Penalty = source.LoadParam<Parameter_DoubleOffLT2Penalty>("Parameter_DoubleOffLT2Penalty");
-            parameter_BelowAVGPenalty = source.LoadParam<Parameter_BelowAVGPenalty>("Parameter_BelowAVGPenalty");
-            parameter_Weekend4DayPenalty = source.LoadParam<Parameter_Weekend4DayPenalty>("Parameter_Weekend4DayPenalty");
+            parameter_OffOneDayPenalty = source.Load<Parameter_OffOneDayPenalty>("Parameter_OffOneDayPenalty");
+            parameter_SixDayPenalty = source.Load<Parameter_SixDayPenalty>("Parameter_SixDayPenalty");
+            parameter_GroupMismatchPenalty = source.Load<Parameter_GroupMismatchPenalty>("Parameter_GroupMismatchPenalty");
+            parameter_NightToDayPenalty = source.Load<Parameter_NightToDayPenalty>("Parameter_NightToDayPenalty");
+            parameter_DoubleOffLT2Penalty = source.Load<Parameter_DoubleOffLT2Penalty>("Parameter_DoubleOffLT2Penalty");
+            parameter_BelowAVGPenalty = source.Load<Parameter_BelowAVGPenalty>("Parameter_BelowAVGPenalty");
+            parameter_Weekend4DayPenalty = source.Load<Parameter_Weekend4DayPenalty>("Parameter_Weekend4DayPenalty");
         }
 
         /// <summary>
@@ -225,27 +225,27 @@ namespace RosteringProblem
             CsvCtrl.WriteSet(set_Group, "Set_Group");
             CsvCtrl.WriteSet(set_Date, "Set_Date");
 
-            CsvCtrl.WriteParam(parameter_ShiftDemand, "Parameter_ShiftDemand");
-            CsvCtrl.WriteParam(parameter_CrossGroup, "Parameter_CrossGroup");
-            CsvCtrl.WriteParam(parameter_NightToDay, "Parameter_NightToDay");
-            CsvCtrl.WriteParam(parameter_PreAssign, "Parameter_PreAssign");
-            CsvCtrl.WriteParam(parameter_BackupGroup, "Parameter_BackupGroup");
+            CsvCtrl.WriteRows(parameter_ShiftDemand, "Parameter_ShiftDemand");
+            CsvCtrl.WriteRows(parameter_CrossGroup, "Parameter_CrossGroup");
+            CsvCtrl.WriteRows(parameter_NightToDay, "Parameter_NightToDay");
+            CsvCtrl.WriteRows(parameter_PreAssign, "Parameter_PreAssign");
+            CsvCtrl.WriteRows(parameter_BackupGroup, "Parameter_BackupGroup");
 
-            CsvCtrl.WriteParam(parameter_One, "Parameter_One");
-            CsvCtrl.WriteParam(parameter_SixDayWindow, "Parameter_SixDayWindow");
-            CsvCtrl.WriteParam(parameter_NightToDayWindow, "Parameter_NightToDayWindow");
-            CsvCtrl.WriteParam(parameter_OffOneDayWindow, "Parameter_OffOneDayWindow");
-            CsvCtrl.WriteParam(parameter_DoubleOffWindow, "Parameter_DoubleOffWindow");
-            CsvCtrl.WriteParam(parameter_DoubleOffThreshold, "Parameter_DoubleOffThreshold");
-            CsvCtrl.WriteParam(parameter_WeekendOffThreshold, "Parameter_WeekendOffThreshold");
+            CsvCtrl.WriteRows(parameter_One, "Parameter_One");
+            CsvCtrl.WriteRows(parameter_SixDayWindow, "Parameter_SixDayWindow");
+            CsvCtrl.WriteRows(parameter_NightToDayWindow, "Parameter_NightToDayWindow");
+            CsvCtrl.WriteRows(parameter_OffOneDayWindow, "Parameter_OffOneDayWindow");
+            CsvCtrl.WriteRows(parameter_DoubleOffWindow, "Parameter_DoubleOffWindow");
+            CsvCtrl.WriteRows(parameter_DoubleOffThreshold, "Parameter_DoubleOffThreshold");
+            CsvCtrl.WriteRows(parameter_WeekendOffThreshold, "Parameter_WeekendOffThreshold");
 
-            CsvCtrl.WriteParam(parameter_OffOneDayPenalty, "Parameter_OffOneDayPenalty");
-            CsvCtrl.WriteParam(parameter_SixDayPenalty, "Parameter_SixDayPenalty");
-            CsvCtrl.WriteParam(parameter_GroupMismatchPenalty, "Parameter_GroupMismatchPenalty");
-            CsvCtrl.WriteParam(parameter_NightToDayPenalty, "Parameter_NightToDayPenalty");
-            CsvCtrl.WriteParam(parameter_DoubleOffLT2Penalty, "Parameter_DoubleOffLT2Penalty");
-            CsvCtrl.WriteParam(parameter_BelowAVGPenalty, "Parameter_BelowAVGPenalty");
-            CsvCtrl.WriteParam(parameter_Weekend4DayPenalty, "Parameter_Weekend4DayPenalty");
+            CsvCtrl.WriteRows(parameter_OffOneDayPenalty, "Parameter_OffOneDayPenalty");
+            CsvCtrl.WriteRows(parameter_SixDayPenalty, "Parameter_SixDayPenalty");
+            CsvCtrl.WriteRows(parameter_GroupMismatchPenalty, "Parameter_GroupMismatchPenalty");
+            CsvCtrl.WriteRows(parameter_NightToDayPenalty, "Parameter_NightToDayPenalty");
+            CsvCtrl.WriteRows(parameter_DoubleOffLT2Penalty, "Parameter_DoubleOffLT2Penalty");
+            CsvCtrl.WriteRows(parameter_BelowAVGPenalty, "Parameter_BelowAVGPenalty");
+            CsvCtrl.WriteRows(parameter_Weekend4DayPenalty, "Parameter_Weekend4DayPenalty");
         }
     }
 }

@@ -35,7 +35,7 @@ namespace OptimFoundation.Generators
 
         private const string VariableBaseFqn = "global::OptimFoundation.Core.VariableBase";
         private const string ParameterBaseFqn = "global::OptimFoundation.Core.ParameterBase";
-        private const string SetBaseFqn = "global::OptimFoundation.Core.SetBase";
+        private const string SetBaseFqn = "global::OptimFoundation.Core.SetRowBase";
 
         private const int MaxArity = 6;
 
@@ -68,6 +68,22 @@ namespace OptimFoundation.Generators
             id: "OPTF004",
             title: "OptSet 元素型別不在合法域",
             messageFormat: "[OptSet<{1}>]（類別 '{0}'）的元素型別不受支援。合法：string / System.DateTime / int / long / double / decimal。",
+            category: "OptimFoundation.Naming",
+            defaultSeverity: DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor DimensionTypeRule = new DiagnosticDescriptor(
+            id: "OPTF007",
+            title: "OptDim 維度型別不受支援",
+            messageFormat: "類別 '{0}' 的 [OptDim<{1}>] 型別不受支援；只允許 string / System.DateTime / int / long / double / decimal。",
+            category: "OptimFoundation.Naming",
+            defaultSeverity: DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor SetDimensionRequiredRule = new DiagnosticDescriptor(
+            id: "OPTF008",
+            title: "Set 至少需要一個維度",
+            messageFormat: "Set '{0}' 至少必須宣告一個 [OptDim<T>(\"Name\")]；零維只允許 OptParam。",
             category: "OptimFoundation.Naming",
             defaultSeverity: DiagnosticSeverity.Error,
             isEnabledByDefault: true);
@@ -138,9 +154,6 @@ namespace OptimFoundation.Modeling
         /// <summary>各維度的 set 名；順序即生成 property 的順序。</summary>
         public string[] Sets { get; }
 
-        /// <summary>true（預設）會生成 QTY 值欄位；純 key 參數設 false。</summary>
-        public bool HasValue { get; set; } = true;
-
         /// <summary>依序列出各維度的 set 名。</summary>
         public OptParamAttribute(params string[] sets) { Sets = sets; }
     }
@@ -152,18 +165,19 @@ namespace OptimFoundation.Modeling
     public sealed class OptSetAttribute : Attribute { }
 
     /// <summary>標記這個類別是一顆 set 積木，成員型別為 T（支援 string / DateTime / int / long / double / decimal）。</summary>
-    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
-    public sealed class OptSetAttribute<T> : Attribute { }
+    // Set dimensions are declared exclusively with OptDim<T>.
 
 ");
-            for (int n = 2; n <= MaxArity; n++)
+            for (int n = MaxArity + 1; n <= MaxArity; n++)
             {
                 string tparams = string.Join(", ", Enumerable.Range(1, n).Select(i => "T" + i));
                 string names = string.Join(", ", Enumerable.Range(1, n).Select(i => "string name" + i));
                 string values = string.Join(", ", Enumerable.Range(1, n).Select(i => "name" + i));
+                string constraints = string.Join(" ", Enumerable.Range(1, n)
+                    .Select(i => $"where T{i} : global::OptimFoundation.Core.ISetBrick"));
                 sb.Append($@"
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
-    public sealed class OptSetAttribute<{tparams}> : Attribute
+    public sealed class OptSetAttribute<{tparams}> : Attribute {constraints}
     {{
         public string[] Names {{ get; }}
         public OptSetAttribute({names}) {{ Names = new[] {{ {values} }}; }}
@@ -179,7 +193,7 @@ namespace OptimFoundation.Modeling
     /// 用於同一顆 set 當多個維度的情形（例：來源站 / 目的站都是 Set_Station），可重複標記多次。
     /// </summary>
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
-    public sealed class OptDimAttribute<TSet> : Attribute where TSet : global::OptimFoundation.Core.ISetBrick
+    public sealed class OptDimAttribute<T> : Attribute
     {
         /// <summary>這個維度的名稱，會成為生成的 property 名與 CSV / DB 欄名。</summary>
         public string Name { get; }
@@ -190,7 +204,7 @@ namespace OptimFoundation.Modeling
 
 ");
             // 泛型 OptVar / OptParam：arity 1..MaxArity，where Tn : ISetBrick → 引用非積木 = CS0311
-            for (int n = 1; n <= MaxArity; n++)
+            for (int n = MaxArity + 1; n <= MaxArity; n++)
             {
                 string tparams = string.Join(", ", Enumerable.Range(1, n).Select(i => "T" + i));
                 string constraints = string.Join(" ", Enumerable.Range(1, n)
@@ -207,11 +221,7 @@ namespace OptimFoundation.Modeling
     /// 標記參數類別的維度（paved path）：泛型參數依序為各維度的 set 積木型別。
     /// </summary>
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
-    public sealed class OptParamAttribute<{tparams}> : Attribute {constraints}
-    {{
-        /// <summary>true（預設）會生成 QTY 值欄位；純 key 參數設 false。</summary>
-        public bool HasValue {{ get; set; }} = true;
-    }}
+    public sealed class OptParamAttribute<{tparams}> : Attribute {constraints} {{ }}
 
 ");
             }
@@ -235,12 +245,11 @@ namespace OptimFoundation.Modeling
 
             // B. Set 積木（非泛型預設 string + 泛型 arity 1）
             Register(context, SetAttr, ExtractSet);
-            Register(context, SetAttr + "`1", ExtractSet);
-            for (int n = 2; n <= MaxArity; n++)
+            for (int n = MaxArity + 1; n <= MaxArity; n++)
                 Register(context, SetAttr + "`" + n, ExtractSet);
 
             // B. 泛型 Var / Param（arity 1..MaxArity）
-            for (int n = 1; n <= MaxArity; n++)
+            for (int n = MaxArity + 1; n <= MaxArity; n++)
             {
                 Register(context, VarAttr + "`" + n, ExtractVarGeneric);
                 Register(context, ParamAttr + "`" + n, ExtractParamGeneric);
@@ -288,7 +297,12 @@ namespace OptimFoundation.Modeling
 
             // 字串式（原封保留）
             var args = ctx.Attributes[0].ConstructorArguments;
-            if (args.Length < 1) return null;
+            if (args.Length < 1)
+                return new EmitModel(NamespaceOf(symbol), symbol.Name, VariableBaseFqn, string.Empty,
+                    AddQty: false, AddCtors: false,
+                    Meta: varType == null ? string.Empty : $"VarType={varType}",
+                    NamingViolation: varType == null ? VarNamingRule : null,
+                    DiagLocation: symbol.Locations.FirstOrDefault(), Props: System.Array.Empty<PropSpec>(), DiagArg: symbol.Name);
 
             string setsCsv = JoinSets(args[0]);
 
@@ -304,25 +318,28 @@ namespace OptimFoundation.Modeling
             if (ctx.TargetSymbol is not INamedTypeSymbol symbol || ctx.Attributes.Length == 0) return null;
 
             var attr = ctx.Attributes[0];
-            bool hasValue = ReadHasValue(attr);
             bool badPrefix = !symbol.Name.StartsWith("Parameter_", System.StringComparison.Ordinal);
 
             // 具名維度 [OptDim<TSet>("name")] 優先
             var (dimProps, dimNotBrick, hasDims) = ResolveDims(symbol);
             if (hasDims)
                 return new EmitModel(NamespaceOf(symbol), symbol.Name, ParameterBaseFqn, string.Empty,
-                    AddQty: hasValue, AddCtors: true, Meta: string.Empty,
+                    AddQty: true, AddCtors: true, Meta: string.Empty,
                     NamingViolation: badPrefix ? ParamNamingRule : dimNotBrick,
                     DiagLocation: symbol.Locations.FirstOrDefault(),
                     Props: dimProps, DiagArg: symbol.Name);
 
             // 字串式（原封保留）
-            if (attr.ConstructorArguments.Length < 1) return null;
+            if (attr.ConstructorArguments.Length < 1)
+                return new EmitModel(NamespaceOf(symbol), symbol.Name, ParameterBaseFqn, string.Empty,
+                    AddQty: true, AddCtors: true, Meta: string.Empty,
+                    NamingViolation: badPrefix ? ParamNamingRule : null,
+                    DiagLocation: symbol.Locations.FirstOrDefault(), Props: System.Array.Empty<PropSpec>(), DiagArg: symbol.Name);
 
             string setsCsv = JoinSets(attr.ConstructorArguments[0]);
 
             return new EmitModel(NamespaceOf(symbol), symbol.Name, ParameterBaseFqn, setsCsv,
-                AddQty: hasValue, AddCtors: true, Meta: string.Empty,
+                AddQty: true, AddCtors: true, Meta: string.Empty,
                 NamingViolation: badPrefix ? ParamNamingRule : null,
                 DiagLocation: symbol.Locations.FirstOrDefault());
         }
@@ -337,33 +354,14 @@ namespace OptimFoundation.Modeling
             bool badPrefix = !symbol.Name.StartsWith("Set_", System.StringComparison.Ordinal);
 
             // 元素型別：泛型 [OptSet<T>] 取型別參數；非泛型 [OptSet] 預設 string
-            var attrClass = ctx.Attributes[0].AttributeClass;
-            var typeArgs = attrClass != null && attrClass.IsGenericType
-                ? attrClass.TypeArguments : System.Collections.Immutable.ImmutableArray<ITypeSymbol>.Empty;
-            string elemDisplay = typeArgs.Length == 0 ? "string" : string.Join(", ", typeArgs.Select(t => t.ToDisplayString()));
-            var mapped = typeArgs.Select(MapElem).ToArray();
-            bool legal = mapped.All(m => m.legal);
-            string baseFqn;
-            if (typeArgs.Length <= 1)
-            {
-                string elemFq = typeArgs.Length == 0 ? "string" : mapped[0].fq;
-                baseFqn = $"{SetBaseFqn}<{elemFq}>";
-            }
-            else
-            {
-                var names = ctx.Attributes[0].ConstructorArguments
-                    .Select((a, i) => a.Value as string ?? $"Item{i + 1}")
-                    .ToArray();
-                string tupleMembers = string.Join(", ", mapped.Select((m, i) => $"{m.fq} {names[i]}"));
-                baseFqn = $"{SetBaseFqn}<({tupleMembers})>";
-            }
-
-            var diag = badPrefix ? SetNamingRule : (legal ? null : SetElementTypeRule);
+            var (dims, typeViolation, hasDims) = ResolveDims(symbol);
+            string baseFqn = SetBaseFqn;
+            var diag = badPrefix ? SetNamingRule : (!hasDims ? SetDimensionRequiredRule : typeViolation);
 
             return new EmitModel(NamespaceOf(symbol), symbol.Name, baseFqn, string.Empty,
                 AddQty: false, AddCtors: false, Meta: string.Empty,
                 NamingViolation: diag, DiagLocation: loc,
-                Props: System.Array.Empty<PropSpec>(), DiagArg: elemDisplay);
+                Props: dims, DiagArg: symbol.Name);
         }
 
         private static EmitModel? ExtractVarGeneric(GeneratorAttributeSyntaxContext ctx)
@@ -385,12 +383,11 @@ namespace OptimFoundation.Modeling
         {
             if (ctx.TargetSymbol is not INamedTypeSymbol symbol || ctx.Attributes.Length == 0) return null;
 
-            bool hasValue = ReadHasValue(ctx.Attributes[0]);
             bool badPrefix = !symbol.Name.StartsWith("Parameter_", System.StringComparison.Ordinal);
             var (props, notBrick) = ResolveBricks(ctx.Attributes[0].AttributeClass);
 
             return new EmitModel(NamespaceOf(symbol), symbol.Name, ParameterBaseFqn, string.Empty,
-                AddQty: hasValue, AddCtors: true, Meta: string.Empty,
+                AddQty: true, AddCtors: true, Meta: string.Empty,
                 NamingViolation: badPrefix ? ParamNamingRule : notBrick,
                 DiagLocation: symbol.Locations.FirstOrDefault(),
                 Props: props, DiagArg: symbol.Name);
@@ -433,9 +430,6 @@ namespace OptimFoundation.Modeling
 
                 if (IsSetBrick(namedType))
                 {
-                    string regName = namedType.Name.StartsWith("Set_", System.StringComparison.Ordinal)
-                        ? namedType.Name.Substring(4) : namedType.Name;
-                    sets.Add(new SetReg(regName, member.Name));
                     continue;
                 }
 
@@ -443,10 +437,7 @@ namespace OptimFoundation.Modeling
                 {
                     string[] indexProps = ResolveIndexSetNames(paramType);
                     string[] numberProps = ResolveNumberPropNames(paramType);
-                    bool fullGrid = paramType.GetAttributes().Any(a =>
-                        a.AttributeClass?.ToDisplayString() == "OptimFoundation.Core.FullGridAttribute");
-                    parms.Add(new ParamReg(member.Name, indexProps, numberProps, fullGrid));
-                    aliases.AddRange(ResolveDimAliases(paramType));
+                    parms.Add(new ParamReg(member.Name, indexProps, numberProps, false));
                     continue;
                 }
 
@@ -578,10 +569,10 @@ namespace OptimFoundation.Modeling
 
         // numbersOf 萃取器涵蓋的欄位名：該 Parameter 型別上「所有 double 型別屬性」，來源三路徑（去重、保持穩定順序）：
         //   1) index props 裡型別為 double 的（generator 自己 emit，來源＝attribute 宣告反推，symbol 這時看不到）
-        //   2) QTY（generator 自己 emit，當 HasValue=true，同理不能靠 symbol 看）
+        //   2) QTY（generator 一律 emit，同理不能靠 symbol 看）
         //   3) 使用者在 partial 另一半手寫的 double 屬性（宣告期即存在於原始碼，symbol 可見，用 GetMembers() 掃）
         // 這是修掉「數值 sanity 漏掉非 QTY 值欄位」的實質漏洞（見框架資料防護規格追補）：真實專案值欄位多半
-        // 走 [OptParam(HasValue=false)] + 手寫 double 值欄位（如 Profit/Required/Stock），先前完全不受涵蓋。
+        // 手寫 double 值欄位（如 Profit/Required/Stock）同樣納入；但模型係數的 canonical 欄位仍是 QTY。
         // 非 double 的值欄位（int/decimal 等）本次不納入，維持現狀。
         private static string[] ResolveNumberPropNames(INamedTypeSymbol paramType)
         {
@@ -591,7 +582,7 @@ namespace OptimFoundation.Modeling
             foreach (var p in ResolveParamIndexProps(paramType).Where(p => p.Type == "double"))
                 if (seen.Add(p.Name)) names.Add(p.Name);
 
-            if (ParamHasValue(paramType) && seen.Add("QTY"))
+            if (seen.Add("QTY"))
                 names.Add("QTY");
 
             foreach (var member in paramType.GetMembers())
@@ -603,13 +594,6 @@ namespace OptimFoundation.Modeling
             }
 
             return names.ToArray();
-        }
-
-        private static bool ParamHasValue(INamedTypeSymbol paramType)
-        {
-            var optParamAttr = paramType.GetAttributes()
-                .FirstOrDefault(a => a.AttributeClass != null && a.AttributeClass.Name == "OptParamAttribute");
-            return optParamAttr == null || ReadHasValue(optParamAttr);
         }
 
         private static void EmitDataContextRegister(SourceProductionContext spc, DataContextEmitModel m)
@@ -635,24 +619,11 @@ namespace OptimFoundation.Modeling
             sb.AppendLine("        protected override void RegisterAll()");
             sb.AppendLine("        {");
 
-            var registeredSetNames = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal);
-            foreach (var s in m.Sets)
-            {
-                sb.Append("            RegisterSet(\"").Append(s.RegisterName).Append("\", ").Append(s.FieldName).AppendLine(");");
-                registeredSetNames.Add(s.RegisterName);
-            }
+            // Set rows are ordinary project-owned List<T> data; no Set registry exists.
 
             // 同一顆 Set 被多個自訂維度名引用（[OptDim<TSet>("自訂名")]）→ 各自訂名都額外註冊一次別名，
             // 指向同一顆 Set 欄位（同名只註冊一次）。找不到對應 Set 欄位（使用者沒宣告那顆積木）→ 略過，
             // 維持現狀讓它報 MissingSet（那是真缺，不該掩蓋）。
-            foreach (var alias in m.Aliases)
-            {
-                if (!registeredSetNames.Add(alias.CustomName)) continue;
-                var targetSet = m.Sets.FirstOrDefault(s => s.RegisterName == alias.SetRegisterName);
-                if (targetSet == null) continue;
-                sb.Append("            RegisterSet(\"").Append(alias.CustomName).Append("\", ").Append(targetSet.FieldName).AppendLine(");");
-            }
-
             foreach (var p in m.Params)
             {
                 string idxArr = p.IndexSets.Length == 0
@@ -667,7 +638,7 @@ namespace OptimFoundation.Modeling
 
                 sb.Append("            RegisterParam(").Append(p.FieldName).Append(", ").Append(idxArr)
                   .Append(", ").Append(indexOf).Append(", ").Append(numbersOf)
-                  .Append(", fullGrid: ").Append(p.FullGrid ? "true" : "false").AppendLine(");");
+                  .AppendLine(");");
             }
 
             sb.AppendLine("        }");
@@ -727,15 +698,15 @@ namespace OptimFoundation.Modeling
             foreach (var d in dims)
             {
                 string name = d.ConstructorArguments.Length > 0 ? d.ConstructorArguments[0].Value?.ToString() ?? string.Empty : string.Empty;
-                var setSym = d.AttributeClass!.TypeArguments.Length == 1 ? d.AttributeClass.TypeArguments[0] : null;
-                var optSet = setSym?.GetAttributes().FirstOrDefault(a => a.AttributeClass?.Name == "OptSetAttribute");
-                if (optSet == null)
+                var type = d.AttributeClass!.TypeArguments.Length == 1 ? d.AttributeClass.TypeArguments[0] : null;
+                if (type == null)
                 {
-                    notBrick = NotASetBrickRule;
+                    notBrick = DimensionTypeRule;
                     list.Add(new PropSpec(name, "string", true));
                     continue;
                 }
-                var (fq, isStr) = ElemFromOptSetAttr(optSet.AttributeClass!);
+                var (fq, isStr, legal) = MapElem(type);
+                if (!legal) notBrick = DimensionTypeRule;
                 list.Add(new PropSpec(name, fq, isStr));
             }
             return (list.ToArray(), notBrick, true);
@@ -768,13 +739,6 @@ namespace OptimFoundation.Modeling
             return ("string", true, false);
         }
 
-        private static bool ReadHasValue(AttributeData attr)
-        {
-            foreach (var na in attr.NamedArguments)
-                if (na.Key == "HasValue" && na.Value.Value is bool b) return b;
-            return true;
-        }
-
         private static string JoinSets(TypedConstant arg)
         {
             if (arg.Kind != TypedConstantKind.Array) return string.Empty;
@@ -790,7 +754,8 @@ namespace OptimFoundation.Modeling
             if (m.NamingViolation != null)
             {
                 string arg = m.DiagArg ?? m.ClassName;
-                spc.ReportDiagnostic(m.NamingViolation == SetElementTypeRule || m.NamingViolation == NotASetBrickRule
+                spc.ReportDiagnostic(m.NamingViolation == SetElementTypeRule || m.NamingViolation == NotASetBrickRule ||
+                    m.NamingViolation == DimensionTypeRule
                     ? Diagnostic.Create(m.NamingViolation, m.DiagLocation, m.ClassName, arg)
                     : Diagnostic.Create(m.NamingViolation, m.DiagLocation, m.ClassName));
             }
@@ -839,11 +804,43 @@ namespace OptimFoundation.Modeling
             if (m.AddQty)
                 sb.AppendLine("        public double QTY { get; set; }");
 
+            // A Set is a row type, but single-dimension rows remain pleasant to use
+            // in model loops.  Multi-dimension rows support normal C# deconstruction.
+            if (m.BaseFqn == SetBaseFqn && m.Props != null)
+            {
+                if (m.Props.Length == 1)
+                {
+                    sb.AppendLine();
+                    sb.Append("        public static implicit operator ").Append(m.Props[0].Type)
+                      .Append('(').Append(m.ClassName).Append(" row) => row.")
+                      .Append(m.Props[0].Name).AppendLine(";");
+                }
+                else if (m.Props.Length > 1)
+                {
+                    sb.AppendLine();
+                    sb.Append("        public void Deconstruct(");
+                    sb.Append(string.Join(", ", m.Props.Select(p => "out " + p.Type + " " + p.Name)));
+                    sb.AppendLine(")");
+                    sb.AppendLine("        {");
+                    foreach (var p in m.Props)
+                        sb.Append("            ").Append(p.Name).Append(" = this.").Append(p.Name).AppendLine(";");
+                    sb.AppendLine("        }");
+                }
+            }
+
             if (m.AddCtors)
             {
                 sb.AppendLine();
                 sb.Append("        public ").Append(m.ClassName).AppendLine("(params object[] sets) => InitClassBySets(sets);");
                 sb.Append("        public ").Append(m.ClassName).AppendLine("() { }");
+            }
+
+            if (m.SetComponentNames != null)
+            {
+                sb.AppendLine();
+                sb.Append("        protected override string[] TupleComponentNames => new[] { ")
+                    .Append(string.Join(", ", m.SetComponentNames.Select(name => $"\"{name}\"")))
+                    .AppendLine(" };");
             }
 
             sb.AppendLine("    }");
@@ -875,7 +872,8 @@ namespace OptimFoundation.Modeling
             string Namespace, string ClassName, string BaseFqn, string SetsCsv,
             bool AddQty, bool AddCtors, string Meta,
             DiagnosticDescriptor? NamingViolation = null, Location? DiagLocation = null,
-            PropSpec[]? Props = null, string? DiagArg = null);
+            PropSpec[]? Props = null, string? DiagArg = null,
+            string[]? SetComponentNames = null, string[]? ComponentSetTypeFqns = null);
 
         private sealed record SetReg(string RegisterName, string FieldName);
         private sealed record ParamReg(string FieldName, string[] IndexSets, string[] NumberProps, bool FullGrid);

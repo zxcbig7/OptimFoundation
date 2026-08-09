@@ -10,7 +10,37 @@ modules: [core-data, core-variable, generator, io-csv, io-db]
 
 ## Summary
 
-把框架讀取模型資料的方式收斂成**單一原語**——「給我這張表的列」（`IEnumerable<string[]>`），Set 與 Parameter 都消費它，差別只在**有沒有值欄**。在這個統一的讀取層上加多分量支援，`[OptSet<T1,T2>("NodeFrom","NodeTo")]` 就成立，`BuildVars` 也就能把一顆多維 Set 當**一個維度**展開，只建實際存在的組合。
+## Final declaration contract (2026-08-08)
+
+This section supersedes older examples in this draft that use `OptSet<T>` or
+`OptDim<Set_X>`. Set and Parameter use one declaration mechanism: ordered
+`[OptDim<T>("Column")]` attributes, where `T` is a supported scalar CLR type
+(`string`, `DateTime`, `int`, `long`, `double`, or `decimal`). `OptDim` never
+references another Set brick.
+
+```csharp
+[OptSet]
+[OptDim<string>("From")]
+[OptDim<string>("To")]
+public partial class Set_Arc { }
+
+[OptParam]
+[OptDim<string>("From")]
+[OptDim<string>("To")]
+public partial class Parameter_ArcCost { }
+
+[OptParam]
+public partial class Parameter_BigM { } // zero-dimensional scalar Parameter
+```
+
+Generator behavior is shared: it maps every `OptDim` to one generated property
+and preserves declaration order. A Set has at least one dimension and its CSV
+has exactly those columns. A Parameter may have zero or more dimensions and
+its CSV has those columns followed by `QTY`. CSV I/O only aligns headers and
+converts cells to the declared CLR types; it does not infer Set membership or
+tuple-component relationships. The writer emits those same columns in order.
+
+把框架讀取模型資料的方式收斂成**單一原語**——「給我這張表的列」（`IEnumerable<string[]>`），Set 與 Parameter 都消費它，差別只在**有沒有值欄**。在這個統一的讀取層上加多分量支援，`[OptSet<Set_Node,Set_Node>("NodeFrom","NodeTo")]` 就成立，`BuildVars` 也就能把一顆多維 Set 當**一個維度**展開，只建實際存在的組合。
 
 分類原則（本規格的組織骨幹）：
 
@@ -54,11 +84,31 @@ Parameter:  source.LoadParam<Parameter_X>() ← 來源把資料推過來（push�
 
 ## Scope
 
+### Accepted follow-up — remove `OptParam.HasValue`
+
+`HasValue = false` is removed from every `OptParamAttribute` overload.  A Parameter always has the generator-produced numeric `QTY` property and never represents an existence-only relation.  This is an intentional source-breaking API change: existing `[OptParam(HasValue = false)]` declarations must be migrated to an arity-matched `OptSet<T1, …, Tn>`.
+
+The migration is mechanical for the former pure-key use case:
+
+```csharp
+// Before
+[OptParam(HasValue = false)]
+[OptDim<Set_Employee>("Employee")]
+[OptDim<Set_Group>("Group")]
+public partial class Parameter_BackupGroup { }
+
+// After
+[OptSet<Set_Employee, Set_Group>("Employee", "Group")]
+public partial class Set_BackupGroup { }
+```
+
+The corresponding data container and constraints iterate the `Set_BackupGroup` tuples directly.  Declarations that require a numeric coefficient remain Parameters and use `QTY`; alternative handwritten value properties are not a supported substitute for `QTY`.
+
 ### In Scope
 
 > **前置規格**：`2026-08-08-io-read-surface.md` —— 讀取面已收斂成 `LoadRows`（多欄）與 `LoadParam` 兩件事，三個不對稱與表頭顯式判定也在那份完成。本規格接在它之上，只處理宣告層與變數層。
 
-- `[OptSet<T1…Tn>(分量名…)]` arity 1–6；成員型別 = 具名 ValueTuple；arity 1 寫法與行為**完全不變**
+- `[OptSet<TSet1…TSetn>(分量名…)]` arity 2–6；每個分量必須引用一顆單維 Set，成員型別 = 具名 ValueTuple；arity 1 寫法與行為**完全不變**
 - 多欄 Set CSV：專用檔無表頭按序、共讀檔帶表頭按分量名挑欄
 - **同檔共讀**：同一份 CSV 可被 Set 與 Parameter 各取所需欄，arc 清單只存在一份
 - `BuildVars<T>(多維Set)` 把該 Set 當**一個維度**展開；可與一維 Set 任意混用、任意順序
@@ -69,8 +119,7 @@ Parameter:  source.LoadParam<Parameter_X>() ← 來源把資料推過來（push�
 
 - **`IDataSource` 與 DB 的型別統一** —— DB 的差異降級成「位址是 SQL 而非名稱」，資料形狀已一致；要不要讓 `DbDataSource` 實作介面另開一輪（會動 `Dataload` 建構子簽名）
 - `OracleDBCtrl` 移出 Core（動 csproj 相依與 `dlls/`）
-- **Parameter 以多維 Set 為定義域** + `[FullGrid]` 的稀疏覆蓋語意
-- **積木式泛型** `[OptSet<Set_Node, Set_Node>]`（分量綁來源 Set、可驗分量 dangling）
+- **Parameter 以多維 Set 為定義域** + `[FullGrid]` 的稀疏覆蓋語意——本架構明確禁止；`[OptDim<TSet>]` 只可引用單維 Set
 - `ISetBrick` 擴充（`Arity` / 分量型別列舉）—— 驗證器不需要看懂多維 Set
 - nullable 值欄、DateTime 時分秒粒度、空集合禁止的放寬、`[OptSet]` 支援 enum
 - `ParamLookup` / 缺格查詢 log
@@ -110,7 +159,9 @@ Parameter:  source.LoadParam<Parameter_X>() ← 來源把資料推過來（push�
 
 ### 多維 Set
 
-- [ ] `[OptSet<string,string>("NodeFrom","NodeTo")]` 可編譯，generator 產出 `: SetBase<(string NodeFrom, string NodeTo)>`
+- [ ] `[OptSet<Set_Node,Set_Node>("NodeFrom","NodeTo")]` 可編譯，generator 產出 `: SetBase<(string NodeFrom, string NodeTo)>`
+- [ ] 多維 Set 的每個 tuple 分量都必須存在於對應的單維 Set；否則載入驗證報 `Dangling`
+- [ ] `[OptDim<Set_Arc>]` 產生 compile error；Parameter / Variable 維度只接受單維 Set
 - [ ] `foreach (var arc in arcs)` 可用 `arc.NodeFrom` / `arc.NodeTo` 具名存取
 - [ ] 專用多欄檔（無表頭）欄數與 arity 不符 → 例外（含檔名、行號、期望/實際欄數）
 - [ ] **同檔共讀**：`set_Arc.Load(source, "ArcCost")` 與 `source.LoadParam<Parameter_ArcCost>("ArcCost")` 讀同一份帶表頭 CSV，各取所需欄
@@ -200,7 +251,7 @@ LoadRows("ArcCost")
 public sealed partial class Set_Node { }
 
 // Set/Set_Arc.cs — 對應 Data/ArcCost.csv 的前兩欄（依分量名對表頭）
-[OptSet<string, string>("NodeFrom", "NodeTo")]
+[OptSet<Set_Node, Set_Node>("NodeFrom", "NodeTo")]
 public sealed partial class Set_Arc { }
 ```
 
@@ -337,7 +388,7 @@ L2,OP1,EQ2
 ```
 
 ```csharp
-[OptSet<string, string, string>("Lot", "Operation", "Eqp")]
+[OptSet<Set_Lot, Set_Operation, Set_Eqp>("Lot", "Operation", "Eqp")]
 public sealed partial class Set_LotOpEqp { }
 ```
 
@@ -368,7 +419,7 @@ VariableX_Flow@N1@N3@2026-01-01
 - **共讀檔缺表頭**：Set 無從得知該讀哪幾欄 → 明確例外，訊息指出「共讀需要表頭」
 - **共讀檔表頭有分量名但欄序與宣告不同**：按名對位，順序無所謂
 - **Trim 後成員變空字串**：視為空行處理（跳過），與 Parameter 一致
-- **多維 Set 被 Parameter 引用**：本次不支援；`ContainsObject` 拿 string 比 tuple 一律回 false，會整份報 `Dangling` → 加診斷碼擋掉（見 Open Questions）
+- **多維 Set 被 Parameter 引用**：不支援且必須以診斷碼擋掉；`[OptDim<TSet>]` 僅接受單維 Set
 - **`LoadInline` / `LoadCsv` 標 `[Obsolete]`**：warning 不是 error，既有 code 不會壞
 
 ## Non-Functional Requirements
@@ -418,4 +469,4 @@ VariableX_Flow@N1@N3@2026-01-01
 - 受影響的既有規格：`framework-dev-spec.md`（資料防護規格）、`cplex-project-dev-spec.md`
 - 分類原則：無值多維 = Set、有值多維 = Parameter；值必須是數值，非數值的「值」其實是維度
 - 外部慣例：AMPL `set ARCS within {NODES,NODES}`、GAMS `set arc(n,n)`、OPL `tuple` set、Pyomo `Set(within=...)`
-- 後續可能的規格：`DbDataSource` 實作 `IDataSource`、Parameter 以多維 Set 為定義域 + `[FullGrid]` 稀疏覆蓋、積木式泛型 `[OptSet<Set_Node,Set_Node>]`、`OracleDBCtrl` 移出 Core、`ParamLookup` 缺格 log、LLMDevFramework 規範同步
+- 後續可能的規格：`DbDataSource` 實作 `IDataSource`、`OracleDBCtrl` 移出 Core、`ParamLookup` 缺格 log、LLMDevFramework 規範同步

@@ -7,9 +7,9 @@ namespace FJSP_BASIC_BRICK
     /// 同 set 多維度：LotA/LotB 皆 ∈ Lot、OperationA/OperationB 皆 ∈ Operation。
     /// </summary>
     [OptVar]
-    [OptDim<Set_Lot>("LotA")]
-    [OptDim<Set_Operation>("OperationA")]
-    [OptDim<Set_Lot>("LotB")]
-    [OptDim<Set_Operation>("OperationB")]
+    [OptDim<string>("LotA")]
+    [OptDim<string>("OperationA")]
+    [OptDim<string>("LotB")]
+    [OptDim<string>("OperationB")]
     public sealed partial class VariableB_Precede { }
 }

@@ -9,8 +9,8 @@
 | 詞 | 定義（本模型採用） |
 | --- | --- |
 | 格（Cell） | 盤面上由（列, 欄）唯一決定的一個位置 |
-| 宮（Block） | √N × √N 的子區塊；標準 9×9 盤面共 9 個 3×3 宮。哪些格屬於哪個宮由 `Parameter_BlockCell` 資料決定，不寫死在 code |
-| Given | 題目一開始就填好的格子；以（列, 欄, 數字）三元組表示，是純 key parameter（沒有 QTY） |
+| 宮（Block） | √N × √N 的子區塊；標準 9×9 盤面共 9 個 3×3 宮。哪些格屬於哪個宮由 `Set_BlockCell` 資料決定，不寫死在 code |
+| Given | 題目一開始就填好的格子；以（列, 欄, 數字）三元組 Set 表示 |
 | 恰好一次（ExactlyOne） | 每個群組（格 / 列 / 欄 / 宮）中某數字必須出現的次數，值為 1。以 scalar parameter 表示，不在限制式裡寫裸數字 |
 | 群組（Group） | 數獨規則中「同一個數字不得重複」的範圍，共四種：單一格內的數字、同列、同欄、同宮 |
 | 邊長 N | 盤面的列數（= 欄數 = 數字個數）。由 `Data/raw/` 的題盤矩陣尺寸決定，非固定 9 |
@@ -24,13 +24,13 @@
 | COLUMN | 盤面的欄索引 | 1..N | `Set_Column`（`[OptSet<int>]`） |
 | DIGIT | 可填入的數字 | 1..N | `Set_Digit`（`[OptSet<int>]`） |
 | BLOCK | 宮（√N × √N 的子區塊） | 1..N | `Set_Block`（`[OptSet<int>]`） |
+| GIVEN | 題盤已知數字的（列, 欄, 數字）tuple | ROW, COLUMN, DIGIT | `Set_Given`（`[OptSet<int,int,int>]`） |
+| BLOCKCELL | 每個宮涵蓋的（宮, 列, 欄）tuple | BLOCK, ROW, COLUMN | `Set_BlockCell`（`[OptSet<int,int,int>]`） |
 
 ## PARAM
 
 | Param | 語意 | Dim | 有值 | → 程式 |
 | --- | --- | --- | --- | --- |
-| Given | 題盤已知數字的（列, 欄, 數字）組合 | ROW, COLUMN, DIGIT | 否（純 key） | `Parameter_Given` |
-| BlockCell | 每個宮涵蓋哪些格 | BLOCK, ROW, COLUMN | 否（純 key） | `Parameter_BlockCell` |
 | ExactlyOne | 「恰好一次」的計數值 | —（scalar） | 是 | `Parameter_ExactlyOne` |
 | ObjCoef | 目標式中各數字的權重 | DIGIT | 是 | `Parameter_ObjCoef` |
 

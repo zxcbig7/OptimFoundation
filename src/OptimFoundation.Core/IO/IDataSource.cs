@@ -1,27 +1,25 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 
 namespace OptimFoundation.Core.IO
 {
     /// <summary>
-    /// 名稱可定址的模型資料來源抽象：Dataload 只依賴本介面，換來源（CSV / 記憶體）不動模型 code——
-    /// 與「換 solver 只換 OptEngine」同一哲學。實作：CsvDataSource / InMemoryDataSource。
-    /// DB 是 query-only（第一引數是 SQL 而非名稱），故 DbDataSource 不實作本介面，但共用 LoadParam / LoadSet 命名。
+    /// 模型資料來源抽象：Dataload 只依賴本介面，換來源（CSV / 記憶體 / DB）不動模型 code。
+    /// LoadSet 與 LoadParam 都遵循 schema；LoadData 則刻意不認得任何積木。
     /// </summary>
     public interface IDataSource
     {
-        /// <summary>Loads raw CSV/DB/in-memory records. Each array is one complete row.</summary>
-        IEnumerable<string[]> LoadRows(string name);
+        /// <summary>載入完整 Set 資料列，包含必填表頭。</summary>
+        /// <summary>載入含 schema 的獨立 CSV／DB 表格，不考慮任何模型積木。</summary>
+        DataTable LoadData(string file);
 
-        /// <summary>
-        /// 讀某參數型別的全部列。file = 資料檔名（自由，省略則 = 型別名）——檔名無限制，契約是「欄位對得上 class 的 property」，
-        /// 對不上即丟例外。
-        /// </summary>
-        List<TParamClass> LoadParam<TParamClass>(string file = null) where TParamClass : ModelElementBase, new();
-
-        /// <summary>讀一維 set。name = 邏輯名稱（檔名形式 Set_{X}），各實作自行解析位址。</summary>
-        [Obsolete("Use LoadRows for new code. LoadSet is retained for one-column compatibility.")]
-        List<string> LoadSet(string name);
+        /// <summary>依表頭與 public property 名稱對應，載入具型別的 Parameter。</summary>
+        List<T> Load<T>(string file = null) where T : ModelElementBase, new()
+        {
+            var name = file ?? typeof(T).Name;
+            return ModelRowMapper.MapTable<T>(LoadData(name), name);
+        }
     }
 
     /// <summary>

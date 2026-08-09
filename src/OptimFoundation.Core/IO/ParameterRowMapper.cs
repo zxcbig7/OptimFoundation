@@ -1,13 +1,67 @@
 using System;
+using System.Collections.Generic;
+using System.Data;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 
 namespace OptimFoundation.Core.IO
 {
-    /// <summary>Shared trim and invariant-culture conversion for parameter cells.</summary>
-    internal static class ParameterRowMapper
+    /// <summary>集中處理 Parameter 儲存格的去除空白與不依賴地區設定的型別轉換。</summary>
+    internal static class ModelRowMapper
     {
+        internal static List<TParameter> MapTable<TParameter>(DataTable table, string sourceDescription)
+            where TParameter : ModelElementBase, new()
+            => MapRows<TParameter>(TabularData.ToRecords(table), sourceDescription);
+
+        /// <summary>
+        /// 將原始資料列映射成 Parameter 物件。第一列必須列出所有 public property，
+        /// 後續資料列依該表頭對應。
+        /// </summary>
+        internal static List<TParameter> MapRows<TParameter>(IEnumerable<string[]> rows, string sourceDescription)
+            where TParameter : ModelElementBase, new()
+        {
+            if (rows == null) throw new ArgumentNullException(nameof(rows));
+
+            var properties = typeof(TParameter).GetProperties();
+            var normalizedRows = rows
+                .Select(row => row?.Select(cell => (cell ?? string.Empty).Trim()).ToArray()
+                    ?? throw new InvalidDataException($"[{sourceDescription}] A data row cannot be null."))
+                .Where(row => row.Any(cell => cell.Length > 0))
+                .ToArray();
+            var result = new List<TParameter>();
+            if (normalizedRows.Length == 0) return result;
+
+            var firstRow = normalizedRows[0];
+            var columnMap = properties.Select(property => FindColumn(firstRow, property.Name)).ToArray();
+            var hasHeader = columnMap.All(index => index >= 0);
+            if (!hasHeader)
+                throw new InvalidDataException(
+                    $"[{sourceDescription}] Parameter CSV requires a header containing: {string.Join(", ", properties.Select(property => property.Name))}. " +
+                    $"Actual first row: {string.Join(", ", firstRow)}.");
+
+            foreach (var row in normalizedRows.Skip(hasHeader ? 1 : 0))
+            {
+                var cells = new string[properties.Length];
+                for (var i = 0; i < properties.Length; i++)
+                {
+                    if (columnMap[i] >= row.Length)
+                        throw new InvalidDataException(
+                            $"[{sourceDescription}] A data row is missing a value for '{properties[i].Name}'.");
+                    cells[i] = row[columnMap[i]];
+                }
+
+                var item = new TParameter();
+                item.InitClassBySets(ConvertCells(properties, cells, sourceDescription));
+                result.Add(item);
+            }
+            return result;
+        }
+
+        private static int FindColumn(string[] columns, string name)
+            => Array.FindIndex(columns, column => string.Equals(column, name, StringComparison.OrdinalIgnoreCase));
+
         internal static object[] ConvertCells(PropertyInfo[] properties, string[] cells, string sourceDescription)
         {
             if (properties == null) throw new ArgumentNullException(nameof(properties));

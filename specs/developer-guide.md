@@ -4,6 +4,41 @@
 
 ---
 
+> **2026-08-08 宣告契約更新：本段覆蓋下方舊有的 Set／Parameter 範例。**
+> 使用 `[OptSet]` 或 `[OptParam]`，並以宣告順序排列
+> `[OptDim<T>("欄位名")]`；`T` 僅可為 `string`、`DateTime`、`int`、`long`、
+> `double` 或 `decimal`。`OptDim` 不會、也不應參考任何 Set 積木。
+>
+> 產生器對兩種型別使用同一條「Dim → property」路徑。Set 有一個以上的維度，
+> CSV 欄位就是其 Dim 名稱；Parameter 有零個以上的維度，CSV 欄位為 Dim 名稱後接
+> `QTY`。零維 Parameter 是純量參數，CSV 為只有一列資料的 `QTY` 表。讀取器依表頭
+> 對齊欄位並轉換成已宣告型別；寫出器則忠實保留此欄位順序。
+>
+> `Set_X` 是資料列類別（`SetRowBase`），絕不是集合或積木。兩種資料都使用同一個
+> 讀取 API，並把回傳資料列保存為 `List<T>`：
+>
+> ```csharp
+> List<Set_Arc> arcs = source.Load<Set_Arc>();
+> List<Parameter_ArcCost> arcCosts = source.Load<Parameter_ArcCost>();
+> ```
+>
+> Set 至少需要一個 `OptDim`；Param 可不宣告 `OptDim`，代表純量。Set CSV 恰有
+> Dim 欄；Param CSV 為 Dim 欄後接 `QTY`。Set 與 Param 均使用
+> `CsvCtrl.WriteRows` 寫出。不保留 `SetBase`、`ISetBrick`、`LoadSet`、
+> `LoadParam`、`WriteSet` 或 `WriteParam` 等相容 API。
+>
+> ```csharp
+> [OptSet]
+> [OptDim<string>("From")]
+> [OptDim<string>("To")]
+> public partial class Set_Arc { }
+>
+> [OptParam]
+> [OptDim<string>("From")]
+> [OptDim<string>("To")]
+> public partial class Parameter_ArcCost { }
+> ```
+
 ## 目錄
 
 1. [架構概覽](#1-架構概覽)
@@ -114,7 +149,7 @@ public class VariableI_WorkCount : VariableBase
 
 ## 3. Parameter — 定義模型參數
 
-在 `Data/` 下新增 class，繼承 `ParameterBase`。`QTY` 放最後，代表數值欄位。
+在 `Data/` 下新增 class，繼承 `ParameterBase`。`QTY` 放最後，代表數值欄位。`OptParam.HasValue` 已移除：Parameter 一律有 `QTY`；只代表存在與否的組合一律改用多維 `OptSet<T1, …, Tn>`。
 
 ```csharp
 public class Parameter_ShiftDemand : ParameterBase

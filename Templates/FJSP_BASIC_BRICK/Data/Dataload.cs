@@ -7,9 +7,9 @@ namespace FJSP_BASIC_BRICK
     /// <summary>資料唯一入口：把 Data/*.csv 讀成積木，再由 DataContext 驗證。</summary>
     public sealed partial class Dataload : DataContext
     {
-        public Set_Lot set_Lot = new();
+        public List<Set_Lot> set_Lot = new();
         public Set_Operation set_Operation = new();   // 行序＝加工順序（RoutePrecedence／MakespanDef 依此索引）
-        public Set_Eqp set_Eqp = new();
+        public List<Set_Eqp> set_Eqp = new();
 
         public List<Parameter_ProcessTime> parameter_ProcessTime = new();
         public List<Parameter_ExactlyOne> parameter_ExactlyOne = new();
@@ -37,21 +37,22 @@ namespace FJSP_BASIC_BRICK
             .GroupBy(x => x.Lot)
             .Max(g => g.Sum(x => x.MinTime)) - 1;
 
+        //public Dataload() : this(new DbDataSource()) { }
         public Dataload() : this(new CsvDataSource()) { }
 
         /// <summary>讀取已就位的 canonical CSV；此建構子只做資料載入。</summary>
         public Dataload(IDataSource source)
         {
-            set_Lot.Load(source, "Set_Lot");
-            set_Operation.Load(source, "Set_Operation");
-            set_Eqp.Load(source, "Set_Eqp");
-            parameter_ProcessTime = source.LoadParam<Parameter_ProcessTime>("Parameter_ProcessTime");
-            parameter_ExactlyOne = source.LoadParam<Parameter_ExactlyOne>("Parameter_ExactlyOne");
-            parameter_MakespanFloor = source.LoadParam<Parameter_MakespanFloor>("Parameter_MakespanFloor");
-            parameter_SoftMakespanTarget = source.LoadParam<Parameter_SoftMakespanTarget>("Parameter_SoftMakespanTarget");
-            parameter_MakespanPenalty = source.LoadParam<Parameter_MakespanPenalty>("Parameter_MakespanPenalty");
-            parameter_NoOverlapForwardOffset = source.LoadParam<Parameter_NoOverlapForwardOffset>("Parameter_NoOverlapForwardOffset");
-            parameter_NoOverlapBackwardOffset = source.LoadParam<Parameter_NoOverlapBackwardOffset>("Parameter_NoOverlapBackwardOffset");
+            set_Lot = source.Load<Set_Lot>("Set_Lot");
+            set_Operation = source.Load<Set_Operation>("Set_Operation");
+            set_Eqp = source.Load<Set_Eqp>("Set_Eqp");
+            parameter_ProcessTime = source.Load<Parameter_ProcessTime>("Parameter_ProcessTime");
+            parameter_ExactlyOne = source.Load<Parameter_ExactlyOne>("Parameter_ExactlyOne");
+            parameter_MakespanFloor = source.Load<Parameter_MakespanFloor>("Parameter_MakespanFloor");
+            parameter_SoftMakespanTarget = source.Load<Parameter_SoftMakespanTarget>("Parameter_SoftMakespanTarget");
+            parameter_MakespanPenalty = source.Load<Parameter_MakespanPenalty>("Parameter_MakespanPenalty");
+            parameter_NoOverlapForwardOffset = source.Load<Parameter_NoOverlapForwardOffset>("Parameter_NoOverlapForwardOffset");
+            parameter_NoOverlapBackwardOffset = source.Load<Parameter_NoOverlapBackwardOffset>("Parameter_NoOverlapBackwardOffset");
         }
 
         /// <summary>
@@ -61,12 +62,10 @@ namespace FJSP_BASIC_BRICK
         /// </summary>
         public Dataload(string rawFile)
         {
-            var rows = new CsvDataSource().LoadRows(rawFile).ToArray();
-            if (rows.Length < 2)
+            var data = new CsvDataSource().LoadData(rawFile);
+            if (data.Rows.Count < 1)
                 throw new InvalidDataException("FJSP import requires a header and one data row.");
-            var header = rows[0].Select((column, index) => (column.Trim(), index))
-                .ToDictionary(pair => pair.Item1, pair => pair.index, StringComparer.OrdinalIgnoreCase);
-            string Read(string column) => rows[1][header[column]].Trim();
+            string Read(string column) => data.Rows[0][column]?.ToString()?.Trim() ?? string.Empty;
             int lots = int.Parse(Read("Lots"), CultureInfo.InvariantCulture);
             int operations = int.Parse(Read("Operations"), CultureInfo.InvariantCulture);
             int eqps = int.Parse(Read("Eqps"), CultureInfo.InvariantCulture);
@@ -78,9 +77,9 @@ namespace FJSP_BASIC_BRICK
             var operationNames = Enumerable.Range(1, operations).Select(o => $"OP{o}").ToList();
             var eqpNames = Enumerable.Range(1, eqps).Select(e => $"EQP{e}").ToList();
 
-            set_Lot.LoadFrom(lotNames);
-            set_Operation.LoadFrom(operationNames);
-            set_Eqp.LoadFrom(eqpNames);
+            set_Lot = lotNames.Select(Lot => new Set_Lot { Lot = Lot }).ToList();
+            set_Operation = operationNames.Select(Operation => new Set_Operation { Operation = Operation }).ToList();
+            set_Eqp = eqpNames.Select(Eqp => new Set_Eqp { Eqp = Eqp }).ToList();
 
             var rng = new Random(seed);
             foreach (var lot in lotNames)
@@ -105,16 +104,16 @@ namespace FJSP_BASIC_BRICK
         /// <summary>把 import ctor 產生的資料輸出成求解流程使用的 canonical CSV。</summary>
         public void Export()
         {
-            CsvCtrl.WriteSet(set_Lot, "Set_Lot");
-            CsvCtrl.WriteSet(set_Operation, "Set_Operation");
-            CsvCtrl.WriteSet(set_Eqp, "Set_Eqp");
-            CsvCtrl.WriteParam(parameter_ProcessTime, "Parameter_ProcessTime");
-            CsvCtrl.WriteParam(parameter_ExactlyOne, "Parameter_ExactlyOne");
-            CsvCtrl.WriteParam(parameter_MakespanFloor, "Parameter_MakespanFloor");
-            CsvCtrl.WriteParam(parameter_SoftMakespanTarget, "Parameter_SoftMakespanTarget");
-            CsvCtrl.WriteParam(parameter_MakespanPenalty, "Parameter_MakespanPenalty");
-            CsvCtrl.WriteParam(parameter_NoOverlapForwardOffset, "Parameter_NoOverlapForwardOffset");
-            CsvCtrl.WriteParam(parameter_NoOverlapBackwardOffset, "Parameter_NoOverlapBackwardOffset");
+            CsvCtrl.WriteRows(set_Lot, "Set_Lot");
+            CsvCtrl.WriteRows(set_Operation, "Set_Operation");
+            CsvCtrl.WriteRows(set_Eqp, "Set_Eqp");
+            CsvCtrl.WriteRows(parameter_ProcessTime, "Parameter_ProcessTime");
+            CsvCtrl.WriteRows(parameter_ExactlyOne, "Parameter_ExactlyOne");
+            CsvCtrl.WriteRows(parameter_MakespanFloor, "Parameter_MakespanFloor");
+            CsvCtrl.WriteRows(parameter_SoftMakespanTarget, "Parameter_SoftMakespanTarget");
+            CsvCtrl.WriteRows(parameter_MakespanPenalty, "Parameter_MakespanPenalty");
+            CsvCtrl.WriteRows(parameter_NoOverlapForwardOffset, "Parameter_NoOverlapForwardOffset");
+            CsvCtrl.WriteRows(parameter_NoOverlapBackwardOffset, "Parameter_NoOverlapBackwardOffset");
         }
     }
 }

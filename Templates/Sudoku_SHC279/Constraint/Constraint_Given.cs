@@ -6,10 +6,10 @@ namespace Sudoku_SHC279
     /// <summary>把題盤的每個已知格固定為指定數字；對應 Model.md 的 Given。</summary>
     public sealed class Constraint_Given : ConstraintBase
     {
-        private readonly List<Parameter_Given> _givens;
+        private readonly List<Set_Given> _givens;
         private readonly double _exactlyOne;
 
-        public Constraint_Given(List<Parameter_Given> givens, double exactlyOne)
+        public Constraint_Given(List<Set_Given> givens, double exactlyOne)
         {
             _givens = givens;
             _exactlyOne = exactlyOne;

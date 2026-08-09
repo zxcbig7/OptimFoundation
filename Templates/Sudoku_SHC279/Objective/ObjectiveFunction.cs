@@ -5,15 +5,15 @@ namespace Sudoku_SHC279
     /// <summary>逐項建立 Sudoku 的零權重可行性目標；對應 Model.md 的 OBJ。</summary>
     public sealed class ObjectiveFunction
     {
-        private readonly Set_Row _rows;
-        private readonly Set_Column _columns;
-        private readonly Set_Digit _digits;
+        private readonly List<Set_Row> _rows;
+        private readonly List<Set_Column> _columns;
+        private readonly List<Set_Digit> _digits;
         private readonly List<Parameter_ObjCoef> _objCoefByDigit;
 
         public ObjectiveFunction(
-            Set_Row rows,
-            Set_Column columns,
-            Set_Digit digits,
+            List<Set_Row> rows,
+            List<Set_Column> columns,
+            List<Set_Digit> digits,
             List<Parameter_ObjCoef> objCoefByDigit)
         {
             _rows = rows;

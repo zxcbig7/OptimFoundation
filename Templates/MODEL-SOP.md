@@ -42,14 +42,14 @@ public partial class Set_<Name> { }
 ## 3. Parameter — `[OptParam]` + 每維一個 `[OptDim]`
 
 ```csharp
-[OptParam]                        // 有數值 → 生成 QTY 欄位
+[OptParam]                        // 一律生成 QTY 欄位
 [OptDim<Set_<A>>("<A>")]
 [OptDim<Set_<B>>("<B>")]
 public partial class Parameter_<Name> { }
 
-[OptParam(HasValue = false)]      // 純 key 組合，不生成 QTY
-[OptDim<Set_<A>>("<A>")]
-public partial class Parameter_<Name> { }
+// 無值組合使用多維 Set，不使用 Parameter。
+[OptSet<string, string>("<A>", "<B>")]
+public partial class Set_<Name> { }
 ```
 
 - `[OptDim<TSet>("Xxx")]` 的字串是**產生的屬性名**，順序即 key 順序。

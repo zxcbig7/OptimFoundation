@@ -52,7 +52,7 @@ namespace Sudoku_SHC279
             IReadOnlyDictionary<(int Row, int Column), int> grid,
             Dataload data)
         {
-            foreach (var given in data.parameter_Given)
+            foreach (var given in data.set_Given)
                 if (grid[(given.Row, given.Column)] != given.Digit)
                     throw new InvalidOperationException(
                         $"解違反 given ({given.Row},{given.Column})={given.Digit}。");
@@ -71,7 +71,7 @@ namespace Sudoku_SHC279
 
             foreach (int block in data.set_Block)
                 RequireAllDigits(
-                    data.parameter_BlockCell
+                    data.set_BlockCell
                         .Where(cell => cell.Block == block)
                         .Select(cell => grid[(cell.Row, cell.Column)]),
                     data.set_Digit,
@@ -80,15 +80,15 @@ namespace Sudoku_SHC279
 
         private static void RequireAllDigits(
             IEnumerable<int> values,
-            Set_Digit digits,
+            List<Set_Digit> digits,
             string group)
         {
-            if (!values.OrderBy(value => value).SequenceEqual(digits.OrderBy(digit => digit)))
+            if (!values.OrderBy(value => value).SequenceEqual(digits.Select(digit => digit.Digit).OrderBy(digit => digit)))
                 throw new InvalidOperationException($"{group} 未恰好包含完整 DIGIT 集合。");
         }
 
         private int BlockOf(int row, int column) =>
-            _data.parameter_BlockCell
+            _data.set_BlockCell
                 .Single(cell => cell.Row == row && cell.Column == column)
                 .Block;
 

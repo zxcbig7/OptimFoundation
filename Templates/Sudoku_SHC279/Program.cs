@@ -70,10 +70,10 @@ namespace Sudoku_SHC279
                 .AddConstraints(engine => new Constraint_BlockDigit(
                     data.set_Block,
                     data.set_Digit,
-                    data.parameter_BlockCell,
+                    data.set_BlockCell,
                     exactlyOne).Build(engine))
                 .AddConstraints(engine => new Constraint_Given(
-                    data.parameter_Given,
+                    data.set_Given,
                     exactlyOne).Build(engine));
 
             // 3. 環境

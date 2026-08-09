@@ -9,15 +9,15 @@ namespace Tutorial
     /// </summary>
     public sealed class Constraint_Capacity : ConstraintBase
     {
-        private readonly Set_Product products;
-        private readonly Set_Machine machines;
-        private readonly Set_Date dates;
-        private readonly Set_Shift shifts;
+        private readonly List<Set_Product> products;
+        private readonly List<Set_Machine> machines;
+        private readonly List<Set_Date> dates;
+        private readonly List<Set_Shift> shifts;
         private readonly List<Parameter_MachineHours> hours;
         private readonly List<Parameter_Capacity> capacity;
 
         public Constraint_Capacity(
-            Set_Product products, Set_Machine machines, Set_Date dates, Set_Shift shifts,
+            List<Set_Product> products, List<Set_Machine> machines, List<Set_Date> dates, List<Set_Shift> shifts,
             List<Parameter_MachineHours> hours, List<Parameter_Capacity> capacity)
         {
             this.products = products;
