@@ -156,12 +156,12 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             string log = ReadLog(tag);
             Assert.Contains("[變數建立完成] type=VarS count=2/2", log);
-            Assert.Contains("[變數建立摘要] 總數=2/2 類別數=1", log);
+            Assert.Contains("[變數建立摘要] 已建立=2/2（實際/預期） 變數類別=1 種 模型內合計=2", log);
             Assert.Contains("[目標式建構開始] sense=Minimize terms=1", log);
             Assert.Contains("[目標式建構完成] sense=Minimize terms=1 result=success", log);
-            Assert.Contains("[限制式建立完成] group=Demand count=1/2", log);
-            Assert.Contains("[限制式建立完成] group=Capacity count=0/1", log);
-            Assert.Contains("[限制式建立摘要] 總數=1/3 群組數=2", log);
+            Assert.Contains("[限制式建立] 群組=Demand 已建立=1/2（實際/預期）", log);
+            Assert.Contains("[限制式建立] 群組=Capacity 已建立=0/1（實際/預期）", log);
+            Assert.Contains("[限制式建立摘要] 已建立=1/3（實際/預期） 群組=2 個 solver 實際持有=", log);
         }
 
         [Fact]

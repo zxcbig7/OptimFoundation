@@ -638,14 +638,20 @@ namespace OptimFoundation.Core
         {
             if (!_buildSummaryDirty) return;
 
+            // 每行刻意印兩種來源的數字，互相對帳：
+            //   已建立=實際/預期 → 建模端的記帳（RecordVariableBuild / RecordConstraintBuild 累加）
+            //   模型內合計 / solver 實際持有 → solver 手上真正的庫存
+            // 正常情況兩邊該對得上；對不上代表有建立路徑漏了記帳，或中途被 reset 過
+            // （例：再次呼叫 Configuration() 會清空 solver 的限制式，但不會清 Core 的計數器）。
             int expectedVariables = _variableBuildCounts.Values.Sum(x => x.Expected);
-            Logging.Info($"[變數建立摘要] 總數={VariableCount}/{expectedVariables} 類別數={_variableBuildCounts.Count}");
+            int actualVariables = _variableBuildCounts.Values.Sum(x => x.Actual);
+            Logging.Info($"[變數建立摘要] 已建立={actualVariables}/{expectedVariables}（實際/預期） 變數類別={_variableBuildCounts.Count} 種 模型內合計={VariableCount}");
 
             foreach (var entry in _constraintBuildCounts.OrderBy(x => x.Key, StringComparer.Ordinal))
-                Logging.Info($"[限制式建立完成] group={entry.Key} count={entry.Value.Actual}/{entry.Value.Expected}");
+                Logging.Info($"[限制式建立] 群組={entry.Key} 已建立={entry.Value.Actual}/{entry.Value.Expected}（實際/預期）");
             int expectedConstraints = _constraintBuildCounts.Values.Sum(x => x.Expected);
             int actualConstraints = _constraintBuildCounts.Values.Sum(x => x.Actual);
-            Logging.Info($"[限制式建立摘要] 總數={actualConstraints}/{expectedConstraints} 群組數={_constraintBuildCounts.Count} solver總數={ConstraintCount}");
+            Logging.Info($"[限制式建立摘要] 已建立={actualConstraints}/{expectedConstraints}（實際/預期） 群組={_constraintBuildCounts.Count} 個 solver 實際持有={ConstraintCount}");
 
             _buildSummaryDirty = false;
         }
