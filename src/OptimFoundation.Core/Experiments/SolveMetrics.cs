@@ -37,6 +37,50 @@ namespace OptimFoundation.Core
 
         /// <summary>選用的逐點收斂軌跡；未啟用 captureTrajectory 時為空清單。</summary>
         public List<ConvergencePoint> Convergence { get; set; } = new List<ConvergencePoint>();
+
+        // ── 下面四個是從 Convergence 直接算出來的，不另外存 ──────────────
+        // 這樣它們不可能跟軌跡對不上。純 LP 或軌跡沒開時，軌跡是空的，這四個就都是 null / 0。
+
+        /// <summary>軌跡點數。0 代表這次求解沒有收集到軌跡（純 LP 沒有分支定界過程，或求解太快）。</summary>
+        public int TrajectoryPoints => Convergence?.Count ?? 0;
+
+        /// <summary>第一次找到可行解的時間（毫秒）。從頭到尾都沒找到解時為 null——注意不是 0。</summary>
+        public double? TFeasMs
+        {
+            get
+            {
+                if (Convergence == null) return null;
+                foreach (var p in Convergence)
+                    if (!double.IsNaN(p.Objective))
+                        return p.TimeMs;
+                return null;
+            }
+        }
+
+        /// <summary>整段求解過程中，最佳界一共推進了多少（最後一點減第一點）。沒有軌跡時為 null。</summary>
+        public double? DeltaBound
+        {
+            get
+            {
+                if (Convergence == null || Convergence.Count == 0) return null;
+                return Convergence[Convergence.Count - 1].Bound - Convergence[0].Bound;
+            }
+        }
+
+        /// <summary>最佳界最後一次變動的時間（毫秒）。它之後界就停在原地不動了。
+        /// 用「有沒有變動」判斷而不是「有沒有變好」，這樣最小化與最大化問題都適用。沒有軌跡時為 null。</summary>
+        public double? TStallMs
+        {
+            get
+            {
+                if (Convergence == null || Convergence.Count == 0) return null;
+                double? last = null;
+                for (int i = 1; i < Convergence.Count; i++)
+                    if (Convergence[i].Bound != Convergence[i - 1].Bound)
+                        last = Convergence[i].TimeMs;
+                return last;
+            }
+        }
     }
 
     /// <summary>收斂軌跡的單一取樣點。</summary>

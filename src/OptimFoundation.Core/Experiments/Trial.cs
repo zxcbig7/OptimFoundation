@@ -7,8 +7,18 @@ namespace OptimFoundation.Core
     /// </summary>
     public sealed class Trial
     {
-        /// <summary>這次求解的標籤，例 "emphasis=2"；與 RunAt 一起當 append 去重的鍵。</summary>
+        /// <summary>這次求解的標籤，只放設定名稱，例 "r1-GomoryCuts=2"。模型名另外放在 <see cref="Model"/>。</summary>
         public string Label { get; set; }
+
+        /// <summary>這批實驗的識別，值是該次執行的開始時間（yyyyMMdd-HHmmss）。
+        /// 同一個實驗跑很多次時，靠它分辨哪些列是同一批。</summary>
+        public string RunId { get; set; }
+
+        /// <summary>同一批實驗內的流水號，從 1 開始。與 <see cref="RunId"/> 合起來唯一。</summary>
+        public int TrialId { get; set; }
+
+        /// <summary>這次跑的是哪個模型。以前是黏在 Label 前面（"模型名 | 設定名"），現在拆開成獨立欄位。</summary>
+        public string Model { get; set; }
 
         /// <summary>求解記錄的建立時間（Capture 當下）。</summary>
         public DateTime RunAt { get; set; }

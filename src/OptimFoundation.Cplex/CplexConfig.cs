@@ -13,9 +13,10 @@ namespace OptimFoundation.Cplex
     ///    要調某顆旋鈕就只設那一顆，其餘留 null —— 一次塞滿參數就分不出是哪一顆造成差異。
     /// </para>
     /// <para>
-    /// 2. <b>六個欄位有 property initializer</b>（Threads、RowRead、MemoryLimitMb、MipGap、OptimalityTol、FeasibilityTol），
-    ///    它們<b>不是 null</b>，所以一定會被送進 CPLEX。其中只有 Threads = 32 真的偏離 CPLEX 官方預設（官方是 0 = automatic），
-    ///    其餘五個數值與官方預設相同。要讓 CPLEX 自己決定執行緒數就明確設 <c>Threads = null</c>。
+    /// 2. <b>沒有任何欄位有預設值</b>。全部一律以 null 起始——這個類別只是接口，不替專案做決定。
+    ///    沒設的旋鈕不會被送進 CPLEX、也不會出現在實驗紀錄裡。要用什麼值就自己明確設。
+    ///    （2026-08 前有六個欄位帶 initializer：Threads = 32 偏離官方預設；MemoryLimitMb 只要「有設」
+    ///    就會觸發下面第 4 點的順序陷阱，即使值與官方相同。已全部移除。）
     /// </para>
     /// <para>
     /// 3. <b>分類決定一顆旋鈕能不能拿來做實驗</b>：
@@ -98,7 +99,7 @@ namespace OptimFoundation.Cplex
         /// <c>Param.Simplex.Tolerances.Feasibility</c>（Interactive <c>simplex tolerances feasibility</c>）—— simplex 可行性容差（constraint 違反量）。
         /// <para>分類：停止條件 —— 整期固定，NEVER 進 variant 池。</para>
         /// </summary>
-        public double? FeasibilityTol { get; set; } = 1e-06;
+        public double? FeasibilityTol { get; set; }
 
         /// <summary>
         /// <c>Param.MIP.Limits.Solutions</c>（Interactive <c>mip limits solutions</c>）—— 找到 N 個整數解即停。
@@ -137,7 +138,7 @@ namespace OptimFoundation.Cplex
         /// <para>值：Any number from 0.0 to 1.0; default : 1e-04.</para>
         /// <para>分類：停止條件 —— 整期固定，NEVER 進 variant 池。</para>
         /// </summary>
-        public double? MipGap { get; set; } = 1e-4;
+        public double? MipGap { get; set; }
 
         /// <summary>
         /// <c>Param.Network.Tolerances.Feasibility</c>（Interactive <c>network tolerances feasibility</c>）—— network simplex 可行性容差。
@@ -178,7 +179,7 @@ namespace OptimFoundation.Cplex
         /// <para>值：Any number from 1e-9 to 1e-1; default : 1e-06.</para>
         /// <para>分類：停止條件 —— 整期固定，NEVER 進 variant 池。</para>
         /// </summary>
-        public double? OptimalityTol { get; set; } = 1e-06;
+        public double? OptimalityTol { get; set; }
 
         /// <summary>
         /// <c>Param.MIP.Tolerances.RelObjDifference</c>（Interactive <c>mip tolerances relobjdifference</c>）—— 相對目標差門檻。
@@ -267,7 +268,7 @@ namespace OptimFoundation.Cplex
         /// <c>Param.WorkMem</c>（Interactive <c>workmem</c>）—— 工作記憶體 (MB)，管的是 live tree 大小不是行程總記憶體。
         /// <para>分類：執行資源 —— R0 前定版後凍結，NEVER 與搜尋策略同輪比較。</para>
         /// </summary>
-        public double? MemoryLimitMb { get; set; } = 2048;
+        public double? MemoryLimitMb { get; set; }
 
         /// <summary>
         /// <c>Param.MIP.Strategy.File</c>（Interactive <c>mip strategy file</c>）—— 樹超過記憶體上限時節點怎麼存。
@@ -287,7 +288,7 @@ namespace OptimFoundation.Cplex
         /// <para>值：0 = Automatic: let CPLEX decide（預設）｜1 = Sequential; single threaded｜N = Uses up to N threads; N is limited by available processors and Processor Value Units (PVU)</para>
         /// <para>分類：執行資源 —— R0 前定版後凍結，NEVER 與搜尋策略同輪比較。</para>
         /// </summary>
-        public int? Threads { get; set; } = 32;
+        public int? Threads { get; set; }
 
         /// <summary>
         /// <c>Param.MIP.Limits.TreeMemory</c>（Interactive <c>mip limits treememory</c>）—— B&amp;B 樹記憶體上限 (MB)。
@@ -1280,7 +1281,7 @@ namespace OptimFoundation.Cplex
         /// 同族四顆一起留才不會出現「有的能設有的不能設」。新程式不建議依賴它們。</para>
         /// <para>分類：非 tuning —— 不改求解路線，NEVER 放進 variant 池掃描。</para>
         /// </summary>
-        public int? RowRead { get; set; } = 30000;
+        public int? RowRead { get; set; }
 
         /// <summary>
         /// <c>Param.Sifting.Display</c>（Interactive <c>sifting display</c>）—— sifting log 詳細度。

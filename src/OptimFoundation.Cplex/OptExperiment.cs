@@ -126,6 +126,11 @@ namespace OptimFoundation.Cplex
             }
 
             var experiment = new Experiment(_name, _description);
+
+            // 這批實驗的識別：用開始時間。同一個實驗跑很多次時，靠它分辨哪些列是同一批。
+            string runId = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            int trialId = 0;
+
             foreach (var cell in cells)
             {
                 var projectConfig = _projectConfigFactory() ?? new ProjectConfig();
@@ -133,8 +138,13 @@ namespace OptimFoundation.Cplex
                 engine.SetModelName($"{_name}-{cell.Model.Name}-{cell.Label}");
                 engine.Build();
                 cell.Model.ApplyTo(engine);
-                string trialLabel = $"{cell.Model.Name} | {cell.Label}";
-                experiment.AddTrial(Trial.Capture(engine, trialLabel, () => engine.Solve()));
+
+                // Label 只放設定名稱；模型名放到 Trial.Model，不再黏成一個字串
+                var trial = Trial.Capture(engine, cell.Label, () => engine.Solve());
+                trial.RunId = runId;
+                trial.TrialId = ++trialId;
+                trial.Model = cell.Model.Name;
+                experiment.AddTrial(trial);
             }
 
             experiment.Save();

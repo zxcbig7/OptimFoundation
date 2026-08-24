@@ -143,13 +143,20 @@ namespace OptimFoundation.Cplex.Tests.Integration
                     .Run();
 
                 Assert.Equal(6, result.Trials.Count);
+                // Label 只放設定名稱，模型名在 Trial.Model（以前兩者黏成 "模型名 | 設定名"）
                 Assert.Equal(
                     new[]
                     {
-                        "Model1 | baseline", "Model1 | emphasis", "Model1 | threads",
-                        "Model2 | baseline", "Model2 | emphasis", "Model2 | threads",
+                        "baseline", "emphasis", "threads",
+                        "baseline", "emphasis", "threads",
                     },
                     result.Trials.Select(t => t.Label));
+                Assert.Equal(
+                    new[] { "Model1", "Model1", "Model1", "Model2", "Model2", "Model2" },
+                    result.Trials.Select(t => t.Model));
+                // 同一批實驗共用一個 RunId，流水號從 1 開始遞增
+                Assert.Single(result.Trials.Select(t => t.RunId).Distinct());
+                Assert.Equal(new[] { 1, 2, 3, 4, 5, 6 }, result.Trials.Select(t => t.TrialId));
                 Assert.All(result.Trials, t => Assert.Equal(SolveStatus.Optimal, t.Metrics.Status));
             }
             finally
@@ -179,7 +186,8 @@ namespace OptimFoundation.Cplex.Tests.Integration
                     .Run();
 
                 Trial trial = Assert.Single(result.Trials);
-                Assert.Equal("OnlyModel | only-config", trial.Label);
+                Assert.Equal("only-config", trial.Label);
+                Assert.Equal("OnlyModel", trial.Model);
                 Assert.Equal(SolveStatus.Optimal, trial.Metrics.Status);
             }
             finally

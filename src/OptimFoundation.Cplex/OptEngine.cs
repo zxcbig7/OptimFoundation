@@ -324,8 +324,11 @@ namespace OptimFoundation.Cplex
                 BestBound = ok ? BestObjValue : double.NaN,
                 MipGap = ok ? MIPGap : double.NaN,
                 RunTimeMs = solveTimer.Elapsed.TotalMilliseconds,
-                NodeCount = TryInvokeLong(Model, "GetNnodes64", "GetNnodes", "Getnnodes"),
-                IterationCount = TryInvokeLong(Model, "GetNiterations64", "GetNiterations", "Getniterations"),
+                // CPLEX 的 .NET API 把這兩個開成「屬性」（Nnodes64 / Niterations64），
+                // 屬性的 getter 就是無參數方法 get_Xxx，所以名字要找 get_ 開頭的。
+                // 舊版找的是 GetNnodes64 這種名字，永遠找不到 → 這兩欄一直是空的。
+                NodeCount = TryInvokeLong(Model, "get_Nnodes64", "get_Nnodes", "GetNnodes64", "GetNnodes"),
+                IterationCount = TryInvokeLong(Model, "get_Niterations64", "get_Niterations", "GetNiterations64", "GetNiterations"),
                 VarCount = VariableCount,
                 ConstraintCount = _constraints.Count,
                 Convergence = trajCb != null ? trajCb.Points : new List<ConvergencePoint>()

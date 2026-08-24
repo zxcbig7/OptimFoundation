@@ -78,15 +78,23 @@ namespace OptimFoundation.Core
             string jsonPath = FolderDir.Experiment.GetFilePath($"{Name}.json");
             var onDisk = new JsonExperimentWriter().Read(jsonPath)?.Trials ?? new List<Trial>();
 
-            // 2) 合併：保留磁碟上「本次記憶體沒有」的舊 trials（RunAt+Label 去重），本次的接在後面
+            // 2) 合併：保留磁碟上「本次記憶體沒有」的舊 trials，本次的接在後面
+            //    去重的鍵是 RunAt + Model + Label —— Label 現在只放設定名稱，
+            //    所以要把 Model 一起算進去，否則兩個模型用同一個設定名會被誤判成同一筆。
             var merged = onDisk
-                .Where(d => !current.Any(c => c.RunAt == d.RunAt && c.Label == d.Label))
+                .Where(d => !current.Any(c => c.RunAt == d.RunAt
+                                           && c.Label == d.Label
+                                           && c.Model == d.Model))
                 .ToList();
             merged.AddRange(current);
             Trials = merged;
 
-            // 3) 輸出 csv（1 列/trial 摘要）與 json（巢狀含軌跡，權威來源）
+            // 3) 輸出三份給人看的檔 + 一份給程式讀的 json
+            //    主表：一列一 trial，只寫「跟基準差在哪」
+            //    說明檔：整批不會變的東西（模型多大、環境、基準的完整設定）只寫一次
+            //    json：保留當累積與重讀的權威來源，設定已改成只記有設的那些
             new CsvExperimentWriter().Write(this, FolderDir.Experiment.GetFilePath($"{Name}.csv"));
+            new MetaCsvWriter().Write(this, FolderDir.Experiment.GetFilePath($"{Name}-meta.csv"));
             new JsonExperimentWriter().Write(this, jsonPath);
 
             // 4) 只有實際抓到收斂軌跡時才多出 trajectory.csv，避免留下只有表頭的空殼（與 csv/json 永遠有料一致）
