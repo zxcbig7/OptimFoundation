@@ -9,11 +9,20 @@ namespace OptimFoundation.Core
     /// <summary>Guards numeric values used to derive model constants.</summary>
     public static class Numeric
     {
+
+        /// <summary>
+        /// 用於判斷是否是合理計算
+        /// </summary>
+        /// <param name="numerator"></param>
+        /// <param name="denominator"></param>
+        /// <param name="magnitudeCeiling"></param>
+        /// <param name="context"></param>
+        /// <returns></returns>
         public static double SafeRatio(double numerator, double denominator, double magnitudeCeiling = 1e12, string context = null)
         {
             if (denominator == 0)
                 throw Logging.ErrorOnce(
-                    new InvalidOperationException($"{context ?? "Ratio"}: 除零 is not allowed."),
+                    new InvalidOperationException($"{context ?? "Ratio"}: 除零禁止。"),
                     "NUMERIC_RATIO_INVALID", "數值比例計算失敗", context ?? "Ratio", denominator, "division_by_zero");
 
             var value = numerator / denominator;
@@ -77,7 +86,7 @@ namespace OptimFoundation.Core
             if (value == null) return null;
             if (targetType.IsInstanceOfType(value)) return value;
             if (targetType == typeof(DateTime) && value is string text
-                && DateTime.TryParseExact(text, ModelNaming.DateFormat, CultureInfo.InvariantCulture,
+                && DateTime.TryParseExact(text, ModelNaming.DateFormats, CultureInfo.InvariantCulture,
                     DateTimeStyles.None, out DateTime modelDate))
                 return modelDate;
             return Convert.ChangeType(value, targetType, CultureInfo.InvariantCulture);

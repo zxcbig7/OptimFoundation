@@ -31,27 +31,27 @@ namespace ModelInspector.Reporting
             ReportFolder.CreateFolder();
             var written = new List<string>();
 
-            string reportPath = ReportFolder.GetFilePath($"{_inspection.Label}_Inspection_{_stamp}.md");
+            string reportPath = ReportFolder.GetPathFile($"{_inspection.Label}_Inspection_{_stamp}.md");
             File.WriteAllText(reportPath, BuildMarkdown(), new UTF8Encoding(false));
             written.Add(reportPath);
 
             if (_inspection.SolutionValueCount > 0)
             {
-                string csvPath = ReportFolder.GetFilePath($"{_inspection.Label}_Variables_{_stamp}.csv");
+                string csvPath = ReportFolder.GetPathFile($"{_inspection.Label}_Variables_{_stamp}.csv");
                 File.WriteAllText(csvPath, BuildVariableCsv(), new UTF8Encoding(false));
                 written.Add(csvPath);
             }
 
             if (_inspection.Trajectory.Count > 0)
             {
-                string trajPath = ReportFolder.GetFilePath($"{_inspection.Label}_Trajectory_{_stamp}.csv");
+                string trajPath = ReportFolder.GetPathFile($"{_inspection.Label}_Trajectory_{_stamp}.csv");
                 File.WriteAllText(trajPath, BuildTrajectoryCsv(), new UTF8Encoding(false));
                 written.Add(trajPath);
             }
 
             if (_inspection.ConflictConstraints.Count > 0)
             {
-                string conflictPath = ReportFolder.GetFilePath($"{_inspection.Label}_Conflicts_{_stamp}.txt");
+                string conflictPath = ReportFolder.GetPathFile($"{_inspection.Label}_Conflicts_{_stamp}.txt");
                 File.WriteAllText(conflictPath, string.Join(Environment.NewLine, _inspection.ConflictConstraints),
                     new UTF8Encoding(false));
                 written.Add(conflictPath);
@@ -230,7 +230,7 @@ namespace ModelInspector.Reporting
             if (_inspection.Metrics is { } metrics)
             {
                 sb.AppendLine($"| RunTimeMs | {metrics.RunTimeMs:N2} |");
-                sb.AppendLine($"| NodeCount | {metrics.NodeCount?.ToString("N0") ?? "n/a" } |");
+                sb.AppendLine($"| NodeCount | {metrics.NodeCount?.ToString("N0") ?? "n/a"} |");
                 sb.AppendLine($"| IterationCount | {metrics.IterationCount?.ToString("N0") ?? "n/a"} |");
                 sb.AppendLine($"| VarCount（metrics） | {metrics.VarCount:N0} |");
                 sb.AppendLine($"| ConstraintCount（metrics） | {metrics.ConstraintCount:N0} |");

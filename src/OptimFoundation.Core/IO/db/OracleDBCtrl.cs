@@ -386,7 +386,7 @@ namespace OptimFoundation.Db.Oracle
             if (t == typeof(int) && int.TryParse(raw, out int n)) return n;
             if (t == typeof(DateTime))
             {
-                if (DateTime.TryParseExact(raw, ModelNaming.DateFormat, CultureInfo.InvariantCulture,
+                if (DateTime.TryParseExact(raw, ModelNaming.DateFormats, CultureInfo.InvariantCulture,
                     DateTimeStyles.None, out DateTime modelDate))
                     return modelDate;
                 if (DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime dataDate))

@@ -99,7 +99,9 @@ namespace OptimFoundation.Cplex
                 : projectConfig.RetentionDays ?? 30;
 
             Logging.SetLogFileName(effectiveProjectName);
-            int purged = FolderDir.PurgeOutputs(effectiveRetentionDays);
+
+            // 清空所有資料
+            int purged = FolderDir.PurgeAllOutputs(effectiveRetentionDays);
             if (purged > 0)
                 Logging.Info($"[Housekeeping] Purged {purged} files older than {effectiveRetentionDays} days");
 

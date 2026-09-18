@@ -27,7 +27,7 @@ namespace OptimFoundation.Core.IO
                     new ArgumentNullException(nameof(fileName)),
                     "CSV_SOURCE_INVALID", "CSV 資料來源不合法", nameof(LoadRows), fileName, "file_name_is_empty");
 
-            using var reader = new StreamReader(FolderDir.Data.GetFilePath(EnsureCsv(fileName)), Encoding.UTF8);
+            using var reader = new StreamReader(FolderDir.Data.GetPathFile(EnsureCsv(fileName)), Encoding.UTF8);
             foreach (var row in CsvCtrl.ParseCsv(reader))
                 yield return row;
         }

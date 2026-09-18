@@ -91,7 +91,7 @@ engine.AddRHS(required);
 engine.CreateGreatEqual(this, product, date);
 ```
 
-新 code 傳 owner 與原始維度值，framework 統一產生名稱。模型名稱日期為 `yyyy_MM_dd`；CSV 日期為 `yyyy-MM-dd`。
+新 code 傳 owner 與原始維度值，framework 統一產生名稱。模型名稱日期為 `yyyy_MM_dd`，帶時分秒時為 `yyyy_MM_dd_HH_mm_ss`；CSV 日期對應為 `yyyy-MM-dd` 與 `yyyy-MM-dd HH:mm:ss`。
 
 ## 執行
 

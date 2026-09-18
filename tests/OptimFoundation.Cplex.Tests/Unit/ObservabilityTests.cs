@@ -240,16 +240,16 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         [Fact]
-        public void EdgeCase4_DateTimeWithTime_LogsOneErrorBeforeThrow()
+        public void EdgeCase4_DateTimeSubSecond_LogsOneErrorBeforeThrow()
         {
             string tag = StartLog("NamingEdge4");
             var engine = new MockEngine();
             engine.Build();
 
             Assert.Throws<ArgumentException>(() => engine.BuildCVs<VarDG>(
-                new[] { new DateTime(2026, 8, 9, 1, 2, 3, DateTimeKind.Utc) }, new[] { "A" }));
+                new[] { new DateTime(2026, 8, 9, 1, 2, 3, 250, DateTimeKind.Utc) }, new[] { "A" }));
 
-            AssertOneNamingError(ReadLog(tag), "Set #1", "2026-08-09T01:02:03.0000000Z", "datetime_contains_time");
+            AssertOneNamingError(ReadLog(tag), "Set #1", "2026-08-09T01:02:03.2500000Z", "datetime_subsecond_precision");
         }
 
         [Fact]

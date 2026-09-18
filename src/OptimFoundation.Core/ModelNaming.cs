@@ -14,6 +14,10 @@ namespace OptimFoundation.Core
     {
         internal const char Separator = '@';
         internal const string DateFormat = "yyyy_MM_dd";
+        internal const string DateTimeFormat = "yyyy_MM_dd_HH_mm_ss";
+
+        /// <summary>解析日期 token 時可接受的格式：帶時分秒與純日期兩種。</summary>
+        internal static readonly string[] DateFormats = [DateTimeFormat, DateFormat];
 
         private static readonly char[] InvalidTokenCharacters =
         [
@@ -29,10 +33,7 @@ namespace OptimFoundation.Core
             string token;
             if (value is DateTime date)
             {
-                if (date.TimeOfDay != TimeSpan.Zero)
-                    ThrowInvalid(context, date.ToString("O", CultureInfo.InvariantCulture), "datetime_contains_time");
-
-                token = date.ToString(DateFormat, CultureInfo.InvariantCulture);
+                token = FormatDate(context, date);
             }
             else if (value is string text)
             {
@@ -47,8 +48,22 @@ namespace OptimFoundation.Core
                 token = value.ToString() ?? string.Empty;
             }
 
-            ValidateToken(context, token);
+            ValidateToken(context, token); // 轉換後驗證
             return token;
+        }
+
+        /// <summary>日期 token：粒度到秒，純日期維持 <see cref="DateFormat"/>，帶時分秒才展開成 <see cref="DateTimeFormat"/>。</summary>
+        internal static string FormatDate(string context, DateTime value)
+        {
+            // 秒以下靜默截掉會讓兩個不同時刻產生同一個 token，key 悄悄相撞
+            if (value.Ticks % TimeSpan.TicksPerSecond != 0)
+            {
+                ThrowInvalid(context, value.ToString("O", CultureInfo.InvariantCulture), "datetime_subsecond_precision");
+            }
+
+            return value.ToString(
+                value.TimeOfDay == TimeSpan.Zero ? DateFormat : DateTimeFormat,
+                CultureInfo.InvariantCulture);
         }
 
         /// <summary>以 head 與維度值組成完整模型名稱；多維 Set row 會展開成多個 token。</summary>

@@ -27,8 +27,6 @@
 
 每次執行的報告都會把上表「失真」的那幾項連同原因逐條印出來，不會讓人把 0 當成真值讀。
 
-Gurobi engine 沒有 `ImportModel`，這條路目前只有 CPLEX 走得通。
-
 ## 用法
 
 ```powershell

@@ -1,14 +1,14 @@
 # OptimFoundation Workspace
 
 <system_context>
-OptimFoundation 是 C# / .NET 8 的 solver-agnostic MILP framework。Core 不引用 solver SDK；CPLEX/Gurobi adapter 實作 solver primitives；Generator 使用 netstandard2.0。
+OptimFoundation 是 C# / .NET 8 的 solver-agnostic MILP framework。Core 不引用 solver SDK；CPLEX adapter 實作 solver primitives；Generator 使用 netstandard2.0。
 </system_context>
 
 <critical_notes>
 
 - 修改 framework 前先讀 `specs/developer-guide.md` 與相關 dated spec。
 - public API 變更後同步 developer guide、CodeMap、Templates、docs 與 sibling `AI-Modeling` 規範。
-- solver DLL/license 不進 git。CPLEX 走 `CplexDir`，Gurobi 走 `GUROBI_HOME`。
+- solver DLL/license 不進 git。CPLEX 走 `CplexDir`。
 - framework 內部依賴使用 `ProjectReference`。
 - 不覆寫或還原 workspace 中不屬於目前任務的既有變更。
 - 所有主動錯誤在 throw 前留下包含 event code、context、value、reason、`result=aborted` 的 Error Log。
@@ -21,7 +21,6 @@ OptimFoundation 是 C# / .NET 8 的 solver-agnostic MILP framework。Core 不引
 - `src/OptimFoundation.Core/`：data rows、IO、naming、EngineBase、logging、experiments。
 - `src/OptimFoundation.Generators/`：`[OptSet]` / `[OptParam]` / `[OptVar]` + primitive `OptDim` source generation。
 - `src/OptimFoundation.Cplex/`：CPLEX engine、model、project、experiment、config。
-- `src/OptimFoundation.Gurobi/`：Gurobi engine/config。
 - `Templates/`：現行 consumer examples。
 - `tests/OptimFoundation.Cplex.Tests/`：unit/integration tests。
 - `specs/developer-guide.md`：現行 API 權威。

@@ -17,6 +17,7 @@ namespace OptimFoundation.Core
             => (Kind, Parameter, Detail) = (kind, parameter, detail);
     }
 
+    /// <summary>資料驗證失敗例外，包含所有重複 key 與數值不合理的問題。</summary>
     public sealed class DataValidationException : Exception
     {
         public IReadOnlyList<DataIssue> Issues { get; }

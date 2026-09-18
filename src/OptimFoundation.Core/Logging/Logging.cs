@@ -14,12 +14,11 @@ namespace OptimFoundation.Core
     {
         private const string ErrorLoggedDataKey = "OptimFoundation.ErrorLogged";
         private static readonly string _logDir = FolderDir.Log.GetPath();
-        private static string _logFile = FolderDir.Log.GetFilePath($"Log_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.txt");
+        private static string _logFile = FolderDir.Log.GetPathFile($"Log_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.txt");
         private static string _logFileName;
-        private static readonly object _lock = new object();
+        private static readonly object _lock = new object(); //
         private static readonly Encoding _utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         private static readonly Encoding _utf8Bom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
-
         private static readonly StreamWriter _consoleWriter;
         private static StreamWriter _fileWriter;
 
@@ -147,7 +146,7 @@ namespace OptimFoundation.Core
                 if (string.Equals(_logFileName, name, StringComparison.Ordinal)) return;
 
                 _logFileName = name;
-                _logFile = FolderDir.Log.GetFilePath($"{name}_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.txt");
+                _logFile = FolderDir.Log.GetPathFile($"{name}_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.txt");
                 _fileWriter?.Dispose();
                 _fileWriter = null;
             }

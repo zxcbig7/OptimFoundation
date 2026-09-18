@@ -47,7 +47,6 @@ modules: [core, cplex, experiments, templates]
 
 ### Out of Scope
 
-- **Gurobi**：`EngineBase.CaptureProfile()` 以 virtual 預設實作擋住，Gurobi engine 一行不改。接縫留在 `ISolverEngine`，之後要補時不必重新設計。
 - **nnz、density、係數 / RHS 數量級範圍**：需要 `ILPMatrix` row-wise API 或 `IloCplex` 彙總屬性，兩者簽名在本 repo 內零使用、未驗證，本次不碰。
 - **從變數名反推型別與維度**（名稱推斷層）：框架匯出的 `.sav` 保留 `VariableB_Xxx@dim` 格式，理論上可部分恢復自建限定的聚合統計，本次不做。
 - **`OptExperiment` 每個 trial 重讀模型檔的效能問題**：行為不改（每 trial 獨立讀檔正好保證 trial 間隱態隔離，對實驗是優點），本次只讓耗時可見。
@@ -73,8 +72,7 @@ modules: [core, cplex, experiments, templates]
 - [ ] **AC7 覆蓋率警告**：匯入一個含非 LP-matrix 元素的模型檔時，`ModelProfile.UncoveredElementCount > 0` 且 `IsComplete == false`，流程不中斷；`ModelInspector` 報告會把這個警告印出來。
 - [ ] **AC8 模型載入耗時可見**：匯入來源的 Trial，其 metrics 含 `ModelLoadMs`（讀檔 + reindex 耗時）且 > 0；自建模型該欄位為 0。
 - [ ] **AC9 疊加行為保留**：`OptModel.FromFile(...).AddConstraints(...)` 仍然先匯入、再套用追加步驟（既有測試 `FromFile_ThenAddConstraints_AppliesBoth` 不需修改語意即通過）。
-- [ ] **AC10 Gurobi 零改動**：`src/OptimFoundation.Gurobi/` 下無任何檔案變更，且 solution 在 `GUROBI_INSTALLED` 有無兩種情況下都 build 得過。
-- [ ] **AC11 全綠**：`dotnet build OptimFoundation.sln` 與 `dotnet test` 通過，全部 Templates 可 build。
+- [ ] **AC10 全綠**：`dotnet build OptimFoundation.sln` 與 `dotnet test` 通過，全部 Templates 可 build。
 
 ## Module Interactions
 
@@ -89,9 +87,6 @@ modules: [core, cplex, experiments, templates]
   - `OptModel.cs`：拆成 abstract `OptModel` + `BuiltModel` + `ImportedModel`。
   - `OptEngine.cs`：override `CaptureProfile()`；`ReindexFromModel` 補回寫 objective sense 與計數被跳過的元素；`ImportModel` 量測載入耗時。
   - `OptProject.cs`、`OptExperiment.cs`：改吃 `OptModel` base 契約；把 `ModelProfile` 與載入耗時帶進 Trial。
-
-- **Gurobi（`OptimFoundation.Gurobi`）**
-  - 不變。靠 `EngineBase` 的 virtual 預設實作滿足介面。
 
 - **Templates**
   - `ModelInspector`：`ModelInspection.cs` 改持有 `ModelProfile` + `AuthoringReport?`，移除手寫 caveat 清單中已由型別表達的項目；`ReportWriter.cs` 的「模型結構」節改讀 profile。
@@ -269,7 +264,7 @@ ModelSource, ModelSourceFile, BinaryCount, IntegerCount, ContinuousCount, ModelL
 ## Non-Functional Requirements
 
 - **Performance**：`CaptureProfile()` 對 `Variables` 與 `_constraints` 各做一次線性掃描，5,000 變數 / 10,000 限制式量級應在毫秒等級，不得引入 per-variable 的 solver interop 呼叫。
-- **相容性**：Gurobi 專案零改動且 build 得過（AC10）。實驗 CSV 既有欄位順序不變。
+- **相容性**：實驗 CSV 既有欄位順序不變。
 - **Observability**：匯入覆蓋不完整、無目標式、變數名重複三種情況各發一次 `Logging.Warn`；所有主動錯誤依 workspace CLAUDE.md 規定，在 throw 前留下含 event code、context、value、reason、`result=aborted` 的 Error Log。
 - **文件同步**：public API 變更後須同步 `CodeMap.md`、Templates、`docs/`，並補上 workspace CLAUDE.md 所引用但目前不存在的 `specs/developer-guide.md`（見 Open Questions）。
 
@@ -299,7 +294,7 @@ ModelSource, ModelSourceFile, BinaryCount, IntegerCount, ContinuousCount, ModelL
 - [ ] Cplex：`OptModel` 拆 abstract + `BuiltModel` + `ImportedModel`，`ApplySource` 留 TODO
 - [ ] Cplex：`OptEngine.CaptureProfile()` override 簽名就位，body `throw new NotImplementedException()`
 - [ ] 把 10 處 `new OptModel(...)` 改成 `OptModel.Build(...)`
-- [ ] `dotnet build OptimFoundation.sln` 通過，確認型別與契約連得起來（Gurobi 亦通過）
+- [ ] `dotnet build OptimFoundation.sln` 通過，確認型別與契約連得起來
 
 ### 逐層實作
 

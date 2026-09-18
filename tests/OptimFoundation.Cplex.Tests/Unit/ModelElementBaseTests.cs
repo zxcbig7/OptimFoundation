@@ -23,6 +23,13 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         [Fact]
+        public void ToString_DateTimeWithTime_ExpandsToSeconds()
+        {
+            var v = new VarDG { D = new DateTime(2026, 1, 15, 8, 30, 15), G = "N" };
+            Assert.Equal("VarDG@2026_01_15_08_30_15@N", v.ToString());
+        }
+
+        [Fact]
         public void ToString_DefaultString_ThrowsBecauseEmptyTokenIsNotAValidName()
         {
             var v = new VarS();
@@ -38,6 +45,18 @@ namespace OptimFoundation.Cplex.Tests.Unit
             v.InitClassBySets(new DateTime(2026, 6, 1), "D");
             Assert.Equal(new DateTime(2026, 6, 1), v.D);
             Assert.Equal("D", v.G);
+        }
+
+        [Fact]
+        public void InitClassBySets_DateStrings_ParseBothModelFormats()
+        {
+            var dateOnly = new VarDG();
+            dateOnly.InitClassBySets("2026_06_01", "D");
+            Assert.Equal(new DateTime(2026, 6, 1), dateOnly.D);
+
+            var withTime = new VarDG();
+            withTime.InitClassBySets("2026_06_01_08_30_15", "D");
+            Assert.Equal(new DateTime(2026, 6, 1, 8, 30, 15), withTime.D);
         }
 
         [Fact]

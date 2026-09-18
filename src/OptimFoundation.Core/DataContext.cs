@@ -204,7 +204,8 @@ namespace OptimFoundation.Core
             return string.Join("@", values.Select(value => value switch
             {
                 null => "<null>",
-                DateTime date => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                DateTime date => date.ToString(
+                    date.TimeOfDay == TimeSpan.Zero ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
                 IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
                 _ => value.ToString()
             }));

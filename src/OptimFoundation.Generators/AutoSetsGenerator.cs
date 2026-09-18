@@ -9,7 +9,8 @@ using OptimFoundation.Internal;
 namespace OptimFoundation.Generators
 {
     /// <summary>
-    /// AutoSets source generator。編譯期把宣告式標記補成完整 row class。唯一路徑：裸 attribute + 每維一個 OptDim&lt;T&gt;。
+    /// AutoSets source generator。編譯期把宣告式標記補成完整 row class。
+    /// 唯一路徑：裸 attribute + 每維一個 OptDim&lt;T&gt;。
     ///
     ///     [OptSet]   [OptDim&lt;string&gt;("Lot")]                      → SetRowBase + Lot 屬性（至少一維，OPTF008）
     ///     [OptParam] [OptDim&lt;string&gt;("Lot")] [OptDim&lt;int&gt;("Op")]  → ParameterBase + 各維屬性 + QTY + ctor（可零維＝scalar）
@@ -31,6 +32,8 @@ namespace OptimFoundation.Generators
         private const string VariableBaseFqn = "global::OptimFoundation.Core.VariableBase";
         private const string ParameterBaseFqn = "global::OptimFoundation.Core.ParameterBase";
         private const string SetRowBaseFqn = "global::OptimFoundation.Core.SetRowBase";
+
+        private const string TabSpace = "    ";
 
         // 命名天條：型別由類別名前綴決定，前綴不合法直接 compile error，訊息教正確取名
         private static readonly DiagnosticDescriptor VarNamingRule = new DiagnosticDescriptor(

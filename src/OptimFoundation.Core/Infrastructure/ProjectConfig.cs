@@ -29,6 +29,9 @@ namespace OptimFoundation.Core
         /// <summary>求解成功後把解匯出成 .sol → Sols/。</summary>
         public bool ExportSol { get; set; } = false;
 
+        /// <summary>衝突後把 IIS 解匯出成 .iis → IISs/。</summary>
+        public bool ExportIIS { get; set; } = false;
+
         /// <summary>寫解時的 DATA_ID 欄位預設值。null = 呼叫端自己傳。</summary>
         public string DataId { get; set; }
 

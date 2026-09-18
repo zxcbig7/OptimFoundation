@@ -172,7 +172,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             using var engine = BuildEngine();
 
             var dates = Enumerable.Range(1, 10).Select(d => new DateTime(2026, 1, d)).ToList();
-            var emps  = Enumerable.Range(1, 5).Select(i => $"E{i}").ToList();
+            var emps = Enumerable.Range(1, 5).Select(i => $"E{i}").ToList();
 
             engine.BuildBVs<VarDG>(dates, emps);
 
@@ -345,7 +345,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             {
                 foreach (string suffix in new[] { ".csv", ".json", "-trajectory.csv" })
                 {
-                    string path = FolderDir.Experiment.GetFilePath(tag + suffix);
+                    string path = FolderDir.Experiment.GetPathFile(tag + suffix);
                     if (File.Exists(path)) File.Delete(path);
                 }
             }

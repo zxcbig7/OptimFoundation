@@ -14,7 +14,7 @@
 </head>
 <body>
   <h1>OptimFoundation</h1>
-  <p>.NET 8 的 solver-agnostic MILP framework，提供 CPLEX 與 Gurobi adapter。</p>
+  <p>.NET 8 的 solver-agnostic MILP framework，提供 CPLEX adapter。</p>
 
   <h2>一套維度宣告</h2>
   <pre><code class="language-csharp">[OptSet]
@@ -66,7 +66,7 @@ engine.BuildVars&lt;VariableC_Produce&gt;(data.set_Product, data.set_Date);</cod
   <pre><code class="language-csharp">engine.AddLHS(coef, variable);
 engine.AddRHS(value);
 engine.CreateLessEqual(this, date, employee);</code></pre>
-  <p>framework 以 owner 類別名與 raw dims 組成 canonical 名稱。模型日期使用 yyyy_MM_dd；CSV 日期使用 yyyy-MM-dd。</p>
+  <p>framework 以 owner 類別名與 raw dims 組成 canonical 名稱。模型日期使用 yyyy_MM_dd，帶時分秒時展開為 yyyy_MM_dd_HH_mm_ss；CSV 日期對應 yyyy-MM-dd 與 yyyy-MM-dd HH:mm:ss。粒度到秒，秒以下精度會被拒絕。</p>
 
   <h2>組裝</h2>
   <pre><code class="language-csharp">var data = OptData.Load(() =&gt; new Dataload());

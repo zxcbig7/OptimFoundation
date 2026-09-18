@@ -184,7 +184,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             // Experiment.Save 對同名實驗是 append 語意，先清前次殘留才能 assert 精確筆數
             foreach (var ext in new[] { ".json", ".csv" })
             {
-                string stale = FolderDir.Experiment.GetFilePath(expName + ext);
+                string stale = FolderDir.Experiment.GetPathFile(expName + ext);
                 if (File.Exists(stale)) File.Delete(stale);
             }
 
@@ -238,7 +238,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
                 "以下參數求解未達終止狀態：" + Environment.NewLine + string.Join(Environment.NewLine, failures));
 
             // 反映在 CSV：每個 label 都應出現在輸出的 CSV
-            string csvPath = FolderDir.Experiment.GetFilePath(expName + ".csv");
+            string csvPath = FolderDir.Experiment.GetPathFile(expName + ".csv");
             Assert.True(File.Exists(csvPath), $"CSV 未產出：{csvPath}");
             string csv = File.ReadAllText(csvPath);
             foreach (var (label, _) in Knobs)

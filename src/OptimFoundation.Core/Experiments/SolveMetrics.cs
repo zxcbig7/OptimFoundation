@@ -8,7 +8,7 @@ namespace OptimFoundation.Core
     /// </summary>
     public sealed class SolveMetrics
     {
-        /// <summary>求解結果狀態（Optimal / Feasible / Infeasible / TimeLimit …）。</summary>
+        /// <summary> 求解結果狀態（Optimal / Feasible / Infeasible / TimeLimit …）。</summary>
         public SolveStatus Status { get; set; }
 
         /// <summary>目標式值；有軟性限制式時已含 penalty。無解時為 NaN。</summary>

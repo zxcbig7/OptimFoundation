@@ -75,7 +75,7 @@ namespace OptimFoundation.Core
 
             // 1) 讀回同名實驗磁碟上既有的 trials（以 JSON 為權威來源；不存在則空清單）
             var current = Trials ?? new List<Trial>();
-            string jsonPath = FolderDir.Experiment.GetFilePath($"{Name}.json");
+            string jsonPath = FolderDir.Experiment.GetPathFile($"{Name}.json");
             var onDisk = new JsonExperimentWriter().Read(jsonPath)?.Trials ?? new List<Trial>();
 
             // 2) 合併：保留磁碟上「本次記憶體沒有」的舊 trials，本次的接在後面
@@ -93,13 +93,13 @@ namespace OptimFoundation.Core
             //    主表：一列一 trial，只寫「跟基準差在哪」
             //    說明檔：整批不會變的東西（模型多大、環境、基準的完整設定）只寫一次
             //    json：保留當累積與重讀的權威來源，設定已改成只記有設的那些
-            new CsvExperimentWriter().Write(this, FolderDir.Experiment.GetFilePath($"{Name}.csv"));
-            new MetaCsvWriter().Write(this, FolderDir.Experiment.GetFilePath($"{Name}-meta.csv"));
+            new CsvExperimentWriter().Write(this, FolderDir.Experiment.GetPathFile($"{Name}.csv"));
+            new MetaCsvWriter().Write(this, FolderDir.Experiment.GetPathFile($"{Name}-meta.csv"));
             new JsonExperimentWriter().Write(this, jsonPath);
 
             // 4) 只有實際抓到收斂軌跡時才多出 trajectory.csv，避免留下只有表頭的空殼（與 csv/json 永遠有料一致）
             if (Trials.Any(t => (t.Metrics?.Convergence?.Count ?? 0) > 0))
-                new TrajectoryCsvWriter().Write(this, FolderDir.Experiment.GetFilePath($"{Name}-trajectory.csv"));
+                new TrajectoryCsvWriter().Write(this, FolderDir.Experiment.GetPathFile($"{Name}-trajectory.csv"));
 
             Logging.Info($"[Experiment] Saved '{Name}' ({Trials.Count} trials) → {FolderDir.Experiment.GetPath()}");
         }
@@ -113,7 +113,7 @@ namespace OptimFoundation.Core
                     "EXPERIMENT_INVALID", "實驗設定不合法", nameof(Load), name, "name_is_empty");
             try
             {
-                return new JsonExperimentWriter().Read(FolderDir.Experiment.GetFilePath($"{name}.json"));
+                return new JsonExperimentWriter().Read(FolderDir.Experiment.GetPathFile($"{name}.json"));
             }
             catch (Exception ex)
             {

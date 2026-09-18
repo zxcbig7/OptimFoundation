@@ -34,7 +34,7 @@ namespace OptimFoundation.Core
         private static readonly ProjFolder[] _outputs = { Log, Model, Sol, IIS, Experiment, Solution };
 
         /// <summary>清除所有輸出資料夾中 LastWriteTime 超過 retentionDays 天的舊檔，回傳總刪除數。retentionDays &lt;= 0 時視為關閉、不清理。</summary>
-        public static int PurgeOutputs(int retentionDays)
+        public static int PurgeAllOutputs(int retentionDays)
         {
             if (retentionDays <= 0) return 0;
             int total = 0;
@@ -45,7 +45,7 @@ namespace OptimFoundation.Core
         /// <summary>單一資料夾的路徑計算與檔案操作；不持有狀態，只記資料夾名。</summary>
         public class ProjFolder
         {
-            /// <summary>執行檔所在目錄（AppDomain.BaseDirectory）</summary>
+            /// <summary>執行檔的目錄位置(執行的地方)</summary>
             public static string ProjectPath => System.AppDomain.CurrentDomain.BaseDirectory;
 
             private readonly string _folderName;
@@ -56,9 +56,11 @@ namespace OptimFoundation.Core
                 _folderName = folderName;
             }
 
-
             /// <summary>取得資料夾完整路徑（ProjectPath + folderName）；不檢查是否存在。</summary>
             public string GetPath() => Path.Combine(ProjectPath, _folderName);
+
+            /// <summary>組出這個資料夾下某檔案的完整路徑；不建立資料夾也不建立檔案。</summary>
+            public string GetPathFile(string fileName) => Path.Combine(GetPath(), fileName);
 
             /// <summary>
             /// 建立資料夾。Directory.CreateDirectory 是 idempotent，目錄已存在時不 throw。
@@ -68,14 +70,11 @@ namespace OptimFoundation.Core
                 Directory.CreateDirectory(GetPath());
             }
 
-            /// <summary>組出這個資料夾下某檔案的完整路徑；不建立資料夾也不建立檔案。</summary>
-            public string GetFilePath(string fileName) => Path.Combine(GetPath(), fileName);
-
             /// <summary>建立空檔（連同資料夾）。檔案已存在時不覆寫、直接回 false。</summary>
             /// <returns>true = 這次真的建了新檔；false = 檔案本來就在。</returns>
             public bool TryCreateFile(string fileName)
             {
-                string path = GetFilePath(fileName);
+                string path = GetPathFile(fileName);
                 if (File.Exists(path)) return false;
                 Directory.CreateDirectory(GetPath());   // 確保資料夾存在（idempotent），否則 File.CreateText 丟 DirectoryNotFound
                 File.CreateText(path).Close();

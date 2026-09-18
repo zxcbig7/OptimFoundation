@@ -1,6 +1,6 @@
 # OptimFoundation
 
-OptimFoundation 是以 .NET 8 建立 MILP 模型的 solver-agnostic framework，目前提供 IBM CPLEX 與 Gurobi adapter。
+OptimFoundation 是以 .NET 8 建立 MILP 模型的 solver-agnostic framework，目前提供 IBM CPLEX adapter。
 
 ## Packages
 
@@ -9,7 +9,6 @@ OptimFoundation 是以 .NET 8 建立 MILP 模型的 solver-agnostic framework，
 | `OptimFoundation.Core` | 資料列、IO、命名、變數/限制式通用邏輯、logging、experiments |
 | `OptimFoundation.Generators` | Set / Parameter / Variable source generator |
 | `OptimFoundation.Cplex` | IBM CPLEX adapter |
-| `OptimFoundation.Gurobi` | Gurobi adapter |
 
 ## Quick example
 
@@ -63,7 +62,7 @@ dotnet build OptimFoundation.sln
 dotnet test tests/OptimFoundation.Cplex.Tests/OptimFoundation.Cplex.Tests.csproj
 ```
 
-Solver managed/native libraries 與 license 不在 repository 內。CPLEX 使用 `CplexDir`，Gurobi 使用 `GUROBI_HOME`；不得 commit solver DLL 或 license。
+Solver managed/native libraries 與 license 不在 repository 內。CPLEX 使用 `CplexDir`；不得 commit solver DLL 或 license。
 
 ## Documentation
 

@@ -61,6 +61,14 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         [Fact]
+        public void ConvertSets_DateTimeWithTime_ExpandsToSeconds()
+        {
+            var lists = VariableBuilder.ConvertSetsToStringLists(
+                new List<DateTime> { new(2026, 3, 5, 23, 59, 59) });
+            Assert.Equal("2026_03_05_23_59_59", lists[0][0]);
+        }
+
+        [Fact]
         public void ConvertSets_UnsupportedType_Throws()
         {
             Assert.Throws<ArgumentException>(() =>

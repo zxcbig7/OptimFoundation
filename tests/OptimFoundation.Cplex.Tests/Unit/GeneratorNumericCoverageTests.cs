@@ -70,7 +70,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
         public void CsvSource_Load_UsesExplicitFileNameInsteadOfRowClassName()
         {
             string fileName = $"product-master-{Guid.NewGuid():N}.csv";
-            string path = FolderDir.Data.GetFilePath(fileName);
+            string path = FolderDir.Data.GetPathFile(fileName);
 
             try
             {

@@ -172,7 +172,7 @@ namespace OptimFoundation.Cplex
             else
             {
                 FolderDir.Model.CreateFolder();
-                path = FolderDir.Model.GetFilePath(fileName);
+                path = FolderDir.Model.GetPathFile(fileName);
             }
 
             try
@@ -224,7 +224,7 @@ namespace OptimFoundation.Cplex
 
             string path = Path.IsPathRooted(fileName)
                 ? fileName
-                : FolderDir.Model.GetFilePath(fileName);
+                : FolderDir.Model.GetPathFile(fileName);
 
             if (!File.Exists(path))
                 throw Logging.ErrorOnce(
@@ -257,6 +257,7 @@ namespace OptimFoundation.Cplex
         /// </summary>
         private (int VarCount, int ConstraintCount) ReindexFromModel()
         {
+            // 清空變數
             Variables.Clear();
             VariableSets.Clear();
             _constraints.Clear();
@@ -428,10 +429,10 @@ namespace OptimFoundation.Cplex
             string proj = _modelName ?? "Model";
 
             if (_exportLp)
-                Model.ExportModel(FolderDir.Model.GetFilePath($"{proj}_LP_{_startTime}.lp"));
+                Model.ExportModel(FolderDir.Model.GetPathFile($"{proj}_LP_{_startTime}.lp"));
 
             if (_exportMps)
-                Model.ExportModel(FolderDir.Model.GetFilePath($"{proj}_MPS_{_startTime}.mps"));
+                Model.ExportModel(FolderDir.Model.GetPathFile($"{proj}_MPS_{_startTime}.mps"));
 
             var solveTimer = System.Diagnostics.Stopwatch.StartNew();
             TrajectoryCallback trajCb = null;
@@ -494,7 +495,7 @@ namespace OptimFoundation.Cplex
             };
 
             if (ok && _exportSol)
-                Model.WriteSolution(FolderDir.Sol.GetFilePath($"{proj}_Solution_{_startTime}.sol"));
+                Model.WriteSolution(FolderDir.Sol.GetPathFile($"{proj}_Solution_{_startTime}.sol"));
 
             if (Status == SolveStatus.Infeasible && _constraints.Count > 0)
                 _conflictConstraints = RunConflictAnalysis();
@@ -768,7 +769,7 @@ namespace OptimFoundation.Cplex
                 return conflictNames;
 
             FolderDir.IIS.CreateFolder();  // 即使未設定 exportLP/Sol，IIS 資料夾也必須存在才能寫入
-            string iisPath = FolderDir.IIS.GetFilePath($"{this._modelName}_IIS_{_startTime}.ilp");
+            string iisPath = FolderDir.IIS.GetPathFile($"{this._modelName}_IIS_{_startTime}.ilp");
             Model.WriteConflict(iisPath);
             Logging.Info($"[OptEngine] IIS written: {iisPath}");
 

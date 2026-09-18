@@ -8,7 +8,7 @@ using System.Text;
 namespace OptimFoundation.Core.IO
 {
     /// <summary>
-        /// CSV 格式與寫出控制器：讀取端只負責 RFC4180 文字解析，位址與 schema 由資料來源層處理。
+    /// CSV 格式與寫出控制器：讀取端只負責 RFC4180 文字解析，位址與 schema 由資料來源層處理。
     /// </summary>
     public static class CsvCtrl
     {
@@ -128,7 +128,7 @@ namespace OptimFoundation.Core.IO
             {
                 var classInfo = new ClassInfo(typeof(TVariable));
                 FolderDir.Solution.TryCreateFile($"{classInfo.TypeName}.csv");
-                string file = FolderDir.Solution.GetFilePath($"{classInfo.TypeName}.csv");
+                string file = FolderDir.Solution.GetPathFile($"{classInfo.TypeName}.csv");
                 var sol = engine.GetSolution(classInfo.TypeName);
 
                 using var sw = new StreamWriter(file, append: false, _csvWrite);
@@ -176,7 +176,7 @@ namespace OptimFoundation.Core.IO
                         new InvalidOperationException($"[CsvCtrl] {typeof(T).Name} 沒有任何 public property，無法輸出。"),
                         "CSV_WRITE_INVALID", "CSV 資料輸出失敗", nameof(WriteRows), typeof(T).Name, "public_properties_missing");
 
-                string path = FolderDir.Data.GetFilePath(EnsureCsv(fileName ?? typeof(T).Name));
+                string path = FolderDir.Data.GetPathFile(EnsureCsv(fileName ?? typeof(T).Name));
                 bool overwritten = File.Exists(path);
                 FolderDir.Data.CreateFolder();
 
@@ -200,21 +200,23 @@ namespace OptimFoundation.Core.IO
         }
 
         // 值 → CSV 欄位字串。數值一律 InvariantCulture（double 用 "R" round-trip 格式，與 WriteSolution 同）；
-        // CSV 資料層 DateTime 固定 yyyy-MM-dd；模型名稱層另由 ModelNaming 使用 yyyy_MM_dd。
+        // CSV 資料層 DateTime 純日期寫 yyyy-MM-dd、帶時間寫 yyyy-MM-dd HH:mm:ss；模型名稱層另由 ModelNaming 走 yyyy_MM_dd[_HH_mm_ss]。
         private static string FormatValue(object value)
         {
             switch (value)
             {
                 case null:
                     return "";
-                case DateTime d when d.TimeOfDay != TimeSpan.Zero:
-                    // index set 的粒度只到日；靜默截掉時分秒會讓資料與模型名稱的 round-trip 悄悄失真
+                case DateTime d when d.Ticks % TimeSpan.TicksPerSecond != 0:
+                    // index set 的粒度到秒；靜默截掉秒以下會讓資料與模型名稱的 round-trip 悄悄失真
                     throw Logging.ErrorOnce(
-                        new NotSupportedException($"[CsvCtrl] 不支援帶時分秒的 DateTime：{d:O}——index 粒度只到日。"),
+                        new NotSupportedException($"[CsvCtrl] 不支援秒以下精度的 DateTime：{d:O}——index 粒度只到秒。"),
                         "CSV_DATETIME_INVALID", "CSV 日期輸出失敗", nameof(FormatValue), d.ToString("O", CultureInfo.InvariantCulture),
-                        "datetime_contains_time");
+                        "datetime_subsecond_precision");
                 case DateTime d:
-                    return d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                    return d.ToString(
+                        d.TimeOfDay == TimeSpan.Zero ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm:ss",
+                        CultureInfo.InvariantCulture);
                 case double n:
                     return n.ToString("R", CultureInfo.InvariantCulture);
                 case float f:

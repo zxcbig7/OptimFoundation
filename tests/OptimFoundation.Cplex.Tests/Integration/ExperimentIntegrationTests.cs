@@ -54,8 +54,8 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
             exp.Save();
 
-            string csv  = FolderDir.Experiment.GetFilePath(expName + ".csv");
-            string json = FolderDir.Experiment.GetFilePath(expName + ".json");
+            string csv = FolderDir.Experiment.GetPathFile(expName + ".csv");
+            string json = FolderDir.Experiment.GetPathFile(expName + ".json");
             try
             {
                 Assert.True(File.Exists(csv));
@@ -65,7 +65,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             }
             finally
             {
-                if (File.Exists(csv))  File.Delete(csv);
+                if (File.Exists(csv)) File.Delete(csv);
                 if (File.Exists(json)) File.Delete(json);
             }
         }
@@ -75,7 +75,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
         {
             if (!CplexAvailable) return;
 
-            var values  = new double[] { 41, 50, 49, 59, 55, 57, 60, 8, 12, 15, 33, 21, 18, 27, 44 };
+            var values = new double[] { 41, 50, 49, 59, 55, 57, 60, 8, 12, 15, 33, 21, 18, 27, 44 };
             var weights = new double[] { 40, 49, 50, 59, 55, 57, 60, 7, 11, 14, 32, 20, 17, 26, 43 };
             const double cap = 170;
 
@@ -355,7 +355,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
         {
             foreach (string suffix in new[] { ".csv", ".json", "-trajectory.csv" })
             {
-                string path = FolderDir.Experiment.GetFilePath(name + suffix);
+                string path = FolderDir.Experiment.GetPathFile(name + suffix);
                 if (File.Exists(path)) File.Delete(path);
             }
         }

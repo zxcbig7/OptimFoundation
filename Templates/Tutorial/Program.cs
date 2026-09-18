@@ -35,15 +35,17 @@ namespace Tutorial
             };
 
             // ── 2. 模型 ────────────────────────────────────────────
-            var model = new OptModel("Canonical")
-                .AddVariables(engine => engine.BuildVars<VariableC_Produce>(data.set_Product, data.set_Date, data.set_Shift))
-                .AddVariables(engine => engine.BuildVars<VariableB_Setup>(data.set_Product, data.set_Date, data.set_Shift))
-                .AddVariables(engine => engine.BuildVars<VariableI_Batch>(data.set_Product, data.set_Date))
-                .AddObjective(engine => new ObjectiveFunction(data.set_Product, data.set_Date, data.set_Shift, data.parameter_UnitProfit, data.parameter_SetupCost).Build(engine))
-                .AddConstraints(engine => new Constraint_Capacity(data.set_Product, data.set_Machine, data.set_Date, data.set_Shift, data.parameter_MachineHours, data.parameter_Capacity).Build(engine))
-                .AddConstraints(engine => new Constraint_Demand(data.set_Product, data.set_Date, data.set_Shift, data.parameter_Demand).Build(engine))
-                .AddConstraints(engine => new Constraint_BatchDef(data.set_Product, data.set_Date, data.set_Shift, data.parameter_BatchSize).Build(engine))
-                .AddConstraints(engine => new Constraint_SetupLink(data.set_Product, data.set_Date, data.set_Shift, data.BigM).Build(engine));
+            var model = new OptModel("Canonical");
+            model.AddVariables(engine => engine.BuildVars<VariableC_Produce>(data.set_Product, data.set_Date, data.set_Shift));
+            model.AddVariables(engine => engine.BuildVars<VariableB_Setup>(data.set_Product, data.set_Date, data.set_Shift));
+            model.AddVariables(engine => engine.BuildVars<VariableI_Batch>(data.set_Product, data.set_Date));
+            model.AddObjective(engine => new ObjectiveFunction(data.set_Product, data.set_Date, data.set_Shift, data.parameter_UnitProfit, data.parameter_SetupCost).Build(engine));
+            model.AddConstraints(engine => new Constraint_Capacity(data.set_Product, data.set_Machine, data.set_Date, data.set_Shift, data.parameter_MachineHours, data.parameter_Capacity).Build(engine));
+            model.AddConstraints(engine => new Constraint_Demand(data.set_Product, data.set_Date, data.set_Shift, data.parameter_Demand).Build(engine));
+            model.AddConstraints(engine => new Constraint_BatchDef(data.set_Product, data.set_Date, data.set_Shift, data.parameter_BatchSize).Build(engine));
+            model.AddConstraints(engine => new Constraint_SetupLink(data.set_Product, data.set_Date, data.set_Shift, data.BigM).Build(engine));
+
+            var model2 = OptModel.FromFile("Model.lp", "Model2");
 
             // ── 3. 環境 ────────────────────────────────────────────
             // exp：三組 MIP emphasis 對照，不做正式求解

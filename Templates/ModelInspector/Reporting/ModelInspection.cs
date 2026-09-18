@@ -201,13 +201,13 @@ namespace ModelInspector.Reporting
 
             var candidates = new List<(string Kind, string Path)>();
             if (config.ExportLP)
-                candidates.Add(("LP 模型檔", FolderDir.Model.GetFilePath($"{name}_LP_{stamp}.lp")));
+                candidates.Add(("LP 模型檔", FolderDir.Model.GetPathFile($"{name}_LP_{stamp}.lp")));
             if (config.ExportMPS)
-                candidates.Add(("MPS 模型檔", FolderDir.Model.GetFilePath($"{name}_MPS_{stamp}.mps")));
+                candidates.Add(("MPS 模型檔", FolderDir.Model.GetPathFile($"{name}_MPS_{stamp}.mps")));
             if (config.ExportSol)
-                candidates.Add(("解檔", FolderDir.Sol.GetFilePath($"{name}_Solution_{stamp}.sol")));
+                candidates.Add(("解檔", FolderDir.Sol.GetPathFile($"{name}_Solution_{stamp}.sol")));
             if (hasConflict)
-                candidates.Add(("IIS 衝突模型", FolderDir.IIS.GetFilePath($"{name}_IIS_{stamp}.ilp")));
+                candidates.Add(("IIS 衝突模型", FolderDir.IIS.GetPathFile($"{name}_IIS_{stamp}.ilp")));
 
             var found = new List<ArtifactFile>();
             foreach (var (kind, path) in candidates)

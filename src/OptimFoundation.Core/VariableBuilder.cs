@@ -9,8 +9,9 @@ using System.Runtime.CompilerServices;
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 變數名稱工具：把多個 Set 做笛卡兒積，組出變數 key（TypeName@v1@v2@…），與 ModelElementBase.ToString() 格式一致。
-    /// 直接組字串、不建 element 實例（比反射快 10x+）；建構子以編譯後 lambda 快取（compiled ctor cache）。
+    /// 變數名稱工具：
+    /// 把多個 Set 做笛卡兒積，組出變數 key（TypeName@v1@v2@…），與 ModelElementBase.ToString() 格式一致。
+    /// 這裡只做字串處理，不建立 TVariable 實例，避免每個名稱都做 InitClassBySets + ToString 的反射。
     /// </summary>
     public static class VariableBuilder
     {
