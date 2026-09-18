@@ -127,6 +127,17 @@ namespace OptimFoundation.Cplex
 
             var experiment = new Experiment(_name, _description);
 
+            // 專案名是所有輸出檔名的根，與 OptProject 同一套來源優先序；實驗這一側再接上參數名。
+            string projectName = ResolveProjectName(out string projectNameSource);
+            Logging.SetLogFileName($"{projectName}_exp");
+
+            // 單一模型時檔名就是「專案名-參數名」；多模型才插模型名，否則各模型的輸出檔會互相覆蓋。
+            bool multiModel = cells.Select(c => c.Model.Name).Distinct(StringComparer.Ordinal).Count() > 1;
+
+            Logging.Info(
+                $"[Experiment] {_name} | ProjectName={projectName}({projectNameSource}) " +
+                $"cells={cells.Count} multiModel={(multiModel ? "ON" : "OFF")}");
+
             // 這批實驗的識別：用開始時間。同一個實驗跑很多次時，靠它分辨哪些列是同一批。
             string runId = DateTime.Now.ToString("yyyyMMdd-HHmmss");
             int trialId = 0;
@@ -135,7 +146,9 @@ namespace OptimFoundation.Cplex
             {
                 var projectConfig = _projectConfigFactory() ?? new ProjectConfig();
                 using var engine = new OptEngine(cell.Config.Clone(), projectConfig);
-                engine.SetModelName($"{_name}-{cell.Model.Name}-{cell.Label}");
+                engine.SetModelName(multiModel
+                    ? $"{projectName}-{cell.Model.Name}-{cell.Label}"
+                    : $"{projectName}-{cell.Label}");
                 engine.Build();
                 cell.Model.ApplyTo(engine);
 
@@ -149,6 +162,24 @@ namespace OptimFoundation.Cplex
 
             experiment.Save();
             return experiment;
+        }
+
+        /// <summary>
+        /// 解析輸出檔名的根。與 OptProject 一致：ProjectConfig.ProjectName 優先，沒設就退回實驗名。
+        /// 名稱必須在跑任何 cell 之前決定（log 檔要先接上），故在這裡多叫一次工廠——
+        /// 工廠本來就該每次回傳全新實例，多叫無副作用。
+        /// </summary>
+        private string ResolveProjectName(out string source)
+        {
+            string configured = (_projectConfigFactory() ?? new ProjectConfig()).ProjectName;
+            if (string.IsNullOrWhiteSpace(configured))
+            {
+                source = "experiment";
+                return _name;
+            }
+
+            source = "cfg";
+            return configured;
         }
 
         private static void ValidateLabel(string label)

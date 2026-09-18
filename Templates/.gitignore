@@ -23,6 +23,8 @@ packages/
 *.lp
 *.mps
 *.sol
+*.sav
+*.ilp
 
 # Logs & temp
 *.log

@@ -248,13 +248,14 @@ namespace OptimFoundation.Core
         /// <summary>各 engine 的求解實作；由 <see cref="Solve"/> 呼叫。回傳 true 代表取得 Optimal 或 Feasible 解。</summary>
         protected abstract bool SolveCore();
 
-        // RegisteredVariableCount > Config.ScaleWarnThreshold → Logging.Warn（只警告不阻擋，大但合法的模型不該被擋）。
-        // Config 為 null 時防禦性跳過（不炸）。
+        // VariableCount > Config.ScaleWarnThreshold → Logging.Warn（只警告不阻擋，大但合法的模型不該被擋）。
+        // 量的是 Variables 索引而非 RegisteredVariableCount：軟性限制式的彈性變數與匯入的模型都不會登記進 VariableSets，
+        // 用後者會讓這些情況的規模恆為 0，guard 形同失效。Config 為 null 時防禦性跳過（不炸）。
         private void PreSolveGuard()
         {
             if (Config == null) return;
-            if (RegisteredVariableCount > Config.ScaleWarnThreshold)
-                Logging.Warn($"[MODEL_SCALE_WARNING] 變數規模超過警告門檻 | count={RegisteredVariableCount} threshold={Config.ScaleWarnThreshold} result=continued");
+            if (VariableCount > Config.ScaleWarnThreshold)
+                Logging.Warn($"[MODEL_SCALE_WARNING] 變數規模超過警告門檻 | count={VariableCount} threshold={Config.ScaleWarnThreshold} result=continued");
         }
 
         /// <summary>取目標式的解值。MUST 在 Solve() 回傳 true 之後呼叫，否則各 solver 會丟自己的例外。</summary>
@@ -286,15 +287,21 @@ namespace OptimFoundation.Core
 
         // 批次建立某型別的所有變數：組出全部變數名 → 建到 solver → 登記進 VariableSets[型別名] 供之後查詢
         private void BatchBuild<TVariable>(double lb, double ub, VarType type, object[] sets)
+            => BatchBuild(typeof(TVariable).Name, () => VariableBuilder.GetVarNames<TVariable>(sets), lb, ub, type);
+
+        // string 版：setName 直接當變數名 head，其餘流程與泛型版共用
+        private void BatchBuild(string setName, double lb, double ub, VarType type, object[] sets)
+            => BatchBuild(setName, () => VariableBuilder.GetVarNames(setName, sets), lb, ub, type);
+
+        private void BatchBuild(string setName, Func<IEnumerable<string>> nameFactory, double lb, double ub, VarType type)
         {
-            string setName = typeof(TVariable).Name;
             int before = Variables.Count;
             List<string> names = null;
             string stage = "key_generation";
             try
             {
                 // 1) 由 sets 笛卡兒積組出所有變數名（TypeName@s1@s2@…）
-                names = VariableBuilder.GetVarNames<TVariable>(sets).ToList();
+                names = nameFactory().ToList();
 
                 stage = "variable_set_initialization";
                 if (!VariableSets.ContainsKey(setName))
@@ -452,6 +459,52 @@ namespace OptimFoundation.Core
             }
         }
 
+        // 以下是上面每個 Build*Vs 的 string 版：功能完全相同，只是用 setName 取代 TVariable。
+        // 少掉的兩項都是「靠類別才做得到」的檢查：維度數量比對，以及類別名前綴與型別的一致性驗證。
+        // setName 仍會經 ModelNaming 驗證（不可空白、不可含保留字元、不可數字開頭），確保產出的名稱送得進 solver。
+
+        /// <summary>批次建立連續變數的 string 版，界限 [0, 1E100]。</summary>
+        /// <param name="setName">變數名 head，取代泛型版的類別名；同時是 VariableSets 的 key。</param>
+        /// <param name="sets">各維度的 set；框架取笛卡兒積產生所有變數名。</param>
+        public virtual void BuildCVs(string setName, params object[] sets)
+            => BatchBuild(setName, 0, 1E100, VarType.Continuous, sets);
+
+        /// <summary>批次建立連續變數並指定界限 [lb, ub] 的 string 版。</summary>
+        public virtual void BuildCVs(string setName, double lb, double ub, params object[] sets)
+            => BatchBuild(setName, lb, ub, VarType.Continuous, sets);
+
+        /// <summary>批次建立整數變數的 string 版，界限 [0, 1E100]。</summary>
+        public virtual void BuildIVs(string setName, params object[] sets)
+            => BatchBuild(setName, 0, 1E100, VarType.Integer, sets);
+
+        /// <summary>批次建立整數變數並指定界限 [lb, ub] 的 string 版。</summary>
+        public virtual void BuildIVs(string setName, double lb, double ub, params object[] sets)
+            => BatchBuild(setName, lb, ub, VarType.Integer, sets);
+
+        /// <summary>批次建立 0/1 二元變數的 string 版。</summary>
+        public virtual void BuildBVs(string setName, params object[] sets)
+            => BatchBuild(setName, 0, 1, VarType.Binary, sets);
+
+        /// <summary>
+        /// <see cref="BuildVars{TVariable}(object[])"/> 的 string 版。泛型版由類別名前綴推導型別，
+        /// string 版沒有類別可推，改由 type 參數明確指定；界限比照對應的 Build*Vs。
+        /// </summary>
+        public virtual void BuildVars(string setName, VarType type, params object[] sets)
+        {
+            switch (type)
+            {
+                case VarType.Binary:
+                    BuildBVs(setName, sets);
+                    break;
+                case VarType.Integer:
+                    BuildIVs(setName, sets);
+                    break;
+                default:
+                    BuildCVs(setName, sets);
+                    break;
+            }
+        }
+
         #endregion
 
         #region VariableManager — 查詢
@@ -479,6 +532,26 @@ namespace OptimFoundation.Core
                 $"type={setName}");
         }
 
+        /// <summary>
+        /// 依變數全名查出 solver 原生變數。與 <see cref="ReadVar(object)"/> 等價，
+        /// 差別只在跳過「用實例反推型別與名稱」那一步，直接拿名稱查 Variables 索引。
+        /// </summary>
+        /// <param name="varName">變數全名，例：VariableB_Assign@E1@D1。import 進來、不符框架命名慣例的名稱同樣可查。</param>
+        /// <exception cref="KeyNotFoundException">這個名稱的變數不存在。</exception>
+        protected TVar ReadVar(string varName)
+        {
+            if (varName != null && Variables.TryGetValue(varName, out var v))
+                return v;
+
+            throw Logging.ErrorOnce(
+                new KeyNotFoundException($"找不到變數 '{varName}'"),
+                "VARIABLE_NOT_FOUND",
+                "變數不存在",
+                nameof(ReadVar),
+                varName,
+                "variable_not_built");
+        }
+
         /// <summary>取某變數型別的整組變數（key = 變數全名）。</summary>
         /// <exception cref="KeyNotFoundException">該型別尚未經 Build*Vs 建立。</exception>
         protected Dictionary<string, TVar> GetVariableSet(string setName)
@@ -498,22 +571,36 @@ namespace OptimFoundation.Core
         public string[] GetAllVarNames()
             => VariableSets.Values.SelectMany(s => s.Keys).ToArray();
 
+        /// <summary>
+        /// 變數名清單，可選擇是否納入沒有登記在任何 VariableSet 裡的變數
+        /// （軟性限制式的彈性變數、以及不經 Build*Vs 直接建立的變數）。
+        /// </summary>
+        /// <param name="includeUnregistered">false 等同 <see cref="GetAllVarNames()"/>；true 改為列出 Variables 索引的全部變數。</param>
+        public string[] GetAllVarNames(bool includeUnregistered)
+            => includeUnregistered ? Variables.Keys.ToArray() : GetAllVarNames();
+
         /// <summary>某變數型別的全部變數名；型別不存在回空陣列（不丟例外）。</summary>
         public string[] GetSetVarNames<TVariable>()
+            => GetSetVarNames(typeof(TVariable).Name);
+
+        /// <summary><see cref="GetSetVarNames{TVariable}"/> 的 string 版；setName 不存在回空陣列（不丟例外）。</summary>
+        public string[] GetSetVarNames(string setName)
         {
-            string setName = typeof(TVariable).Name;
-            return VariableSets.TryGetValue(setName, out var set)
+            return setName != null && VariableSets.TryGetValue(setName, out var set)
                 ? set.Keys.ToArray()
                 : Array.Empty<string>();
         }
 
         /// <summary>取某變數型別的全部解值，key = 完整變數名（TypeName@…）。求解後呼叫；型別不存在回空字典。</summary>
         public Dictionary<string, double> GetSetVarValues<TVariable>()
+            => GetSetVarValues(typeof(TVariable).Name);
+
+        /// <summary><see cref="GetSetVarValues{TVariable}"/> 的 string 版；setName 不存在回空字典。</summary>
+        public Dictionary<string, double> GetSetVarValues(string setName)
         {
-            string setName = typeof(TVariable).Name;
             try
             {
-                if (!VariableSets.TryGetValue(setName, out var set))
+                if (setName == null || !VariableSets.TryGetValue(setName, out var set))
                     return new Dictionary<string, double>();
                 return set.ToDictionary(kvp => kvp.Key, kvp => GetVariableValue(kvp.Key));
             }
@@ -565,6 +652,18 @@ namespace OptimFoundation.Core
         /// <summary>把單一變數的界限改成 [lb, ub]；lb == ub 等同把變數固定成該值。</summary>
         protected void SetVarRange(object searchData, double lb, double ub)
             => SetVariableBounds(ReadVar(searchData), lb, ub);
+
+        /// <summary><see cref="SetVarLB(object, double)"/> 的 string 版，以變數全名指定。</summary>
+        protected void SetVarLB(string varName, double lb)
+            => SetVariableBounds(ReadVar(varName), lb, null);
+
+        /// <summary><see cref="SetVarUB(object, double)"/> 的 string 版，以變數全名指定。</summary>
+        protected void SetVarUB(string varName, double ub)
+            => SetVariableBounds(ReadVar(varName), null, ub);
+
+        /// <summary><see cref="SetVarRange(object, double, double)"/> 的 string 版，以變數全名指定。</summary>
+        protected void SetVarRange(string varName, double lb, double ub)
+            => SetVariableBounds(ReadVar(varName), lb, ub);
 
         #endregion
 

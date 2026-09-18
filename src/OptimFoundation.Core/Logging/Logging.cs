@@ -15,6 +15,7 @@ namespace OptimFoundation.Core
         private const string ErrorLoggedDataKey = "OptimFoundation.ErrorLogged";
         private static readonly string _logDir = FolderDir.Log.GetPath();
         private static string _logFile = FolderDir.Log.GetFilePath($"Log_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.txt");
+        private static string _logFileName;
         private static readonly object _lock = new object();
         private static readonly Encoding _utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         private static readonly Encoding _utf8Bom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
@@ -132,7 +133,8 @@ namespace OptimFoundation.Core
         /// <summary>
         /// 改用新的 log 檔名（實際檔名為 {name}_{時間戳}.txt，非法字元會被換成 '-'）。
         /// 會關掉目前的 log 檔並在下次寫入時開新檔；已寫入舊檔的內容留在原檔。
-        /// OptProject 執行時會自動以專案名呼叫，一般不需自己叫。
+        /// 以同一個 name 重複呼叫是 no-op，不會換檔。
+        /// OptProject / OptExperiment 執行時會自動以專案名呼叫，一般不需自己叫。
         /// </summary>
         public static void SetLogFileName(string name)
         {
@@ -140,6 +142,11 @@ namespace OptimFoundation.Core
                 name = name.Replace(c, '-');
             lock (_lock)
             {
+                // 同名視為 no-op：每次呼叫都帶新時間戳，否則同一輪執行的 log 會被拆進兩個檔
+                // ——呼叫端在 Program.cs 早期先設一次涵蓋資料載入，框架之後又會設一次，這是常態。
+                if (string.Equals(_logFileName, name, StringComparison.Ordinal)) return;
+
+                _logFileName = name;
                 _logFile = FolderDir.Log.GetFilePath($"{name}_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.txt");
                 _fileWriter?.Dispose();
                 _fileWriter = null;

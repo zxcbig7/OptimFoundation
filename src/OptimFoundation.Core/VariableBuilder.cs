@@ -268,6 +268,17 @@ namespace OptimFoundation.Core
                 yield return ModelNaming.Compose(typeName, parts);
         }
 
+        /// <summary>
+        /// 產生所有變數名稱的 string 版（格式：setName@val1@val2@…），語意與泛型版相同。
+        /// 差別只有：泛型版的 arity 檢查靠 TVariable 的 property 數量，string 版沒有類別可對照，故不檢查維度數量。
+        /// </summary>
+        public static IEnumerable<string> GetVarNames(string setName, object[] sets)
+        {
+            var domains = ConvertSetsToVarPartLists(sets);
+            foreach (var parts in GenVarParts(domains))
+                yield return ModelNaming.Compose(setName, parts);
+        }
+
         /// <summary>以逐筆 callback 建立變數。</summary>
         public static void BuildVars<TVariable>(Action<object> createVarMethod, object[] sets)
         {

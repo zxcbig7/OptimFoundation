@@ -140,6 +140,165 @@ namespace OptimFoundation.Cplex
 
         #endregion
 
+        #region 模型匯入 / 匯出（.lp / .mps / .sav）
+
+        /// <summary>
+        /// 立即把目前模型寫成檔案。與 ProjectConfig 的 ExportLP / ExportMPS 的差別是時機與命名：
+        /// 那兩個由 Solve() 自動觸發、檔名帶時間戳；這個隨時可呼叫、檔名自己決定。
+        /// </summary>
+        /// <param name="fileName">
+        /// 檔名或相對路徑，以 Models 資料夾為基準；絕對路徑原樣使用。副檔名決定格式（.lp / .mps / .sav）。
+        /// 匯出後要再讀回來且需精確重現，用 .sav——.lp / .mps 是文字格式，係數經十進位截斷。
+        /// </param>
+        /// <exception cref="InvalidOperationException">尚未呼叫 Build()。</exception>
+        /// <exception cref="ArgumentException">fileName 為 null 或空白。</exception>
+        public void ExportModelFile(string fileName)
+        {
+            if (Model == null)
+                throw Logging.ErrorOnce(
+                    new InvalidOperationException("ExportModelFile 必須在 Build() 之後呼叫。"),
+                    "MODEL_EXPORT_FAILED", "模型匯出失敗", nameof(ExportModelFile), fileName, "engine_not_built");
+
+            if (string.IsNullOrWhiteSpace(fileName))
+                throw Logging.ErrorOnce(
+                    new ArgumentException("Export file name cannot be null or whitespace.", nameof(fileName)),
+                    "MODEL_EXPORT_FAILED", "模型匯出失敗", nameof(ExportModelFile), fileName, "file_name_is_empty");
+
+            string path;
+            if (Path.IsPathRooted(fileName))
+            {
+                path = fileName;
+            }
+            else
+            {
+                FolderDir.Model.CreateFolder();
+                path = FolderDir.Model.GetFilePath(fileName);
+            }
+
+            try
+            {
+                Model.ExportModel(path);
+            }
+            catch (System.Exception ex)
+            {
+                throw Logging.ErrorOnce(
+                    ex, "MODEL_EXPORT_FAILED", "模型匯出失敗", nameof(ExportModelFile), path,
+                    ex.GetBaseException().Message, $"exception={ex.GetType().FullName}");
+            }
+
+            Logging.Info($"[OptEngine] Model exported: {path}");
+        }
+
+        /// <summary>
+        /// 從檔案讀入既有模型。MUST 在 <c>Build()</c> 之後呼叫——Build() 負責建立 CPLEX 物件並套用 CplexConfig，
+        /// 本方法只換模型內容，不動任何 solver 參數。
+        /// </summary>
+        /// <remarks>
+        /// CPLEX 的 ImportModel 會先清空 active model 再塞入檔案內容，所以本方法同時清空框架這一側的索引；
+        /// 讀完立刻 re-index（見 <see cref="ReindexFromModel"/>），讓 GetVariableValue / GetSolution /
+        /// GetCVSolution / LastMetrics / IIS 分析照常運作。
+        /// 匯入的模型沒有 C# 變數類別可對應，故 VariableSets 保持空的：
+        /// 型別化取解（GetSetVarValues&lt;T&gt; / GetSolution("TypeName")）在匯入模式不可用，
+        /// 改用 GetVariableValue(name) / GetSolution() / GetCVSolution 等以名稱或 solver 型別為準的 API。
+        /// </remarks>
+        /// <param name="fileName">
+        /// 檔名或相對路徑，以 Models 資料夾為基準；絕對路徑原樣使用。
+        /// 副檔名決定格式：.lp / .mps / .sav，以及各自的 .gz / .bz2。
+        /// 要求精確重現求解結果請用 .sav——.lp / .mps 是文字格式，係數經十進位截斷。
+        /// </param>
+        /// <returns>re-index 後的變數數與限制式數。</returns>
+        /// <exception cref="InvalidOperationException">尚未呼叫 Build()。</exception>
+        /// <exception cref="ArgumentException">fileName 為 null 或空白。</exception>
+        /// <exception cref="FileNotFoundException">檔案不存在。</exception>
+        public (int VarCount, int ConstraintCount) ImportModel(string fileName)
+        {
+            if (Model == null)
+                throw Logging.ErrorOnce(
+                    new InvalidOperationException("ImportModel 必須在 Build() 之後呼叫。"),
+                    "MODEL_IMPORT_FAILED", "模型匯入失敗", nameof(ImportModel), fileName, "engine_not_built");
+
+            if (string.IsNullOrWhiteSpace(fileName))
+                throw Logging.ErrorOnce(
+                    new ArgumentException("Import file name cannot be null or whitespace.", nameof(fileName)),
+                    "MODEL_IMPORT_FAILED", "模型匯入失敗", nameof(ImportModel), fileName, "file_name_is_empty");
+
+            string path = Path.IsPathRooted(fileName)
+                ? fileName
+                : FolderDir.Model.GetFilePath(fileName);
+
+            if (!File.Exists(path))
+                throw Logging.ErrorOnce(
+                    new FileNotFoundException($"找不到模型檔 '{path}'。", path),
+                    "MODEL_IMPORT_FAILED", "模型匯入失敗", nameof(ImportModel), path, "file_not_found");
+
+            if (Variables.Count > 0 || _constraints.Count > 0)
+                Logging.Warn($"[MODEL_IMPORT_OVERWRITE] 匯入將取代既有建模內容 | vars={Variables.Count} constraints={_constraints.Count} result=discarded");
+
+            try
+            {
+                Model.ImportModel(path);
+            }
+            catch (System.Exception ex)
+            {
+                throw Logging.ErrorOnce(
+                    ex, "MODEL_IMPORT_FAILED", "模型匯入失敗", nameof(ImportModel), path,
+                    ex.GetBaseException().Message, $"exception={ex.GetType().FullName}");
+            }
+
+            var counts = ReindexFromModel();
+            Logging.Info($"[OptEngine] Model imported: {path} vars={counts.VarCount} constraints={counts.ConstraintCount}");
+            return counts;
+        }
+
+        /// <summary>
+        /// 把 CPLEX 端現有的變數與限制式回填框架索引。
+        /// 正常建模路徑是「建到 solver 的同時登記進索引」（見 AddVariable / AddConstraint），
+        /// ImportModel 只做了前半，這裡補後半：從 active model 的 ILPMatrix 反向取回 INumVar 與 IRange。
+        /// </summary>
+        private (int VarCount, int ConstraintCount) ReindexFromModel()
+        {
+            Variables.Clear();
+            VariableSets.Clear();
+            _constraints.Clear();
+            _conflictConstraints = null;
+            ResetVerifyConstraints();
+            _objective = Model.GetObjective();
+
+            var enumerator = Model.GetLPMatrixEnumerator();
+            while (enumerator.MoveNext())
+            {
+                if (enumerator.Current is not ILPMatrix matrix) continue;
+
+                INumVar[] vars = matrix.NumVars;
+                for (int i = 0; i < vars.Length; i++)
+                    Variables[ResolveImportedName(vars[i].Name, "x", i, Variables.Count)] = vars[i];
+
+                IRange[] rows = matrix.Ranges;
+                for (int i = 0; i < rows.Length; i++)
+                {
+                    if (string.IsNullOrEmpty(rows[i].Name))
+                        rows[i].Name = $"c{_constraints.Count}";
+                    _constraints.Add(rows[i]);
+                }
+            }
+
+            return (Variables.Count, _constraints.Count);
+        }
+
+        // 匯入的名稱不受框架命名規則約束：可能為空、也可能重複。空的補流水號，重複的加後綴保住索引的唯一性。
+        private string ResolveImportedName(string rawName, string fallbackPrefix, int index, int registered)
+        {
+            string name = string.IsNullOrEmpty(rawName) ? $"{fallbackPrefix}{index}" : rawName;
+            if (!Variables.ContainsKey(name)) return name;
+
+            string unique = $"{name}#{registered}";
+            while (Variables.ContainsKey(unique)) unique += "#";
+            Logging.Warn($"[MODEL_IMPORT_DUPLICATE_NAME] 匯入的變數名重複 | name={name} renamed={unique} result=renamed");
+            return unique;
+        }
+
+        #endregion
+
         #region EngineBase 抽象方法實作
 
         /// <summary>建立單一 CPLEX 變數並登記到 Variables；VarType 對應 NumVarType（Binary→Bool、Integer→Int、其餘→Float）。</summary>
@@ -151,9 +310,9 @@ namespace OptimFoundation.Cplex
                 VarType.Binary => NumVarType.Bool,
                 _ => NumVarType.Float
             };
-            var v = Model.NumVar(lb, ub, cplexType, name);
-            Variables[name] = v;
-            return v;
+            var var = Model.NumVar(lb, ub, cplexType, name); // 註冊進 CPLEX，取變數
+            Variables[name] = var; // 登記進框架的字典
+            return var;
         }
 
         /// <summary>

@@ -8,7 +8,7 @@ using System.Globalization;
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 模型元素名稱的唯一序列化與驗證入口。資料層日期格式不屬於此類別。
+    /// 名稱標準化工具：將 Set row / Parameter row / 其他維度值格式化為 solver-safe token，並組成完整模型名稱。
     /// </summary>
     internal static class ModelNaming
     {

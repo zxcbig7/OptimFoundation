@@ -149,6 +149,12 @@ namespace RosteringProblem
             }
 
             // 模式 3（預設）：正式求解
+            // 模型建完後存一份 .sav 供 Templates/ModelInspector 匯入檢視。
+            // 用 .sav 而非既有的 LP/MPS：後兩者是文字格式、係數經十進位截斷，讀回來無法精確重現本次求解。
+            // 掛在 constraint step 尾端而非 OnSolved，infeasible 時才也留得下來——那正是最需要拿去檢視的情況。
+            model.AddConstraints(engine =>
+                engine.ExportModelFile($"{engine.ModelName}_SAV_{engine.StartTime}.sav"));
+
             using var project = new OptProject(model)
                 .UseConfig(() => projectConfig)
                 .UseConfig(() => productionBaseline)

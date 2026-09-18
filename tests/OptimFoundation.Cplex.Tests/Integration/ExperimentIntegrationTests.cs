@@ -9,6 +9,9 @@ namespace OptimFoundation.Cplex.Tests.Integration
     /// Experiment 套件端到端：真 CPLEX 求解 → Trial.Capture 擷取設定+指標 → Save 輸出 CSV/JSON。
     /// 需要 CPLEX DLL；不存在則 Skip。
     /// </summary>
+    // OptExperiment.Run() 會呼叫 Logging.SetLogFileName（輸出檔名以專案名為根），
+    // 與其他讀回 log 檔的測試共用 Logging 靜態單例，故加入同一個序列化 collection。
+    [Collection("Logging")]
     public class ExperimentIntegrationTests
     {
         private static readonly bool CplexAvailable =
@@ -219,6 +222,133 @@ namespace OptimFoundation.Cplex.Tests.Integration
             ArgumentException error = Assert.Throws<ArgumentException>(
                 () => experiment.AddConfig("baseline", new CplexConfig()));
             Assert.Contains("baseline", error.Message);
+        }
+
+        // ── 命名對齊：專案名是輸出檔名的根，實驗再接上參數名 ─────────────
+
+        private static OptModel TrivialModel(string name) => new OptModel(name)
+            .AddVariables(e => e.BuildCVs<VarS>(new[] { "x" }))
+            .AddObjective(e =>
+            {
+                e.AddLHS(1.0, new VarS { S = "x" });
+                e.CreateMinimize();
+            });
+
+        private static string[] ExportedModelFiles(string pattern)
+        {
+            string dir = FolderDir.Model.GetPath();
+            return Directory.Exists(dir) ? Directory.GetFiles(dir, pattern) : Array.Empty<string>();
+        }
+
+        [Fact(DisplayName = "單一模型：輸出檔名 = 專案名-參數名，不插模型名")]
+        public void Experiment_SingleModel_NamesOutputsByProjectAndLabel()
+        {
+            if (!CplexAvailable) return;
+
+            string projectName = "NameAlign" + Guid.NewGuid().ToString("N").Substring(0, 8);
+            string expName = projectName + "-tuning-r1";
+
+            try
+            {
+                new OptExperiment(expName, "單一模型命名")
+                    .UseConfig(() => new ProjectConfig
+                    {
+                        ProjectName = projectName,
+                        EnableSolverLog = false,
+                        ExportLP = true,
+                    })
+                    .AddModel(TrivialModel("Canonical"))
+                    .AddConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
+                    .Run();
+
+                Assert.Single(ExportedModelFiles($"{projectName}-r1-baseline_LP_*.lp"));
+                // 模型名不該出現在檔名裡：只有一個模型時它不提供任何辨識力
+                Assert.Empty(ExportedModelFiles($"{projectName}*Canonical*"));
+                // 實驗名的 -tuning-r1 段也不該進檔名，檔名的根是專案名
+                Assert.Empty(ExportedModelFiles($"{expName}-*.lp"));
+            }
+            finally
+            {
+                DeleteExperimentArtifacts(expName);
+            }
+        }
+
+        [Fact(DisplayName = "多模型：檔名插入模型名，各模型的輸出才不會互相覆蓋")]
+        public void Experiment_MultiModel_InsertsModelNameIntoOutputName()
+        {
+            if (!CplexAvailable) return;
+
+            string projectName = "NameAlignMulti" + Guid.NewGuid().ToString("N").Substring(0, 8);
+            string expName = projectName + "-tuning-r1";
+
+            try
+            {
+                new OptExperiment(expName, "多模型命名")
+                    .UseConfig(() => new ProjectConfig
+                    {
+                        ProjectName = projectName,
+                        EnableSolverLog = false,
+                        ExportLP = true,
+                    })
+                    .AddModel(TrivialModel("ModelA"))
+                    .AddModel(TrivialModel("ModelB"))
+                    .AddConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
+                    .Run();
+
+                Assert.Single(ExportedModelFiles($"{projectName}-ModelA-r1-baseline_LP_*.lp"));
+                Assert.Single(ExportedModelFiles($"{projectName}-ModelB-r1-baseline_LP_*.lp"));
+            }
+            finally
+            {
+                DeleteExperimentArtifacts(expName);
+            }
+        }
+
+        [Fact(DisplayName = "未設 ProjectName 時退回實驗名，行為與舊版一致")]
+        public void Experiment_WithoutProjectName_FallsBackToExperimentName()
+        {
+            if (!CplexAvailable) return;
+
+            string expName = "NoProjectName" + Guid.NewGuid().ToString("N").Substring(0, 8);
+
+            try
+            {
+                new OptExperiment(expName, "未設專案名")
+                    .UseConfig(() => new ProjectConfig { EnableSolverLog = false, ExportLP = true })
+                    .AddModel(TrivialModel("Canonical"))
+                    .AddConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
+                    .Run();
+
+                Assert.Single(ExportedModelFiles($"{expName}-r1-baseline_LP_*.lp"));
+            }
+            finally
+            {
+                DeleteExperimentArtifacts(expName);
+            }
+        }
+
+        [Fact(DisplayName = "log 檔名由框架設定為 專案名_exp，不必在 Program.cs 手動補")]
+        public void Experiment_SetsLogFileNameFromProjectName()
+        {
+            if (!CplexAvailable) return;
+
+            string projectName = "NameAlignLog" + Guid.NewGuid().ToString("N").Substring(0, 8);
+            string expName = projectName + "-tuning-r1";
+
+            try
+            {
+                new OptExperiment(expName, "log 命名")
+                    .UseConfig(() => new ProjectConfig { ProjectName = projectName, EnableSolverLog = false })
+                    .AddModel(TrivialModel("Canonical"))
+                    .AddConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
+                    .Run();
+
+                Assert.NotEmpty(Directory.GetFiles(FolderDir.Log.GetPath(), $"{projectName}_exp_*.txt"));
+            }
+            finally
+            {
+                DeleteExperimentArtifacts(expName);
+            }
         }
 
         private static void DeleteExperimentArtifacts(string name)

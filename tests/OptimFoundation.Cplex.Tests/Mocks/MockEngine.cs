@@ -46,6 +46,13 @@ namespace OptimFoundation.Cplex.Tests.Mocks
 
         protected override void SetVariableBounds(string variable, double? lb, double? ub) { }
 
+        // protected 成員的測試通道：ReadVar / SetVar* 的 typed 與 string 兩條路徑要能直接對照
+        public string ReadVarByInstance(object searchData) => ReadVar(searchData);
+        public string ReadVarByName(string varName) => ReadVar(varName);
+
+        // 模擬 import：繞過 Build*Vs 直接建變數，只進 Variables 不進 VariableSets
+        public string AddUnregisteredVar(string name) => AddVariable(name, 0, 1E100, VarType.Continuous);
+
         protected override void BuildCore() => Configuration(Config);
         protected override bool SolveCore() => true;
         public override double GetObjectiveValue() => 0;
