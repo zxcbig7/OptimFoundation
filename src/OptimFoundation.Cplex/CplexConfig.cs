@@ -44,7 +44,7 @@ namespace OptimFoundation.Cplex
     ///    另外 <c>Param.Read.APIEncoding</c> 與螢幕輸出開關屬 C API，.NET 端分別無對應與改用 SetOut。
     /// </para>
     /// </remarks>
-    public sealed class CplexConfig : ISolverConfig, ITunableConfig
+    public sealed class CplexConfig : ISolverConfig
     {
         /// <summary>Creates a shallow copy containing every current public setting.</summary>
         public CplexConfig Clone() => (CplexConfig)MemberwiseClone();
@@ -1376,10 +1376,10 @@ namespace OptimFoundation.Cplex
 
         #endregion
 
-        #region ITunableConfig 介面別名
+        #region ISolverConfig 介面別名
 
         /// <summary>
-        /// ITunableConfig 介面名，是 <see cref="PreIndicator"/> 的 int 視角：0 = off、非 0 = on、null = 用 CPLEX 預設。
+        /// ISolverConfig 介面名，是 <see cref="PreIndicator"/> 的 int 視角：0 = off、非 0 = on、null = 用 CPLEX 預設。
         /// 兩者是同一顆旋鈕（<c>Param.Preprocessing.Presolve</c>），設任一邊都會反映到另一邊。
         /// </summary>
         public int? Presolve

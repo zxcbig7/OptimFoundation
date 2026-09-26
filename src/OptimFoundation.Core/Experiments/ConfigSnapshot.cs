@@ -22,7 +22,7 @@ namespace OptimFoundation.Core
         public Dictionary<string, object> SolverSpecific { get; set; } = new Dictionary<string, object>();
 
         /// <summary>
-        /// 從 ISolverConfig 建立快照：抽象控制項目讀 ITunableConfig，專屬欄位用 reflection 列舉 public field/property。
+        /// 從 ISolverConfig 建立快照：共通旋鈕直接讀介面成員，專屬欄位用 reflection 列舉 public field/property。
         /// </summary>
         public static ConfigSnapshot From(ISolverConfig config)
         {
@@ -38,18 +38,14 @@ namespace OptimFoundation.Core
             Put(snapshot.Tunable, "TimeLimit", config.TimeLimit);
             Put(snapshot.Tunable, "MipGap", config.MipGap);
             Put(snapshot.Tunable, "Threads", config.Threads);
-
-            if (config is ITunableConfig t)
-            {
-                Put(snapshot.Tunable, "Seed", t.Seed);
-                Put(snapshot.Tunable, "Emphasis", t.Emphasis);
-                Put(snapshot.Tunable, "FeasibilityTol", t.FeasibilityTol);
-                Put(snapshot.Tunable, "OptimalityTol", t.OptimalityTol);
-                Put(snapshot.Tunable, "RootAlgorithm", t.RootAlgorithm);
-                Put(snapshot.Tunable, "Presolve", t.Presolve);
-                Put(snapshot.Tunable, "HeuristicEffort", t.HeuristicEffort);
-                Put(snapshot.Tunable, "MemoryLimitMb", t.MemoryLimitMb);
-            }
+            Put(snapshot.Tunable, "Seed", config.Seed);
+            Put(snapshot.Tunable, "Emphasis", config.Emphasis);
+            Put(snapshot.Tunable, "FeasibilityTol", config.FeasibilityTol);
+            Put(snapshot.Tunable, "OptimalityTol", config.OptimalityTol);
+            Put(snapshot.Tunable, "RootAlgorithm", config.RootAlgorithm);
+            Put(snapshot.Tunable, "Presolve", config.Presolve);
+            Put(snapshot.Tunable, "HeuristicEffort", config.HeuristicEffort);
+            Put(snapshot.Tunable, "MemoryLimitMb", config.MemoryLimitMb);
 
             // Solver 專屬：reflection 列舉 public field + 可讀 property（補抓抽象面沒涵蓋的設定）
             var type = config.GetType();

@@ -19,6 +19,7 @@ namespace OptimFoundation.Core
         /// <summary>解析日期 token 時可接受的格式：帶時分秒與純日期兩種。</summary>
         internal static readonly string[] DateFormats = [DateTimeFormat, DateFormat];
 
+        // 非法字元
         private static readonly char[] InvalidTokenCharacters =
         [
             '+', '-', '*', '/', '^', '<', '>', '=', ':', ',', '\\', Separator

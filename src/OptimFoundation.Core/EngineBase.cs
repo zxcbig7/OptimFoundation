@@ -6,7 +6,10 @@ using OptimFoundation.Internal;
 namespace OptimFoundation.Core
 {
     #region Interfaces and Enums
-    /// <summary>跨引擎共通的基本求解設定（時間上限 / gap / 執行緒）；各 solver 的 config 實作此介面。</summary>
+    /// <summary>
+    /// 跨引擎共通的求解設定（停止條件 / 資源 / tuning 旋鈕）；各 solver 的 config 實作此介面，
+    /// 並把這些共通項目對映到自家專屬欄位。null = 使用 solver 預設。
+    /// </summary>
     public interface ISolverConfig
     {
         /// <summary>求解時間上限（秒）；null = 不限制。</summary>
@@ -18,16 +21,6 @@ namespace OptimFoundation.Core
         /// <summary>可用執行緒數；null = 由 solver 自行決定。</summary>
         int? Threads { get; set; }
 
-        /// <summary>Solve 前 scale guard 門檻：RegisteredVariableCount 超過此值 → PreSolveGuard 只 Warn 不阻擋。預設值 default interface member，不破壞既有實作者。</summary>
-        int ScaleWarnThreshold => 10_000_000;
-    }
-
-    /// <summary>
-    /// 跨引擎共通的 tuning 控制項目抽象。與 <see cref="ISolverConfig"/> 並存（加法，不破壞既有）。
-    /// 各 concrete config 將這些抽象控制項目對映到自家專屬欄位；null = 使用 solver 預設。
-    /// </summary>
-    public interface ITunableConfig
-    {
         /// <summary>隨機種子（CPLEX randomSeed）。要重現結果就固定它。</summary>
         int? Seed { get; set; }
 
@@ -51,6 +44,9 @@ namespace OptimFoundation.Core
 
         /// <summary>記憶體上限 MB（CPLEX workMemory）。</summary>
         double? MemoryLimitMb { get; set; }
+
+        /// <summary>Solve 前 scale guard 門檻：RegisteredVariableCount 超過此值 → PreSolveGuard 只 Warn 不阻擋。預設值 default interface member，不破壞既有實作者。</summary>
+        int ScaleWarnThreshold => 10_000_000;
     }
 
 
@@ -65,6 +61,9 @@ namespace OptimFoundation.Core
 
         /// <summary>最近一次 Solve() 的統一 telemetry；尚未求解為 null。</summary>
         SolveMetrics LastMetrics { get; }
+
+        /// <summary>目前模型的問題類型（LP / MILP / IP / BP），向已組裝的 solver 模型取值判定。每次讀取都重新問一次模型，求解前即可呼叫。</summary>
+        ModelType ModelType { get; }
 
         /// <summary>建立 solver 模型並套用組態；建變數 / 限制式前 MUST 先呼叫。</summary>
         void Build();
@@ -162,6 +161,22 @@ namespace OptimFoundation.Core
         Maximize
     }
 
+    /// <summary>問題類型，由已組裝的 solver 模型推導（見 <see cref="ISolverEngine.ModelType"/>）。</summary>
+    public enum ModelType
+    {
+        /// <summary>線性規劃：全部變數皆為連續變數。</summary>
+        LP,
+
+        /// <summary>混整數線性規劃：同時有連續變數與 Integer / Binary 變數。</summary>
+        MILP,
+
+        /// <summary>整數規劃：沒有連續變數，且至少一個 Integer 變數（可混 Binary）。</summary>
+        IP,
+
+        /// <summary>二元規劃：全部變數皆為 Binary。</summary>
+        BP
+    }
+
     #endregion
 
     /// <summary>
@@ -189,6 +204,15 @@ namespace OptimFoundation.Core
         /// 與 <see cref="VariableCount"/> 的差別：後者算的是 Variables dict，額外含軟性限制式自動加的彈性變數（Surplus_/Deficit_/Delta_*）。
         /// </summary>
         public int RegisteredVariableCount => VariableSets.Values.Sum(s => s.Count);
+
+        /// <summary>
+        /// 目前模型的問題類型：無 Integer / Binary → LP；連續與 Integer / Binary 並存 → MILP；
+        /// 全為 Binary → BP；無連續且含 Integer → IP。
+        /// 值向已組裝的 solver 模型取得（見 <see cref="ReadModelComposition"/>），不是框架這一側的記帳，
+        /// 因此自建與 ImportModel 匯入兩條路徑同一套答案；每次讀取都重新問一次模型，求解前即可呼叫。
+        /// 軟性限制式的彈性變數是連續變數，因此 IP / BP 模型加了軟性限制式會判定為 MILP。
+        /// </summary>
+        public ModelType ModelType => ResolveModelType(ReadModelComposition());
 
         /// <summary>建構時傳入的求解器組態；由各 engine 在 Configuration() 內逐項套用到 solver。</summary>
         public ISolverConfig Config { get; protected set; }
@@ -318,6 +342,7 @@ namespace OptimFoundation.Core
         //   AddRangeConstraint — 新增範圍限制式（lb <= expr <= ub）
         //   SetObjective   — 設定目標式方向（Minimize / Maximize）
         //   SetVariableBounds — 直接修改已建立變數的 LB / UB
+        //   ReadModelComposition — 向 solver 模型讀變數型別組成，供 ModelType 判定問題類型
         //   BuildCore      — 入口：呼叫 Configuration(Config) 完成初始化（由 Build() template method 呼叫）
         //   SolveCore      — 求解，回傳 bool（true = Optimal or Feasible）（由 Solve() template method 呼叫，前面先跑 PreSolveGuard）
         //   GetObjectiveValue / GetVariableValue / Dispose
@@ -356,6 +381,17 @@ namespace OptimFoundation.Core
 
         /// <summary>直接改已建立變數的界限；傳 null 表示該側不動。</summary>
         protected abstract void SetVariableBounds(TVar variable, double? lb, double? ub);
+
+        /// <summary>
+        /// 向 solver 模型讀出模型組成；<see cref="ModelType"/> 與求解前的模型類型 log 由此判定。
+        /// 實作 MUST 問模型本身（CPLEX 為 Ncols / NbinVars / NintVars / IsMIP），NEVER 改用框架的 Variables 索引——
+        /// 匯入的模型只存在於 solver 那一側，兩條路徑要同一個答案就只能問模型。模型尚未建立時回零值。
+        /// </summary>
+        /// <returns>
+        /// 三個型別的變數數，加上模型是否含離散結構。後者涵蓋 Integer / Binary 以外的離散元素
+        /// （semi-continuous、SOS），有它才能在沒有任何 Integer / Binary 變數時仍判定為 MILP。
+        /// </returns>
+        protected abstract (int Continuous, int Integer, int Binary, bool HasDiscreteStructure) ReadModelComposition();
 
         /// <summary>
         /// 建立模型的入口，由外部呼叫。先清空建立統計，再呼叫 BuildCore()（各 engine 實作）。
@@ -914,7 +950,18 @@ namespace OptimFoundation.Core
             int actualConstraints = _constraintBuildCounts.Values.Sum(x => x.Actual);
             Logging.Info($"[限制式建立摘要] 已建立={actualConstraints}/{expectedConstraints}（實際/預期） 群組={_constraintBuildCounts.Count} 個 solver 實際持有={ConstraintCount}");
 
+            var composition = ReadModelComposition();
+            Logging.Info($"[模型類型] type={ResolveModelType(composition)} continuous={composition.Continuous} integer={composition.Integer} binary={composition.Binary}");
+
             _buildSummaryDirty = false;
+        }
+
+        private static ModelType ResolveModelType((int Continuous, int Integer, int Binary, bool HasDiscreteStructure) composition)
+        {
+            if (!composition.HasDiscreteStructure) return ModelType.LP;
+            // 有離散結構但沒有 Integer / Binary 變數 → 離散性來自 semi-continuous / SOS，歸 MILP
+            if (composition.Continuous > 0 || composition.Integer + composition.Binary == 0) return ModelType.MILP;
+            return composition.Integer == 0 ? ModelType.BP : ModelType.IP;
         }
         #endregion
 

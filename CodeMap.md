@@ -18,10 +18,10 @@
 
 | 檔案 | 主要型別 / 功能 |
 | --- | --- |
-| `DesignBases.cs` | `Numeric.SafeRatio`、`ModelElementBase`（`InitClassBySets` 反射填值、`ToString` 組 key）、`SetRowBase`、`ParameterBase`、`VariableBase`、`ConstraintBase` |
+| `DesignBases.cs` | `ModelElementBase`（`InitClassBySets` 反射填值、`ToString` 組 key）、`SetRowBase`、`ParameterBase`、`VariableBase`、`ConstraintBase` |
 | `ModelNaming.cs` | internal：`@` key 組成（`Token`/`Compose`/`ValidateComposedName`）、`yyyy_MM_dd`（帶時間則 `yyyy_MM_dd_HH_mm_ss`）日期格式與保留字元/空白驗證 |
 | `VariablePrefixNaming.cs` | internal（`OptimFoundation.Internal` namespace）：B/C/I 前綴解析 `TryResolve`；以 linked source 同時編入 `OptimFoundation.Generators`，避免編譯期與執行期規則漂移 |
-| `EngineBase.cs` | `ISolverConfig`、`ITunableConfig`、`ISolverEngine`、`ISpecialConstraints<TVar,TExpr>` 介面；`SolveStatus`/`VarType`/`ConstraintSense`/`ObjectiveSense` enum；`EngineBase<TModel,TVar,TExpr,TConstr>` 抽象泛型基底——Build*Vs 批次建變數、AddLHS/AddRHS pool、CreateGreatEqual/LessEqual/Equal/Range、CreateLeSoft/GeSoft/EqSoft 軟性限制式、GetSolution/GetSetVarValues 取解、VariableBuildCounts/ConstraintBuildCounts 建立統計、ErrorOnce 例外邊界（★ `ISolverEngine.cs` 與 `Enums.cs` 已併入本檔，原兩檔已從檔案系統刪除，重構進行中） |
+| `EngineBase.cs` | `ISolverConfig`（含 tuning 共通旋鈕，原 `ITunableConfig` 已併入）、`ISolverEngine`、`ISpecialConstraints<TVar,TExpr>` 介面；`SolveStatus`/`VarType`/`ConstraintSense`/`ObjectiveSense`/`ModelType` enum；`EngineBase<TModel,TVar,TExpr,TConstr>` 抽象泛型基底——Build*Vs 批次建變數、AddLHS/AddRHS pool、CreateGreatEqual/LessEqual/Equal/Range、CreateLeSoft/GeSoft/EqSoft 軟性限制式、GetSolution/GetSetVarValues 取解、VariableBuildCounts/ConstraintBuildCounts 建立統計、ModelType（LP/MILP/IP/BP，經 `ReadModelComposition` primitive 向 solver 模型取值並於 Solve 前印 `[模型類型]` log）、ErrorOnce 例外邊界（★ `ISolverEngine.cs` 與 `Enums.cs` 已併入本檔，原兩檔已從檔案系統刪除，重構進行中） |
 | `VariableBuilder.cs` | primitive / `SetRowBase` / ValueTuple domain 展開為 `TypeName@v1@v2…`、`GenVarCombinations` 笛卡兒積、`ValidateVariableArity` |
 | `DataContext.cs` | `OptData.Load`（Initialize→Freeze）、`ParamRow`/`SetRegistration`/`ParamRegistration`、`DataContext`（`RegisterSet`/`RegisterParam`/`GuardMutation`）、`ParameterLookupExtensions.FindParameterOrLog` |
 | `DataValidator.cs` | `DataIssueKind`/`DataIssue`/`DataValidationException`、`DataValidator.Validate`：Set/Parameter 重複 key 與數值 NaN/Infinity/magnitude 檢查 |
@@ -30,7 +30,7 @@
 | `Config/ProjectConfig.cs` | 專案層設定：`ProjectName`/`RetentionDays`/`EnableSolverLog`/`ExportLP`/`ExportMPS`/`ExportSol`/`DataId`/`UserId`、`Clone()` |
 | `Experiments/IExperimentWriter.cs` | `ExpWriterType`（CSV/JSON）、`IExperimentWriter` 介面（`Write`/`Read`） |
 | `Experiments/Trial.cs` | 單次求解記錄；`Trial.Capture(engine, label, solveAction)` 套件化擷取 `ConfigSnapshot` + `SolveMetrics` |
-| `Experiments/ConfigSnapshot.cs` | `ConfigSnapshot.From(ISolverConfig)`：只記「真的有設」的旋鈕，`ITunableConfig` 抽象欄位 + reflection 補抓 solver 專屬欄位 |
+| `Experiments/ConfigSnapshot.cs` | `ConfigSnapshot.From(ISolverConfig)`：只記「真的有設」的旋鈕，`ISolverConfig` 共通欄位 + reflection 補抓 solver 專屬欄位 |
 | `Experiments/SolveMetrics.cs` | `SolveMetrics`（Status/ObjectiveValue/BestBound/MipGap/RunTimeMs/NodeCount/IterationCount…）+ `ConvergencePoint`；`TFeasMs`/`DeltaBound`/`TStallMs` 由 `Convergence` 序列推算 |
 | `Experiments/CsvExperimentWriter.cs` | 一列一 Trial 的扁平 CSV：只寫與同批基準的 `DiffKnobs`（不再攤平全部旋鈕），只寫不讀 |
 | `Experiments/MetaCsvWriter.cs` | Section/Key/Value 三欄說明檔：批次資訊、模型規模、求解環境、基準完整設定，只寫不讀 |
@@ -74,7 +74,7 @@ Diagnostics：`OPTF001`、`OPTF002`、`OPTF003`、`OPTF006`、`OPTF007`、`OPTF0
 | --- | --- |
 | `src/OptimFoundation.Cplex/OptEngine.cs` | `OptEngine : EngineBase<Cplex, INumVar, ILinearNumExpr, IRange>`：`AddVariable(s)`/`LinearExpr`/`AddConstraint`/`AddRangeConstraint`/`SetObjective`/`SetVariableBounds` primitive、`SolveCore`（含收斂軌跡 callback）、`ExportModelFile`/`ImportModel`、`GetConflictConstraints`（IIS）、`CopyModel`/`MergeModel`/`VariableMerge`、`GetCVSolution`/`GetIVSolution`/`GetBVSolution` |
 | `OptEngine.Configuration.cs` | 同一個 partial class 的組態套用區：`Configuration(ISolverConfig)` 把 `CplexConfig` 全部約 182 顆旋鈕與 `ProjectConfig`（log 路由、LP/MPS/Sol 匯出）逐項套進 CPLEX；獨立成檔避免淹沒 `OptEngine.cs` 的建模主線 |
-| `CplexConfig.cs` | `CplexConfig : ISolverConfig, ITunableConfig`：CPLEX 22.1.1 全部 182 顆可設參數，分四類（停止條件/執行資源/重複量測/搜尋策略，只有搜尋策略可進 tuning variant 池），一律 `null` = 不設、無 property 帶預設值 |
+| `CplexConfig.cs` | `CplexConfig : ISolverConfig`：CPLEX 22.1.1 全部 182 顆可設參數，分四類（停止條件/執行資源/重複量測/搜尋策略，只有搜尋策略可進 tuning variant 池），一律 `null` = 不設、無 property 帶預設值 |
 | `OptModel.cs` | `OptModel`：`AddVariables`/`AddObjective`/`AddConstraints` 記錄建模步驟；`FromFile` 以既有模型檔（.lp/.mps/.sav）取代逐步建模（走 `OptEngine.ImportModel`）；`ApplyTo` 依序套用 |
 | `OptProject.cs` | 單一 model × config 的執行器：`UseConfig`、`OnSolved`、`Execute`（housekeeping、log 檔名、保留期清理、EffectiveConfig log）、`Engine`/`IsSuccess`/`TotalElapsed`/`BuildModelElapsed` |
 | `OptExperiment.cs` | model × config 交叉實驗矩陣，可另加明確 cell（`AddTrial`）；`Run()` 逐 cell 建 engine、`Trial.Capture`、最後 `Experiment.Save()` |

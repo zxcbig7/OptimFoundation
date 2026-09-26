@@ -407,6 +407,20 @@ namespace OptimFoundation.Cplex
             if (ub.HasValue) variable.UB = ub.Value;
         }
 
+        /// <summary>
+        /// 向 CPLEX 模型讀模型組成：`NbinVars` / `NintVars` 是模型自己的計數，連續數由 `Ncols` 扣掉這兩類得出，
+        /// 離散結構以 `IsMIP()` 判定（涵蓋 semi-continuous 與 SOS，兩者都只可能來自 ImportModel）。
+        /// ⚠ CPLEX 只計入已 extract 進模型的變數——宣告了卻沒被任何限制式或目標式引用的變數不算在內，
+        /// 所以這裡的數字可能少於 <see cref="EngineBase{TModel, TVar, TExpr, TConstr}.VariableCount"/>。
+        /// </summary>
+        protected override (int Continuous, int Integer, int Binary, bool HasDiscreteStructure) ReadModelComposition()
+        {
+            if (Model == null) return (0, 0, 0, false);
+            int binary = Model.NbinVars;
+            int integer = Model.NintVars;
+            return (Math.Max(0, Model.Ncols - binary - integer), integer, binary, Model.IsMIP());
+        }
+
         #endregion
 
         #region ISolverEngine 實作

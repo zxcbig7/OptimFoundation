@@ -172,6 +172,87 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Empty(engine.GetSetVarNames<VarDG>());
         }
 
+        // ── ModelType：由變數型別組成推導 LP / MILP / IP / BP ──────────
+
+        [Fact]
+        public void ModelType_NoVariables_IsLP()
+        {
+            var engine = NewEngine();
+            Assert.Equal(ModelType.LP, engine.ModelType);
+        }
+
+        [Fact]
+        public void ModelType_OnlyContinuous_IsLP()
+        {
+            var engine = NewEngine();
+            engine.BuildVars<VariableC_Amt>(new List<string> { "A", "B" });
+            Assert.Equal(ModelType.LP, engine.ModelType);
+        }
+
+        [Fact]
+        public void ModelType_ContinuousAndBinary_IsMILP()
+        {
+            var engine = NewEngine();
+            engine.BuildVars<VariableC_Amt>(new List<string> { "A", "B" });
+            engine.BuildVars<VariableB_Pick>(new List<string> { "A" });
+            Assert.Equal(ModelType.MILP, engine.ModelType);
+        }
+
+        [Fact]
+        public void ModelType_ContinuousAndInteger_IsMILP()
+        {
+            var engine = NewEngine();
+            engine.BuildVars<VariableC_Amt>(new List<string> { "A" });
+            engine.BuildVars<VariableI_Cnt>(new List<string> { "A" });
+            Assert.Equal(ModelType.MILP, engine.ModelType);
+        }
+
+        [Fact]
+        public void ModelType_OnlyInteger_IsIP()
+        {
+            var engine = NewEngine();
+            engine.BuildVars<VariableI_Cnt>(new List<string> { "A" });
+            Assert.Equal(ModelType.IP, engine.ModelType);
+        }
+
+        [Fact]
+        public void ModelType_IntegerAndBinary_IsIP()
+        {
+            var engine = NewEngine();
+            engine.BuildVars<VariableI_Cnt>(new List<string> { "A" });
+            engine.BuildVars<VariableB_Pick>(new List<string> { "A", "B" });
+            Assert.Equal(ModelType.IP, engine.ModelType);
+        }
+
+        [Fact]
+        public void ModelType_OnlyBinary_IsBP()
+        {
+            var engine = NewEngine();
+            engine.BuildVars<VariableB_Pick>(new List<string> { "A", "B" });
+            Assert.Equal(ModelType.BP, engine.ModelType);
+        }
+
+        [Fact]
+        public void ModelType_SoftConstraintElasticVars_StayLP()
+        {
+            var engine = NewEngine();
+            engine.BuildVars<VariableC_Amt>(new List<string> { "A" });
+            engine.AddLHS(1.0, new VariableC_Amt { S = "A" });
+            engine.CreateLeSoft(5.0, 1.0);
+            Assert.Equal(ModelType.LP, engine.ModelType);
+        }
+
+        [Fact]
+        public void ModelType_BinaryWithSoftConstraint_BecomesMILP()
+        {
+            // 彈性變數是連續變數，solver 實際面對的是混整數模型
+            var engine = NewEngine();
+            engine.BuildVars<VariableB_Pick>(new List<string> { "A" });
+            engine.AddLHS(1.0, new VariableB_Pick { S = "A" });
+            engine.CreateLeSoft(0.0, 1.0);
+            Assert.Equal(ModelType.MILP, engine.ModelType);
+        }
+
         // ── AddLHS / AddRHS 錯誤處理 ──────────────────────────────────────
 
         [Fact]

@@ -12,7 +12,6 @@ namespace OptimFoundation.Internal
         internal const string ContinuousTypeName = "Continuous";
         internal const string IntegerTypeName = "Integer";
         internal const string BinaryTypeName = "Binary";
-
         internal const string NamingGuide =
             "VariableB_<語意>（Binary）/ VariableC_<語意>（Continuous）/ " +
             "VariableI_<語意>（Integer）";

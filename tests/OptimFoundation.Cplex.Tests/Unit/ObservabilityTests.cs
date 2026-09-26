@@ -21,6 +21,14 @@ namespace OptimFoundation.Cplex.Tests.Unit
             public double? TimeLimit { get; set; }
             public double? MipGap { get; set; }
             public int? Threads { get; set; }
+            public int? Seed { get; set; }
+            public int? Emphasis { get; set; }
+            public double? FeasibilityTol { get; set; }
+            public double? OptimalityTol { get; set; }
+            public int? RootAlgorithm { get; set; }
+            public int? Presolve { get; set; }
+            public double? HeuristicEffort { get; set; }
+            public double? MemoryLimitMb { get; set; }
             public bool LogToConsole { get; set; }
             public string LogFilePath { get; set; } = "";
             public string BrokenProperty => throw new InvalidOperationException("snapshot getter failed");
@@ -162,6 +170,53 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Contains("[限制式建立] 群組=Demand 已建立=1/2（實際/預期）", log);
             Assert.Contains("[限制式建立] 群組=Capacity 已建立=0/1（實際/預期）", log);
             Assert.Contains("[限制式建立摘要] 已建立=1/3（實際/預期） 群組=2 個 solver 實際持有=", log);
+        }
+
+        [Fact]
+        public void Solve_LogsModelTypeWithVariableTypeCounts()
+        {
+            string tag = StartLog("ModelTypeSummary");
+            var engine = new MockEngine();
+            engine.Build();
+            engine.BuildVars<VariableC_Amt>(new[] { "A", "B" });
+            engine.BuildVars<VariableI_Cnt>(new[] { "A" });
+            engine.BuildVars<VariableB_Pick>(new[] { "A", "B", "C" });
+
+            engine.AddLHS(1.0, new VariableC_Amt { S = "A" });
+            engine.CreateMinimize();
+            engine.Solve();
+
+            Assert.Contains("[模型類型] type=MILP continuous=2 integer=1 binary=3", ReadLog(tag));
+        }
+
+        [Fact]
+        public void Solve_ContinuousOnly_LogsModelTypeLP()
+        {
+            string tag = StartLog("ModelTypeSummaryLP");
+            var engine = new MockEngine();
+            engine.Build();
+            engine.BuildVars<VariableC_Amt>(new[] { "A", "B" });
+
+            engine.AddLHS(1.0, new VariableC_Amt { S = "A" });
+            engine.CreateMinimize();
+            engine.Solve();
+
+            Assert.Contains("[模型類型] type=LP continuous=2 integer=0 binary=0", ReadLog(tag));
+        }
+
+        [Fact]
+        public void Solve_BinaryOnly_LogsModelTypeBP()
+        {
+            string tag = StartLog("ModelTypeSummaryBP");
+            var engine = new MockEngine();
+            engine.Build();
+            engine.BuildVars<VariableB_Pick>(new[] { "A", "B" });
+
+            engine.AddLHS(1.0, new VariableB_Pick { S = "A" });
+            engine.CreateMinimize();
+            engine.Solve();
+
+            Assert.Contains("[模型類型] type=BP continuous=0 integer=0 binary=2", ReadLog(tag));
         }
 
         [Fact]

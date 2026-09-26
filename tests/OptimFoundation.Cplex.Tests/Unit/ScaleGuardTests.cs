@@ -20,6 +20,14 @@ namespace OptimFoundation.Cplex.Tests.Unit
             public double? TimeLimit { get; set; }
             public double? MipGap { get; set; }
             public int? Threads { get; set; }
+            public int? Seed { get; set; }
+            public int? Emphasis { get; set; }
+            public double? FeasibilityTol { get; set; }
+            public double? OptimalityTol { get; set; }
+            public int? RootAlgorithm { get; set; }
+            public int? Presolve { get; set; }
+            public double? HeuristicEffort { get; set; }
+            public double? MemoryLimitMb { get; set; }
             public bool LogToConsole { get; set; }
             public string LogFilePath { get; set; } = "";
             public int ScaleWarnThreshold => 1;

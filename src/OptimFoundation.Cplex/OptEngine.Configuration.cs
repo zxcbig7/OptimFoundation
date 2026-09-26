@@ -296,7 +296,7 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region 前處理 / Presolve
-            // 先前已宣告於 CplexConfig（ITunableConfig.Presolve ↔ PreIndicator）卻未套用 → 此處接線
+            // 先前已宣告於 CplexConfig（ISolverConfig.Presolve ↔ PreIndicator）卻未套用 → 此處接線
             if (config.PreIndicator.HasValue)
             {
                 Model.SetParam(Param.Preprocessing.Presolve, config.PreIndicator.Value);
@@ -320,7 +320,7 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region 啟發式投入程度（HeuristicEffort）
-            // 先前已宣告於 CplexConfig（ITunableConfig.HeuristicEffort）卻未套用 → 此處接線
+            // 先前已宣告於 CplexConfig（ISolverConfig.HeuristicEffort）卻未套用 → 此處接線
             if (config.HeuristicEffort.HasValue)
             {
                 Model.SetParam(Param.MIP.Strategy.HeuristicEffort, config.HeuristicEffort.Value);

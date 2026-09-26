@@ -85,6 +85,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.True(solved);
             Assert.Equal(SolveStatus.Optimal, engine.Status);
             Assert.Equal(3.0, engine.GetObjectiveValue(), precision: 5);
+            Assert.Equal(ModelType.LP, engine.ModelType);
         }
 
         [Fact]
@@ -128,6 +129,25 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.Equal(SolveStatus.Optimal, engine.Status);
             Assert.Equal(-1.0, engine.GetObjectiveValue(), precision: 5);
             Assert.Equal(1.0, engine.GetVariableValue("VarS@x"), precision: 5);
+            Assert.Equal(ModelType.BP, engine.ModelType);
+        }
+
+        [Fact(DisplayName = "ModelType 取自 solver 模型：宣告後未被任何限制式 / 目標式引用的變數不計入")]
+        public void ModelType_DeclaredButUnusedVariables_AreNotInTheModel()
+        {
+            if (!CplexAvailable) return;
+            using var engine = BuildEngine();
+
+            engine.BuildBVs<VarS>(new List<string> { "x" });
+
+            // 變數已建在框架索引裡，但還沒被 extract 進 CPLEX 模型
+            Assert.Equal(1, engine.VariableCount);
+            Assert.Equal(ModelType.LP, engine.ModelType);
+
+            engine.AddLHS(1.0, new VarS { S = "x" });
+            engine.CreateLessEqual(1.0, "UB");
+
+            Assert.Equal(ModelType.BP, engine.ModelType);
         }
 
         // ── SupportsSoftConstraints ────────────────────────────────────────

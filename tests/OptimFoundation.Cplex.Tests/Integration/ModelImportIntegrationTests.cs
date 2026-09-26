@@ -64,10 +64,47 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.Equal(2, counts.ConstraintCount);
             Assert.Equal(2, engine.VariableCount);
             Assert.Equal(2, engine.ConstraintCount);
+            Assert.Equal(ModelType.LP, engine.ModelType);
 
             Assert.True(engine.Solve());
             Assert.Equal(SolveStatus.Optimal, engine.Status);
             Assert.Equal(26.0, engine.GetObjectiveValue(), 6);
+        }
+
+        [Theory(DisplayName = "匯入後 ModelType 依原模型變數型別判定：Binary / Integer / 連續不混淆")]
+        [InlineData(".lp", false, false, ModelType.BP)]
+        [InlineData(".sav", false, false, ModelType.BP)]
+        [InlineData(".lp", true, false, ModelType.IP)]
+        [InlineData(".sav", true, false, ModelType.IP)]
+        [InlineData(".lp", true, true, ModelType.MILP)]
+        [InlineData(".sav", true, true, ModelType.MILP)]
+        public void ImportModel_IntegerModel_ReportsModelType(string extension, bool withInteger, bool withContinuous, ModelType expected)
+        {
+            if (!CplexAvailable) return;
+
+            string fileName = $"ImportModelTypeTest_{Guid.NewGuid():N}{extension}";
+            using (var source = NewEngine())
+            {
+                source.BuildVars<VariableB_Pick>(new[] { "a" });
+                source.AddLHS(1.0, new VariableB_Pick { S = "a" });
+                if (withInteger)
+                {
+                    source.BuildVars<VariableI_Cnt>(new[] { "a" });
+                    source.AddLHS(1.0, new VariableI_Cnt { S = "a" });
+                }
+                if (withContinuous)
+                {
+                    source.BuildVars<VariableC_Amt>(new[] { "a" });
+                    source.AddLHS(1.0, new VariableC_Amt { S = "a" });
+                }
+                source.CreateMinimize();
+                source.ExportModelFile(fileName);
+            }
+
+            using var engine = NewEngine();
+            engine.ImportModel(fileName);
+
+            Assert.Equal(expected, engine.ModelType);
         }
 
         [Fact(DisplayName = "匯入後以變數名取解：名稱沿用原模型的 TypeName@dim 格式")]

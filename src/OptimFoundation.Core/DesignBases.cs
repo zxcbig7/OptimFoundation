@@ -6,39 +6,6 @@ using System.Reflection;
 
 namespace OptimFoundation.Core
 {
-    /// <summary>Guards numeric values used to derive model constants.</summary>
-    public static class Numeric
-    {
-
-        /// <summary>
-        /// 用於判斷是否是合理計算
-        /// </summary>
-        /// <param name="numerator"></param>
-        /// <param name="denominator"></param>
-        /// <param name="magnitudeCeiling"></param>
-        /// <param name="context"></param>
-        /// <returns></returns>
-        public static double SafeRatio(double numerator, double denominator, double magnitudeCeiling = 1e12, string context = null)
-        {
-            if (denominator == 0)
-                throw Logging.ErrorOnce(
-                    new InvalidOperationException($"{context ?? "Ratio"}: 除零禁止。"),
-                    "NUMERIC_RATIO_INVALID", "數值比例計算失敗", context ?? "Ratio", denominator, "division_by_zero");
-
-            var value = numerator / denominator;
-            if (double.IsNaN(value) || double.IsInfinity(value))
-                throw Logging.ErrorOnce(
-                    new InvalidOperationException($"{context ?? "Ratio"}: result must be finite."),
-                    "NUMERIC_RATIO_INVALID", "數值比例計算失敗", context ?? "Ratio", value, "result_not_finite");
-            if (Math.Abs(value) > magnitudeCeiling)
-                throw Logging.ErrorOnce(
-                    new InvalidOperationException($"{context ?? "Ratio"}: result 過大; 門檻 {magnitudeCeiling}."),
-                    "NUMERIC_RATIO_INVALID", "數值比例計算失敗", context ?? "Ratio", value, "magnitude_ceiling_exceeded",
-                    $"ceiling={magnitudeCeiling}");
-            return value;
-        }
-    }
-
     /// <summary>Common base for generated Set, Parameter, and Variable rows.</summary>
     public abstract class ModelElementBase
     {

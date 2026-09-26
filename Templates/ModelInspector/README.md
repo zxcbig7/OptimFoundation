@@ -15,6 +15,7 @@
 | `Solve()` / metrics / log / LP·MPS·SOL 匯出 / retention | 可用 | 不經過 `VariableSets` |
 | `GetVariableValue(name)` / `GetSolution()` | 可用 | 走 `Variables` 索引，re-index 已填好 |
 | `GetCVSolution` / `GetIVSolution` / `GetBVSolution` | 可用 | 依 solver 型別分類，不依賴 C# 類別 |
+| `ModelType`（LP / MILP / IP / BP）與 `[模型類型]` log | 可用 | 向 CPLEX 模型取 `Ncols` / `NbinVars` / `NintVars` / `IsMIP()`，不經 `Variables` 索引 |
 | `GetConflictConstraints()` / IIS `.ilp` | 可用 | 走 `_constraints`，匯入時無名的 row 自動補 `c0`、`c1`… |
 | `CplexConfig` 全部旋鈕 / tuning | 可用 | `ImportModel` 在 `Build()` 之後執行，只換模型內容不動 solver 參數 |
 | `OptProject` / `OptExperiment` | 可用 | 兩者都走 `_model.ApplyTo(engine)` 這個統一入口 |
