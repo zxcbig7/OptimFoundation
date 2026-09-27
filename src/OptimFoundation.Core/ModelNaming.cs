@@ -28,13 +28,36 @@ namespace OptimFoundation.Core
         /// <summary>將單一維度值格式化為 solver-safe token。</summary>
         internal static string Token(string context, object? value)
         {
-            if (value == null)
-                ThrowInvalid(context, null, "value_is_null");
+            if (!TryToken(value, out string? token, out string? reason))
+                ThrowInvalid(context, token, reason);
+            return token;
+        }
 
-            string token;
+        /// <summary>
+        /// 與 <see cref="Token"/> 同一套規則，但不記 Log、不拋例外：不合法時回 false，
+        /// <paramref name="token"/> 為違規值的顯示字串（null 值為 null），<paramref name="reason"/> 為原因代碼。
+        /// </summary>
+        internal static bool TryToken(
+            object? value,
+            [NotNullWhen(true)] out string? token,
+            [NotNullWhen(false)] out string? reason)
+        {
+            if (value == null)
+            {
+                token = null;
+                reason = "value_is_null";
+                return false;
+            }
+
             if (value is DateTime date)
             {
-                token = FormatDate(context, date);
+                if (!TryFormatDate(date, out string formatted))
+                {
+                    token = formatted;
+                    reason = "datetime_subsecond_precision";
+                    return false;
+                }
+                token = formatted;
             }
             else if (value is string text)
             {
@@ -49,22 +72,34 @@ namespace OptimFoundation.Core
                 token = value.ToString() ?? string.Empty;
             }
 
-            ValidateToken(context, token); // 轉換後驗證
-            return token;
+            reason = InvalidTokenReason(token); // 轉換後驗證
+            if (reason != null)
+                return false;
+            return true;
         }
 
         /// <summary>日期 token：粒度到秒，純日期維持 <see cref="DateFormat"/>，帶時分秒才展開成 <see cref="DateTimeFormat"/>。</summary>
         internal static string FormatDate(string context, DateTime value)
         {
+            if (!TryFormatDate(value, out string token))
+                ThrowInvalid(context, token, "datetime_subsecond_precision");
+            return token;
+        }
+
+        // 不合法時 token 為 round-trip 格式的顯示字串
+        private static bool TryFormatDate(DateTime value, out string token)
+        {
             // 秒以下靜默截掉會讓兩個不同時刻產生同一個 token，key 悄悄相撞
             if (value.Ticks % TimeSpan.TicksPerSecond != 0)
             {
-                ThrowInvalid(context, value.ToString("O", CultureInfo.InvariantCulture), "datetime_subsecond_precision");
+                token = value.ToString("O", CultureInfo.InvariantCulture);
+                return false;
             }
 
-            return value.ToString(
+            token = value.ToString(
                 value.TimeOfDay == TimeSpan.Zero ? DateFormat : DateTimeFormat,
                 CultureInfo.InvariantCulture);
+            return true;
         }
 
         /// <summary>以 head 與維度值組成完整模型名稱；多維 Set row 會展開成多個 token。</summary>
@@ -124,23 +159,36 @@ namespace OptimFoundation.Core
         /// <summary>驗證已格式化 token；違規時先記 Error Log 再拋例外。</summary>
         internal static void ValidateToken(string context, string token)
         {
+            string? reason = InvalidTokenReason(token);
+            if (reason != null)
+                ThrowInvalid(context, token, reason);
+        }
+
+        private static string? InvalidTokenReason(string token)
+        {
             if (string.IsNullOrEmpty(token))
-                ThrowInvalid(context, token, "token_is_empty");
+                return "token_is_empty";
 
             if (token.IndexOfAny(InvalidTokenCharacters) >= 0)
-                ThrowInvalid(context, token, "contains_reserved_character");
+                return "contains_reserved_character";
 
             for (int index = 0; index < token.Length; index++)
                 if (char.IsWhiteSpace(token[index]))
-                    ThrowInvalid(context, token, "contains_whitespace");
+                    return "contains_whitespace";
+
+            return null;
         }
+
+        /// <summary>Log 用的單行顯示值：null 顯示為 &lt;null&gt;，換行字元跳脫。</summary>
+        internal static string DisplayValue(string? value)
+            => (value ?? "<null>")
+                .Replace("\r", "\\r", StringComparison.Ordinal)
+                .Replace("\n", "\\n", StringComparison.Ordinal);
 
         [DoesNotReturn]
         private static void ThrowInvalid(string context, string? value, string reason)
         {
-            string safeValue = (value ?? "<null>")
-                .Replace("\r", "\\r", StringComparison.Ordinal)
-                .Replace("\n", "\\n", StringComparison.Ordinal);
+            string safeValue = DisplayValue(value);
             var exception = new ArgumentException(
                 $"模型名稱不合法：context={context}, value='{safeValue}', reason={reason}。");
             throw Logging.ErrorOnce(

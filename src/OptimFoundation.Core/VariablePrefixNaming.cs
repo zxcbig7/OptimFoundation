@@ -20,6 +20,10 @@ namespace OptimFoundation.Internal
         {
             if (className != null)
             {
+                // 轉名稱統一
+                if (className.StartsWith("VariableX_", StringComparison.Ordinal)) className.Replace("VariableX_", "VariableC_");
+                if (className.StartsWith("VariableY_", StringComparison.Ordinal)) className.Replace("VariableY_", "VariableI_");
+
                 if (className.StartsWith("VariableB_", StringComparison.Ordinal))
                 {
                     typeName = BinaryTypeName;

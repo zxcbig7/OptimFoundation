@@ -22,7 +22,7 @@ namespace OptimFoundation.Core.IO
         /// 依 RFC4180 規則解析輸入資料。引號內換行保留為 <c>\n</c>、逸出引號會解碼，
         /// 每次產出的是完整的邏輯資料列，而非實體文字行。
         /// </summary>
-        internal static IEnumerable<string[]> ParseCsv(TextReader reader)
+        public static IEnumerable<string[]> ParseCsv(TextReader reader)
         {
             if (reader == null)
                 throw Logging.ErrorOnce(
@@ -127,8 +127,8 @@ namespace OptimFoundation.Core.IO
             try
             {
                 var classInfo = new ClassInfo(typeof(TVariable));
-                FolderDir.Solution.TryCreateFile($"{classInfo.TypeName}.csv");
-                string file = FolderDir.Solution.GetPathFile($"{classInfo.TypeName}.csv");
+                FolderDir.Output.TryCreateFile($"{classInfo.TypeName}.csv");
+                string file = FolderDir.Output.GetPathFile($"{classInfo.TypeName}.csv");
                 var sol = engine.GetSolution(classInfo.TypeName);
 
                 using var sw = new StreamWriter(file, append: false, _csvWrite);
@@ -176,9 +176,9 @@ namespace OptimFoundation.Core.IO
                         new InvalidOperationException($"[CsvCtrl] {typeof(T).Name} 沒有任何 public property，無法輸出。"),
                         "CSV_WRITE_INVALID", "CSV 資料輸出失敗", nameof(WriteRows), typeof(T).Name, "public_properties_missing");
 
-                string path = FolderDir.Data.GetPathFile(EnsureCsv(fileName ?? typeof(T).Name));
+                string path = FolderDir.Input.GetPathFile(EnsureCsv(fileName ?? typeof(T).Name));
                 bool overwritten = File.Exists(path);
-                FolderDir.Data.CreateFolder();
+                FolderDir.Input.CreateFolder();
 
                 using (var sw = new StreamWriter(path, append: false, _csvWrite))
                 {

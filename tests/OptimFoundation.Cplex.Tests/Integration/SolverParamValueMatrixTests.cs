@@ -27,6 +27,8 @@ namespace OptimFoundation.Cplex.Tests.Integration
     /// 只有 SetParam 或 Solve 丟例外才算這個值不能用。
     /// </para>
     /// </remarks>
+    // 每次 Solve() 都會寫 log（建模摘要、模型統計對帳）；Logging 是全域單例，與其他讀 log 斷言的測試同一 collection 才不會互相污染
+    [Collection("Logging")]
     public class SolverParamValueMatrixTests
     {
         private static readonly bool CplexAvailable =

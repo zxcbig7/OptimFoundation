@@ -6,7 +6,7 @@ using Xunit;
 namespace OptimFoundation.Cplex.Tests.Integration
 {
     /// <summary>
-    /// Experiment 套件端到端：真 CPLEX 求解 → Trial.Capture 擷取設定+指標 → Save 輸出 CSV/JSON。
+    /// Experiment 套件端到端：真 CPLEX 求解 → Trial.Capture 擷取設定+指標 → Save 輸出 CSV。
     /// 需要 CPLEX DLL；不存在則 Skip。
     /// </summary>
     // OptExperiment.Run() 會呼叫 Logging.SetLogFileName（輸出檔名以專案名為根），
@@ -17,8 +17,8 @@ namespace OptimFoundation.Cplex.Tests.Integration
         private static readonly bool CplexAvailable =
             File.Exists(@"C:\IBM\ILOG\CPLEX_Studio2211\cplex\bin\x64_win64\ILOG.CPLEX.dll");
 
-        [Fact(DisplayName = "Trial.Capture 擷取設定快照 + 指標，Save 產出 CSV/JSON")]
-        public void Experiment_CaptureAndSave_WritesCsvAndJson()
+        [Fact(DisplayName = "Trial.Capture 擷取設定快照 + 指標，Save 產出主表 CSV + 說明檔，不產 JSON")]
+        public void Experiment_CaptureAndSave_WritesCsvAndMeta()
         {
             if (!CplexAvailable) return;
 
@@ -55,18 +55,18 @@ namespace OptimFoundation.Cplex.Tests.Integration
             exp.Save();
 
             string csv = FolderDir.Experiment.GetPathFile(expName + ".csv");
-            string json = FolderDir.Experiment.GetPathFile(expName + ".json");
+            string meta = FolderDir.Experiment.GetPathFile(expName + "-meta.csv");
             try
             {
                 Assert.True(File.Exists(csv));
-                Assert.True(File.Exists(json));
+                Assert.True(File.Exists(meta));
+                Assert.False(File.Exists(FolderDir.Experiment.GetPathFile(expName + ".json")));
                 Assert.Contains("seed=7,emph=2", File.ReadAllText(csv));
-                Assert.Contains("\"solver\": \"Cplex\"", File.ReadAllText(json));
+                Assert.Contains("environment,solver,Cplex", File.ReadAllText(meta));
             }
             finally
             {
-                if (File.Exists(csv)) File.Delete(csv);
-                if (File.Exists(json)) File.Delete(json);
+                DeleteExperimentArtifacts(expName);
             }
         }
 
@@ -158,7 +158,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
                     new[] { "Model1", "Model1", "Model1", "Model2", "Model2", "Model2" },
                     result.Trials.Select(t => t.Model));
                 // 同一批實驗共用一個 RunId，流水號從 1 開始遞增
-                Assert.Single(result.Trials.Select(t => t.RunId).Distinct());
+                Assert.Single(result.Trials.Select(t => t.ExperimentId).Distinct());
                 Assert.Equal(new[] { 1, 2, 3, 4, 5, 6 }, result.Trials.Select(t => t.TrialId));
                 Assert.All(result.Trials, t => Assert.Equal(SolveStatus.Optimal, t.Metrics.Status));
             }
@@ -353,7 +353,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
         private static void DeleteExperimentArtifacts(string name)
         {
-            foreach (string suffix in new[] { ".csv", ".json", "-trajectory.csv" })
+            foreach (string suffix in new[] { ".csv", "-meta.csv", "-trajectory.csv" })
             {
                 string path = FolderDir.Experiment.GetPathFile(name + suffix);
                 if (File.Exists(path)) File.Delete(path);

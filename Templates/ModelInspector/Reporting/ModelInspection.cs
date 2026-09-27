@@ -51,7 +51,7 @@ namespace ModelInspector.Reporting
         public IReadOnlyDictionary<string, (int Expected, int Actual)> ConstraintBuildCounts { get; private set; }
             = new Dictionary<string, (int, int)>();
 
-        /// <summary>框架記錄的目標式方向；匯入模式不反映檔案內容（見 Caveats）。</summary>
+        /// <summary>框架記錄的目標式方向；匯入模式依檔案內容同步（.mps 的 maximize 會讀成反號的 minimize，見 Caveats）。</summary>
         public ObjectiveSense ObjectiveSense { get; private set; }
 
         /// <summary>框架 pool 累積的目標式項數；匯入模式恆為 0。</summary>
@@ -205,7 +205,7 @@ namespace ModelInspector.Reporting
             if (config.ExportMPS)
                 candidates.Add(("MPS 模型檔", FolderDir.Model.GetPathFile($"{name}_MPS_{stamp}.mps")));
             if (config.ExportSol)
-                candidates.Add(("解檔", FolderDir.Sol.GetPathFile($"{name}_Solution_{stamp}.sol")));
+                candidates.Add(("解檔", FolderDir.Solution.GetPathFile($"{name}_Solution_{stamp}.sol")));
             if (hasConflict)
                 candidates.Add(("IIS 衝突模型", FolderDir.IIS.GetPathFile($"{name}_IIS_{stamp}.ilp")));
 
@@ -227,8 +227,8 @@ namespace ModelInspector.Reporting
                     + "本報告一律改用名稱層級的 GetBVSolution / GetIVSolution / GetCVSolution。",
                 $"RegisteredVariableCount = {inspection.RegisteredVariableCount}（恆為 0）：它量的是 VariableSets，"
                     + $"匯入模式請看 VariableCount = {inspection.VariableCount}。",
-                $"ObjectiveSense 顯示 {inspection.ObjectiveSense}：這是 EngineBase 的預設值，"
-                    + "ImportModel 不會依檔案內容更新它，真正的最佳化方向請看模型檔本身或匯出的 LP。",
+                $"ObjectiveSense = {inspection.ObjectiveSense}：ImportModel 依檔案內容同步。"
+                    + "注意 .mps 沒有方向欄位，CPLEX 把 maximize 寫成係數取負的 minimize，讀回來的目標值會反號。",
                 "ObjectiveTermCount / SoftConstraintCount / SoftPenaltyTermCount 恆為 0："
                     + "這三個量的是框架 pool 的累積，匯入的目標式直接來自檔案、沒有經過 pool。",
                 "VariableBuildCounts / ConstraintBuildCounts 為空：Expected vs Actual 對帳只在 Build*Vs 建模路徑成立。",

@@ -197,7 +197,7 @@ namespace ModelInspector.Reporting
             sb.AppendLine($"| VariableCount | {_inspection.VariableCount:N0} | 有效 |");
             sb.AppendLine($"| ConstraintCount | {_inspection.ConstraintCount:N0} | 有效 |");
             sb.AppendLine($"| RegisteredVariableCount | {_inspection.RegisteredVariableCount:N0} | 無效（量 VariableSets） |");
-            sb.AppendLine($"| ObjectiveSense | {_inspection.ObjectiveSense} | 無效（框架預設值，非檔案內容） |");
+            sb.AppendLine($"| ObjectiveSense | {_inspection.ObjectiveSense} | 有效（依檔案內容；.mps 的 maximize 會變成反號的 minimize） |");
             sb.AppendLine($"| ObjectiveTermCount | {_inspection.ObjectiveTermCount:N0} | 無效（量 pool 累積） |");
             sb.AppendLine($"| SoftConstraintCount | {_inspection.SoftConstraintCount:N0} | 無效（量 pool 累積） |");
             sb.AppendLine($"| SoftPenaltyTermCount | {_inspection.SoftPenaltyTermCount:N0} | 無效（量 pool 累積） |");

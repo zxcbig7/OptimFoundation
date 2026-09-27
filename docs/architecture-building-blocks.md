@@ -182,7 +182,7 @@ flowchart LR
     C3["optimal-first"]:::accent
   end
   CAP["每跑一次<br/>收成一筆 Trial"]:::success
-  OUT["Experiments/*<br/>csv · json · trajectory"]:::muted
+  OUT["Experiment/*<br/>csv · meta · trajectory"]:::muted
   M --> CAP
   CFG -.每組各跑一次.-> CAP
   CAP --> OUT
@@ -198,7 +198,7 @@ flowchart LR
 1. **重用同一顆模型**：每個 trial 都 `new TutorialModel(data).Build(engine)`——跟 solve 模式共用**同一顆**模型積木，模型 code 一行不改。
 2. **只換 solver 設定**：三組 MIP emphasis 對照——`balanced`(0) / `feasible-first`(1) / `optimal-first`(2)，換的只有設定插頭。
 3. **每次 solve 收成一筆 Trial**：`Trial.Capture` 記下當次設定（ConfigSnapshot）＋結果（狀態、目標值、耗時、收斂軌跡），不接管 engine 生命週期。
-4. **存檔累積比較**：`exp.Save()` 輸出三種檔——`{name}.csv`（一列一個 trial 的摘要）、`.json`（權威版，含完整軌跡）、`-trajectory.csv`（畫收斂曲線用）。同名實驗的舊 trial 會**併入累積**，調校歷史不會被蓋掉。
+4. **存檔比較**：`exp.Save()` 輸出三種 CSV——`{name}.csv`（一列一個 trial 的摘要，只記跟基準差在哪）、`-meta.csv`（基準完整設定、模型規模、求解環境）、`-trajectory.csv`（畫收斂曲線用，有軌跡才寫）。同名實驗**直接覆寫**，要留歷史就換實驗名（Phase 3 用 `<Project>-tuning-r<N>` 逐輪遞增）。
 
 > 一句話：**solve 模式 = 把模型解一次拿答案；實驗層 = 同一顆模型在不同 solver 設定下各跑一次，收集數據做 tuning 比較。** 跑法 `dotnet run -- experiment`，屬於 Phase 3（Tuning）的工具——模型正確之後，用它系統化地找「哪組 solver 設定最快 / 最好」。
 

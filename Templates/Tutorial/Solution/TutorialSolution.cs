@@ -21,7 +21,7 @@ namespace Tutorial
             var batch = engine.GetSetVarValues<VariableI_Batch>();
             ValidateRules(produce, setup, batch, data);
 
-            FolderDir.Solution.CreateFolder(); // MUST，否則 WriteSolution 丟 DirectoryNotFoundException
+            FolderDir.Output.CreateFolder(); // MUST，否則 WriteSolution 丟 DirectoryNotFoundException
             CsvCtrl.WriteSolution<VariableC_Produce>(engine, "Tutorial", "SYSTEM");
             CsvCtrl.WriteSolution<VariableB_Setup>(engine, "Tutorial", "SYSTEM");
             CsvCtrl.WriteSolution<VariableI_Batch>(engine, "Tutorial", "SYSTEM");

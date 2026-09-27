@@ -63,7 +63,7 @@ namespace OptimFoundation.Core.IO
                 }
 
                 var item = new TRow();
-                item.InitClassBySets(ConvertCells(properties, cells, sourceDescription));
+                item.InitFromDataRow(ConvertCells(properties, cells, sourceDescription));
                 result.Add(item);
             }
             return result;

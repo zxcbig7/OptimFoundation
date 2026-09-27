@@ -36,8 +36,6 @@ namespace FJSP_BASIC_BRICK
                 ProjectName = "FJSP_BASIC_BRICK",
                 EnableSolverLog = false,
                 ExportLP = true,
-                DataId = "FJSP_BASIC_BRICK",
-                UserId = "SYSTEM",
             };
             // Production baseline/champion：tuning promotion 只更新這一個設定來源。
             // Provenance：沿用重構前 demo 值——TimeLimit=90 已實測兩種組裝寫法各 3 次，全數 Status=Optimal 且 ObjVal 一致。

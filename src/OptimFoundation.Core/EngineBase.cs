@@ -79,6 +79,13 @@ namespace OptimFoundation.Core
 
         /// <summary>取解結果字典；varTypeName = null 回傳所有變數，否則只回該型別（前綴 "TypeName@"）。</summary>
         IReadOnlyDictionary<string, double> GetSolution(string varTypeName = null);
+
+        /// <summary>
+        /// 以「變數全名 → 值」提供一組 MIP start；名稱格式同 <see cref="GetSolution"/>，可直接把上一個 engine 的解接過來。
+        /// MUST 在模型建完、Solve() 之前呼叫。LP 模型沒有 MIP start 可用，會 warn 後略過。
+        /// </summary>
+        /// <returns>實際套用的變數數；略過時為 0。</returns>
+        int AddMIPStart(IReadOnlyDictionary<string, double> values, string name = null);
     }
 
     /// <summary>特殊限制式的選用介面（SOS1/2、indicator、lazy）；只有支援的 solver 實作。</summary>
@@ -179,6 +186,13 @@ namespace OptimFoundation.Core
 
     #endregion
 
+    /// <summary>框架的變數界限常數。</summary>
+    public static class OptBounds
+    {
+        /// <summary>「無上限」：採 CPLEX 的 infinity（1E20），solver 會把 ≥ 此值的界限視為無界。</summary>
+        public const double Infinity = 1E20;
+    }
+
     /// <summary>
     /// 所有 solver 引擎的泛型基底：把「建模」與「呼叫 solver」分離。
     /// 泛型參數 TModel/TVar/TExpr/TConstr 是各 solver 的原生型別；子類別只需實作 Solver Contract 那組 abstract。
@@ -246,6 +260,23 @@ namespace OptimFoundation.Core
         private readonly Dictionary<string, BuildCount> _constraintBuildCounts = new Dictionary<string, BuildCount>();
         private bool _buildSummaryDirty = true;
 
+        // 建模記帳的型別分布、匯入部分與目標式：與 solver 模型對帳用（見 ReconcileModelStats）。
+        // 匯入的記帳與 Build*Vs 的記帳分開放，VariableBuildCounts / ConstraintBuildCounts 維持「只記框架親手建的」語意。
+        private readonly int[] _ledgerVarTypes = new int[3];
+        private readonly int[] _importedVarTypes = new int[3];
+        private int _importedConstraints;
+        private bool _imported;
+        private ObjectiveSense? _ledgerObjective;
+
+        // 被限制式或目標式引用過的變數。solver 只收這些——宣告了卻沒用到的變數會讓框架比 solver 多，對帳時拿來點名
+        private readonly HashSet<TVar> _referencedVariables = new HashSet<TVar>();
+
+        /// <summary>
+        /// 最近一次 <see cref="Solve"/> 前的模型統計對帳結果（框架建模記帳 vs solver 模型實際）；尚未求解為 null。
+        /// 同一份也放在 <see cref="SolveMetrics.ModelStats"/>，實驗紀錄因此帶得到。要隨時對帳改呼叫 <see cref="ReconcileModelStats"/>。
+        /// </summary>
+        public ModelStatsReport ModelStats { get; private set; }
+
         /// <summary>
         /// 各變數型別的「預期 / 實際」建立數——摘要 log 印的同一份資料，開發時可直接看。
         /// 每次存取取當下的值，改動它不會影響引擎。
@@ -302,6 +333,7 @@ namespace OptimFoundation.Core
         // 各 engine 目標式語意不同（CPLEX 新增 / Solver 覆寫），統一由 AddObjectiveTerm 處理。
         private readonly List<(double coef, TVar var)> _objectiveTerms = new List<(double, TVar)>();
         private readonly List<(double coef, TVar var)> _softPenaltyTerms = new List<(double, TVar)>();
+        private double _objectiveConstant = 0;
         private ObjectiveSense _objectiveSense = ObjectiveSense.Minimize;
         private int _softCount = 0;
 
@@ -316,6 +348,9 @@ namespace OptimFoundation.Core
 
         /// <summary>目標式累積的項數（不含尚未併入的 soft penalty）。</summary>
         public int ObjectiveTermCount => _objectiveTerms.Count;
+
+        /// <summary>目標式常數項，取自建目標式時 pool 的 LHS 常數（<see cref="AddLHS(double)"/>）。</summary>
+        public double ObjectiveConstant => _objectiveConstant;
 
         /// <summary>已建立的軟性限制式條數。</summary>
         public int SoftConstraintCount => _softCount;
@@ -340,9 +375,11 @@ namespace OptimFoundation.Core
         //   LinearExpr     — 從 (coef, var) list 建立 solver 的線性表達式物件
         //   AddConstraint  — 新增一般限制式（<=  ==  >=）
         //   AddRangeConstraint — 新增範圍限制式（lb <= expr <= ub）
-        //   SetObjective   — 設定目標式方向（Minimize / Maximize）
+        //   SetObjective   — 設定目標式（含常數項）與方向（Minimize / Maximize）
         //   SetVariableBounds — 直接修改已建立變數的 LB / UB
+        //   AddMIPStartCore — 把已解析的 (變數, 值) 交給 solver 當 MIP start
         //   ReadModelComposition — 向 solver 模型讀變數型別組成，供 ModelType 判定問題類型
+        //   ReadSolverModelCounts — 向 solver 模型讀規模統計，供 ReconcileModelStats 與框架記帳對帳
         //   BuildCore      — 入口：呼叫 Configuration(Config) 完成初始化（由 Build() template method 呼叫）
         //   SolveCore      — 求解，回傳 bool（true = Optimal or Feasible）（由 Solve() template method 呼叫，前面先跑 PreSolveGuard）
         //   GetObjectiveValue / GetVariableValue / Dispose
@@ -374,10 +411,18 @@ namespace OptimFoundation.Core
         protected abstract TConstr AddRangeConstraint(string name, TExpr expr, double lb, double ub);
 
         /// <summary>
-        /// 設定目標式。實作 MUST 為「覆寫」語意——重複呼叫要換掉舊目標式而非疊加，
+        /// 設定目標式 expr + constant。實作 MUST 為「覆寫」語意——重複呼叫要換掉舊目標式而非疊加，
         /// 否則軟性限制式的 penalty 累加（每加一項就重設一次目標式）會產生多個目標式。
         /// </summary>
-        protected abstract void SetObjective(TExpr expr, ObjectiveSense sense);
+        /// <param name="expr">目標式的變數項。</param>
+        /// <param name="constant">目標式常數項（offset）；MUST 帶進 solver，否則求得的目標值會與 Model.md 差這個常數。</param>
+        /// <param name="sense">最小化或最大化。</param>
+        protected abstract void SetObjective(TExpr expr, double constant, ObjectiveSense sense);
+
+        /// <summary>
+        /// 把一組 MIP start 交給 solver。entries 已由 <see cref="AddMIPStart"/> 完成名稱解析與過濾，非空。
+        /// </summary>
+        protected abstract void AddMIPStartCore(IReadOnlyList<(TVar var, double value)> entries, string name);
 
         /// <summary>直接改已建立變數的界限；傳 null 表示該側不動。</summary>
         protected abstract void SetVariableBounds(TVar variable, double? lb, double? ub);
@@ -392,6 +437,13 @@ namespace OptimFoundation.Core
         /// （semi-continuous、SOS），有它才能在沒有任何 Integer / Binary 變數時仍判定為 MILP。
         /// </returns>
         protected abstract (int Continuous, int Integer, int Binary, bool HasDiscreteStructure) ReadModelComposition();
+
+        /// <summary>
+        /// 向 solver 模型讀出規模統計，供 <see cref="ReconcileModelStats"/> 與框架的建模記帳對帳。
+        /// 實作 MUST 問模型本身（CPLEX 為 Ncols / Nrows / NbinVars / NintVars / NSOSs / NQCs / GetObjective…），
+        /// NEVER 用框架的 Variables 索引或建立統計湊數——那樣兩邊永遠相等，對帳就失去意義。模型尚未建立時回全零。
+        /// </summary>
+        protected abstract ModelCounts ReadSolverModelCounts();
 
         /// <summary>
         /// 建立模型的入口，由外部呼叫。先清空建立統計，再呼叫 BuildCore()（各 engine 實作）。
@@ -410,14 +462,21 @@ namespace OptimFoundation.Core
             }
         }
 
-        /// <summary>求解入口：先跑 PreSolveGuard()（scale guard），再呼叫 SolveCore()（各 engine 實作）。</summary>
+        /// <summary>
+        /// 求解入口：建模摘要 → 模型統計對帳（寫 log、存進 <see cref="ModelStats"/>）→ PreSolveGuard()（scale guard）→ SolveCore()（各 engine 實作）。
+        /// 對帳不一致只寫 <c>[MODEL_STATS_MISMATCH]</c> warn，不阻擋求解。
+        /// </summary>
         public bool Solve()
         {
             try
             {
                 LogBuildSummary();
+                ModelStats = ReconcileModelStats();
+                LogModelStats(ModelStats);
                 PreSolveGuard();
-                return SolveCore();
+                bool ok = SolveCore();
+                if (LastMetrics != null) LastMetrics.ModelStats = ModelStats;
+                return ok;
             }
             catch (Exception ex)
             {
@@ -513,7 +572,7 @@ namespace OptimFoundation.Core
                     varSet[name] = Variables[name];
 
                 int actual = Variables.Count - before;
-                RecordVariableBuild(setName, names.Count, actual);
+                RecordVariableBuild(setName, type, names.Count, actual);
                 Logging.Info($"[變數建立完成] type={setName} count={actual}/{names.Count}");
             }
             catch (Exception ex)
@@ -521,7 +580,7 @@ namespace OptimFoundation.Core
                 int actual = Math.Max(0, Variables.Count - before);
                 string expected = names == null ? "unknown" : names.Count.ToString();
                 if (names != null)
-                    RecordVariableBuild(setName, names.Count, actual);
+                    RecordVariableBuild(setName, type, names.Count, actual);
                 Logging.ErrorOnce(
                     ex,
                     "VARIABLE_BUILD_FAILED",
@@ -578,14 +637,14 @@ namespace OptimFoundation.Core
 
 
         /// <summary>
-        /// 批次建立連續變數，界限 [0, 1E100]（1E100 = 框架的「無上限」慣用值，不是 solver 的 infinity 常數）。
+        /// 批次建立連續變數，界限 [0, <see cref="OptBounds.Infinity"/>]（1E20 = CPLEX 的無上限）。
         /// </summary>
         /// <typeparam name="TVariable">變數類別；其 property 宣告順序 MUST 與 sets 傳入順序一致，否則之後 AddLHS 會找不到變數。</typeparam>
         /// <param name="sets">各維度的 set；框架取笛卡兒積產生所有變數名。</param>
         public virtual void BuildCVs<TVariable>(params object[] sets)
         {
             ValidateExplicitVariableType<TVariable>(VarType.Continuous, nameof(BuildCVs));
-            BatchBuild<TVariable>(0, 1E100, VarType.Continuous, sets);
+            BatchBuild<TVariable>(0, OptBounds.Infinity, VarType.Continuous, sets);
         }
 
         /// <summary>批次建立連續變數並指定界限 [lb, ub]。</summary>
@@ -595,11 +654,11 @@ namespace OptimFoundation.Core
             BatchBuild<TVariable>(lb, ub, VarType.Continuous, sets);
         }
 
-        /// <summary>批次建立整數變數，界限 [0, 1E100]。其餘語意同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
+        /// <summary>批次建立整數變數，界限 [0, <see cref="OptBounds.Infinity"/>]。其餘語意同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
         public virtual void BuildIVs<TVariable>(params object[] sets)
         {
             ValidateExplicitVariableType<TVariable>(VarType.Integer, nameof(BuildIVs));
-            BatchBuild<TVariable>(0, 1E100, VarType.Integer, sets);
+            BatchBuild<TVariable>(0, OptBounds.Infinity, VarType.Integer, sets);
         }
 
         /// <summary>批次建立整數變數並指定界限 [lb, ub]。</summary>
@@ -658,19 +717,19 @@ namespace OptimFoundation.Core
         // 少掉的兩項都是「靠類別才做得到」的檢查：維度數量比對，以及類別名前綴與型別的一致性驗證。
         // setName 仍會經 ModelNaming 驗證（不可空白、不可含保留字元、不可數字開頭），確保產出的名稱送得進 solver。
 
-        /// <summary>批次建立連續變數的 string 版，界限 [0, 1E100]。</summary>
+        /// <summary>批次建立連續變數的 string 版，界限 [0, <see cref="OptBounds.Infinity"/>]。</summary>
         /// <param name="setName">變數名 head，取代泛型版的類別名；同時是 VariableSets 的 key。</param>
         /// <param name="sets">各維度的 set；框架取笛卡兒積產生所有變數名。</param>
         public virtual void BuildCVs(string setName, params object[] sets)
-            => BatchBuild(setName, 0, 1E100, VarType.Continuous, sets);
+            => BatchBuild(setName, 0, OptBounds.Infinity, VarType.Continuous, sets);
 
         /// <summary>批次建立連續變數並指定界限 [lb, ub] 的 string 版。</summary>
         public virtual void BuildCVs(string setName, double lb, double ub, params object[] sets)
             => BatchBuild(setName, lb, ub, VarType.Continuous, sets);
 
-        /// <summary>批次建立整數變數的 string 版，界限 [0, 1E100]。</summary>
+        /// <summary>批次建立整數變數的 string 版，界限 [0, <see cref="OptBounds.Infinity"/>]。</summary>
         public virtual void BuildIVs(string setName, params object[] sets)
-            => BatchBuild(setName, 0, 1E100, VarType.Integer, sets);
+            => BatchBuild(setName, 0, OptBounds.Infinity, VarType.Integer, sets);
 
         /// <summary>批次建立整數變數並指定界限 [lb, ub] 的 string 版。</summary>
         public virtual void BuildIVs(string setName, double lb, double ub, params object[] sets)
@@ -834,6 +893,70 @@ namespace OptimFoundation.Core
 
         #endregion
 
+        #region MIP Start
+
+        /// <summary>
+        /// 以「變數全名 → 值」提供一組 MIP start；名稱格式同 <see cref="GetSolution"/>，
+        /// 所以上一段的解可直接接過來：<c>next.AddMIPStart(prev.GetSolution())</c>。
+        /// 不必給全部變數，給部分值由 solver 自行補齊（依 solver 的 effort 設定）。
+        /// </summary>
+        /// <remarks>
+        /// MUST 在模型建完、Solve() 之前呼叫。LP 模型沒有 MIP start 可用 → warn 後略過；
+        /// 模型內不存在的名稱 → warn 後略過該項（常見於前後段模型不同），其餘照常套用。
+        /// </remarks>
+        /// <param name="values">變數全名 → 起始值。</param>
+        /// <param name="name">MIP start 名稱；null 由 solver 自動命名。</param>
+        /// <returns>實際套用的變數數；略過時為 0。</returns>
+        /// <exception cref="ArgumentNullException">values 為 null。</exception>
+        public int AddMIPStart(IReadOnlyDictionary<string, double> values, string name = null)
+        {
+            string label = name ?? "<auto>";
+            if (values == null)
+                throw Logging.ErrorOnce(
+                    new ArgumentNullException(nameof(values)),
+                    "MIP_START_INVALID", "MIP start 不合法", nameof(AddMIPStart), label, "values_is_null");
+
+            try
+            {
+                if (ModelType == ModelType.LP)
+                {
+                    Logging.Warn($"[MIP_START_SKIPPED] 略過 MIP start | name={label} values={values.Count} reason=model_is_lp result=skipped");
+                    return 0;
+                }
+
+                var entries = new List<(TVar var, double value)>(values.Count);
+                var unknown = new List<string>();
+                foreach (var kv in values)
+                {
+                    if (kv.Key != null && Variables.TryGetValue(kv.Key, out var v))
+                        entries.Add((v, kv.Value));
+                    else
+                        unknown.Add(kv.Key ?? "<null>");
+                }
+
+                if (unknown.Count > 0)
+                    Logging.Warn($"[MIP_START_UNKNOWN_VARIABLE] MIP start 含模型內不存在的變數 | name={label} unknown={unknown.Count} sample={string.Join(",", unknown.Take(5))} reason=variable_not_in_model result=entries_skipped");
+
+                if (entries.Count == 0)
+                {
+                    Logging.Warn($"[MIP_START_SKIPPED] 略過 MIP start | name={label} values={values.Count} reason=no_matching_variable result=skipped");
+                    return 0;
+                }
+
+                AddMIPStartCore(entries, name);
+                Logging.Info($"[MIP start 建立完成] name={label} applied={entries.Count}/{values.Count} modelVars={VariableCount}");
+                return entries.Count;
+            }
+            catch (Exception ex)
+            {
+                Logging.ErrorOnce(ex, "MIP_START_FAILED", "MIP start 套用失敗", nameof(AddMIPStart), label,
+                    ex.GetBaseException().Message);
+                throw;
+            }
+        }
+
+        #endregion
+
         #region VariableManager — 設定變數界限
 
         /// <summary>把單一變數的下界改成 lb（上界不動）。用於固定變數或加開發期的暫時界限。</summary>
@@ -873,6 +996,9 @@ namespace OptimFoundation.Core
             VariableSets.Clear();
             Variables.Clear();
             _variableBuildCounts.Clear();
+            Array.Clear(_ledgerVarTypes, 0, _ledgerVarTypes.Length);
+            Array.Clear(_importedVarTypes, 0, _importedVarTypes.Length);
+            _referencedVariables.Clear();
             _buildSummaryDirty = true;
         }
 
@@ -881,6 +1007,7 @@ namespace OptimFoundation.Core
         {
             _verifyConstraints.Clear();
             _constraintBuildCounts.Clear();
+            _importedConstraints = 0;
             _buildSummaryDirty = true;
         }
 
@@ -888,10 +1015,16 @@ namespace OptimFoundation.Core
         {
             _variableBuildCounts.Clear();
             _constraintBuildCounts.Clear();
+            Array.Clear(_ledgerVarTypes, 0, _ledgerVarTypes.Length);
+            Array.Clear(_importedVarTypes, 0, _importedVarTypes.Length);
+            _importedConstraints = 0;
+            _imported = false;
+            _ledgerObjective = null;
+            _referencedVariables.Clear();
             _buildSummaryDirty = true;
         }
 
-        private void RecordVariableBuild(string type, int expected, int actual)
+        private void RecordVariableBuild(string type, VarType varType, int expected, int actual)
         {
             if (!_variableBuildCounts.TryGetValue(type, out var count))
             {
@@ -900,8 +1033,79 @@ namespace OptimFoundation.Core
             }
             count.Expected += expected;
             count.Actual += actual;
+            _ledgerVarTypes[(int)varType] += actual;
             _buildSummaryDirty = true;
         }
+
+        #region 建模記帳 — 給 engine 子類別的入口
+
+        /// <summary>
+        /// 匯入模型檔 re-index 完成後登記記帳：匯入的內容不經 Build*Vs / Create*，由 engine 把索引到的數量報上來。
+        /// 同時以檔案裡的目標式方向同步 <see cref="ObjectiveSense"/>，否則匯入 maximize 模型會被當成 minimize，軟性 penalty 也會反號。
+        /// </summary>
+        /// <param name="continuous">索引到的連續變數數。</param>
+        /// <param name="integer">索引到的 Integer 變數數。</param>
+        /// <param name="binary">索引到的 Binary 變數數。</param>
+        /// <param name="constraints">索引到的線性限制式條數。</param>
+        /// <param name="objective">檔案裡的目標式方向；null = 沒有目標式。</param>
+        protected void RecordImportedModel(int continuous, int integer, int binary, int constraints, ObjectiveSense? objective)
+        {
+            // 匯入會整個換掉 solver 模型，先前 Build*Vs 建的東西已不在模型裡，記帳跟著歸零
+            _variableBuildCounts.Clear();
+            Array.Clear(_ledgerVarTypes, 0, _ledgerVarTypes.Length);
+            _referencedVariables.Clear();
+
+            _importedVarTypes[(int)VarType.Continuous] = continuous;
+            _importedVarTypes[(int)VarType.Integer] = integer;
+            _importedVarTypes[(int)VarType.Binary] = binary;
+            _importedConstraints = constraints;
+            _imported = true;
+            _ledgerObjective = objective;
+            if (objective.HasValue) _objectiveSense = objective.Value;
+            // 匯入的變數都來自模型本身的矩陣，本來就在 solver 模型內，視同已引用
+            foreach (var v in Variables.Values) _referencedVariables.Add(v);
+            _buildSummaryDirty = true;
+        }
+
+        /// <summary>子類別不經 pool、直接以 primitive 建變數時登記記帳（例：OptEngine.CreateVar）。</summary>
+        protected void RecordDirectVariable(string name, VarType varType)
+            => RecordVariableBuild(VariableGroup(name), varType, 1, 1);
+
+        /// <summary>子類別不經 pool、直接以 primitive 建限制式時登記記帳（例：OptEngine.AddLE）。</summary>
+        protected void RecordDirectConstraint(string name)
+            => RecordConstraintBuild(name, true);
+
+        /// <summary>子類別不經 pool、直接以 primitive 設目標式時登記記帳，並同步 <see cref="ObjectiveSense"/>（例：OptEngine.Maximize）。</summary>
+        protected void RecordDirectObjective(ObjectiveSense sense)
+        {
+            _objectiveSense = sense;
+            _ledgerObjective = sense;
+            _buildSummaryDirty = true;
+        }
+
+        /// <summary>
+        /// solver 端的限制式與目標式全部移除、變數保留時呼叫（例：OptEngine.ResetConstraint）。
+        /// 否則上一輪引用過的變數會一直算「已引用」，重建後沒用到的變數就點不出名。
+        /// </summary>
+        protected void ResetReferencedVariables()
+        {
+            _referencedVariables.Clear();
+            _buildSummaryDirty = true;
+        }
+
+        private static string VariableGroup(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return "<unnamed>";
+            int separator = name.IndexOf('@');
+            return separator > 0 ? name.Substring(0, separator) : name;
+        }
+
+        private void MarkReferenced(IEnumerable<(double coef, TVar var)> terms)
+        {
+            foreach (var term in terms) _referencedVariables.Add(term.var);
+        }
+
+        #endregion
 
         private void RecordConstraintBuild(string name, bool created)
         {
@@ -965,6 +1169,179 @@ namespace OptimFoundation.Core
         }
         #endregion
 
+        #region 模型統計對帳
+
+        /// <summary>
+        /// 對帳框架的建模統計與 solver 模型實際持有的內容：變數總數與 Binary / Integer / Continuous 分布、限制式、
+        /// 框架不索引的特殊元素、目標式方向。變數與限制式另外比對框架索引，落差才分得出是哪一段出問題。
+        /// <see cref="Solve"/> 前會自動跑一次並寫 log；Build() 之後任何時候都能手動呼叫，不會改動模型。
+        /// </summary>
+        /// <returns>對帳結果；<see cref="ModelStatsReport.IsMatch"/> 為 false 時，Mismatches 逐項帶可能原因。</returns>
+        public ModelStatsReport ReconcileModelStats()
+        {
+            var solver = ReadSolverModelCounts() ?? new ModelCounts();
+            var framework = new ModelCounts
+            {
+                Continuous = _ledgerVarTypes[(int)VarType.Continuous] + _importedVarTypes[(int)VarType.Continuous],
+                Integer = _ledgerVarTypes[(int)VarType.Integer] + _importedVarTypes[(int)VarType.Integer],
+                Binary = _ledgerVarTypes[(int)VarType.Binary] + _importedVarTypes[(int)VarType.Binary],
+                Constraints = _constraintBuildCounts.Values.Sum(c => c.Actual) + _importedConstraints,
+                Objective = _ledgerObjective,
+            };
+            framework.Variables = framework.Continuous + framework.Integer + framework.Binary;
+
+            var report = new ModelStatsReport
+            {
+                Source = !_imported ? "Authored"
+                    : _variableBuildCounts.Count + _constraintBuildCounts.Count > 0 ? "Imported+Authored"
+                    : "Imported",
+                Framework = framework,
+                IndexedVariables = VariableCount,
+                IndexedConstraints = ConstraintCount,
+                Solver = solver,
+            };
+
+            CheckVariables(report);
+            bool variablesDiffer = report.Mismatches.Count > 0;
+            CheckVariableType(report, "Binary", framework.Binary, solver.Binary, variablesDiffer);
+            CheckVariableType(report, "Integer", framework.Integer, solver.Integer, variablesDiffer);
+            CheckVariableType(report, "Continuous", framework.Continuous, solver.Continuous, variablesDiffer);
+            CheckConstraints(report);
+            CheckSpecialElements(report);
+            CheckObjective(report);
+            return report;
+        }
+
+        private void CheckVariables(ModelStatsReport report)
+        {
+            int ledger = report.Framework.Variables;
+            int index = report.IndexedVariables;
+            int solver = report.Solver.Variables;
+            if (ledger == index && index == solver) return;
+
+            var reasons = new List<string>();
+            if (ledger != index)
+                reasons.Add($"框架索引比建模記帳{(index > ledger ? "多" : "少")} {Math.Abs(index - ledger)} 個：有變數沒經過 Build*Vs / 軟性限制式 / 匯入等建模入口就進出索引");
+            if (index > solver)
+            {
+                var unreferenced = Variables.Where(kv => !_referencedVariables.Contains(kv.Value)).Select(kv => kv.Key).ToList();
+                if (unreferenced.Count > 0)
+                    reasons.Add($"{unreferenced.Count} 個變數已宣告但沒被任何限制式或目標式引用，solver 不會收進模型（{GroupSummary(unreferenced)}）sample={string.Join(",", unreferenced.Take(5))}");
+                if (unreferenced.Count != index - solver)
+                    reasons.Add($"框架索引比 solver 多 {index - solver} 個、未引用 {unreferenced.Count} 個，兩者不符：另有變數被移出模型，或模型重建（再次 Configuration）後索引沒清");
+            }
+            else if (index < solver)
+            {
+                reasons.Add($"solver 模型有 {solver - index} 個框架不認得的變數：有程式繞過框架直接加進 solver 模型");
+            }
+
+            report.Mismatches.Add(new ModelStatsMismatch
+            {
+                Item = "Variables",
+                Framework = Text(ledger),
+                Index = Text(index),
+                Solver = Text(solver),
+                Reason = string.Join("；", reasons),
+            });
+        }
+
+        private static void CheckVariableType(ModelStatsReport report, string item, int framework, int solver, bool variablesDiffer)
+        {
+            if (framework == solver) return;
+            report.Mismatches.Add(new ModelStatsMismatch
+            {
+                Item = item,
+                Framework = Text(framework),
+                Solver = Text(solver),
+                Reason = variablesDiffer
+                    ? "與 Variables 列同因（該型別的變數有未引用或繞過框架的）"
+                    : "總數對得上但型別分布不同：solver 端有變數型別被改動（例：繞過框架做型別轉換）",
+            });
+        }
+
+        private static void CheckConstraints(ModelStatsReport report)
+        {
+            int ledger = report.Framework.Constraints;
+            int index = report.IndexedConstraints;
+            int solver = report.Solver.Constraints;
+            if (ledger == index && index == solver) return;
+
+            var reasons = new List<string>();
+            if (ledger != index)
+                reasons.Add($"框架索引比建模記帳{(index > ledger ? "多" : "少")} {Math.Abs(index - ledger)} 條：有限制式沒經過 Create* / 軟性限制式 / 匯入等建模入口就進出索引");
+            if (index < solver)
+                reasons.Add($"solver 模型有 {solver - index} 條框架不認得的限制式：有程式繞過框架直接加進 solver 模型");
+            else if (index > solver)
+                reasons.Add($"框架索引有 {index - solver} 條 solver 模型沒有：限制式被移出模型，或模型重建（再次 Configuration）後索引沒清");
+
+            report.Mismatches.Add(new ModelStatsMismatch
+            {
+                Item = "Constraints",
+                Framework = Text(ledger),
+                Index = Text(index),
+                Solver = Text(solver),
+                Reason = string.Join("；", reasons),
+            });
+        }
+
+        private static void CheckSpecialElements(ModelStatsReport report)
+        {
+            if (report.Framework.SpecialElements == report.Solver.SpecialElements) return;
+            report.Mismatches.Add(new ModelStatsMismatch
+            {
+                Item = "SpecialElements",
+                Framework = Text(report.Framework.SpecialElements),
+                Solver = Text(report.Solver.SpecialElements),
+                Reason = $"模型含框架不建立也不索引的元素（{report.Solver.SpecialDetail}）：框架的統計、IIS 分析與取解都不涵蓋它們",
+            });
+        }
+
+        private static void CheckObjective(ModelStatsReport report)
+        {
+            var framework = report.Framework.Objective;
+            var solver = report.Solver.Objective;
+            if (framework == solver) return;
+            report.Mismatches.Add(new ModelStatsMismatch
+            {
+                Item = "Objective",
+                Framework = SenseText(framework),
+                Solver = SenseText(solver),
+                Reason = framework == null ? $"solver 有 {solver} 目標式，但不是經 CreateMinimize / CreateMaximize 或匯入建立"
+                    : solver == null ? $"框架建過 {framework} 目標式，solver 模型卻沒有：目標式被移出模型"
+                    : $"方向不一致：框架記 {framework}、solver 是 {solver}",
+            });
+        }
+
+        private static void LogModelStats(ModelStatsReport report)
+        {
+            var f = report.Framework;
+            var s = report.Solver;
+            Logging.Info($"[模型統計對帳] 來源={report.Source} 變數 記帳={f.Variables} 索引={report.IndexedVariables} solver={s.Variables}｜binary {f.Binary}/{s.Binary}｜integer {f.Integer}/{s.Integer}｜continuous {f.Continuous}/{s.Continuous}（記帳/solver）");
+            Logging.Info($"[模型統計對帳] 限制式 記帳={f.Constraints} 索引={report.IndexedConstraints} solver={s.Constraints}｜特殊元素 {f.SpecialElements}/{s.SpecialElements}｜目標式 {SenseText(f.Objective)}/{SenseText(s.Objective)}（記帳/solver）");
+
+            if (report.IsMatch)
+            {
+                Logging.Info("[MODEL_STATS_MATCH] 框架建模統計與 solver 模型一致 | items=Variables,Binary,Integer,Continuous,Constraints,SpecialElements,Objective result=verified");
+                return;
+            }
+            foreach (var m in report.Mismatches)
+                Logging.Warn($"[MODEL_STATS_MISMATCH] 框架建模統計與 solver 模型不一致 | item={m.Item} framework={m.Framework}{(m.Index == null ? "" : $" index={m.Index}")} solver={m.Solver} reason={m.Reason} result=continued");
+        }
+
+        // 未引用變數依名稱 head 分組計數（VariableB_Pick=2, Surplus_x=1），最多列 5 組
+        private static string GroupSummary(IEnumerable<string> names)
+        {
+            var groups = names.GroupBy(VariableGroup).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal).ToList();
+            string shown = string.Join(", ", groups.Take(5).Select(g => $"{g.Key}={g.Count()}"));
+            return groups.Count > 5 ? $"{shown}, …共 {groups.Count} 組" : shown;
+        }
+
+        private static string Text(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        private static string SenseText(ObjectiveSense? sense) => sense?.ToString() ?? "None";
+
+        #endregion
+
         #region Pool — 狀態管理
 
         /// <summary>pool 目前是否有變數項（只看變數項，純常數不算）。用於送出前確認自己有沒有漏加項。</summary>
@@ -990,6 +1367,13 @@ namespace OptimFoundation.Core
                 return false;
             }
             return true;
+        }
+
+        // 只吃 LHS 的出口（CreateRange / 目標式）遇到 RHS pool 有內容：照舊捨棄，但一定要留 warn，不能靜默吞掉
+        private void WarnIfRhsPoolIgnored(string operation, string name, string reason)
+        {
+            if (_rhsTerms.Count == 0 && _rhsConst == 0) return;
+            Logging.Warn($"[POOL_RHS_IGNORED] 右側 pool 不被採用 | operation={operation} name={name} rhsTerms={_rhsTerms.Count} rhsConst={_rhsConst} reason={reason} result=rhs_discarded");
         }
 
         private void LogDuplicateConstraint(string name)
@@ -1188,7 +1572,10 @@ namespace OptimFoundation.Core
             return CreateLinearConstraint(name, ConstraintSense.Equal);
         }
 
-        /// <summary>送出範圍限制式 lb ≤ LHS ≤ ub（只用 AddLHS 累積的左側；LHS 常數移到界上抵銷）。</summary>
+        /// <summary>
+        /// 送出範圍限制式 lb ≤ LHS ≤ ub（只用 AddLHS 累積的左側；LHS 常數移到界上抵銷）。
+        /// RHS pool（AddRHS 的變數項與常數）不屬於範圍限制式：有內容時寫 <c>[POOL_RHS_IGNORED]</c> warn 後捨棄。
+        /// </summary>
         public bool CreateRange(double lb, double ub, string name)
             => CreateRangeCore(lb, ub, ValidateConstraintName(nameof(CreateRange), name));
 
@@ -1216,6 +1603,7 @@ namespace OptimFoundation.Core
                 {
                     AddConstraint(name, LinearExpr(CombinedLhsMinusRhs()), sense, _rhsConst - _lhsConst);
                     _verifyConstraints.Add(name);
+                    MarkReferenced(CombinedLhsMinusRhs());
                     created = true;
                 }
                 else
@@ -1247,8 +1635,10 @@ namespace OptimFoundation.Core
             {
                 Logging.Warn($"[CONSTRAINT_EMPTY] 未建立限制式 | name={name} reason=lhs_empty result=skipped");
                 RecordConstraintBuild(name, false);
+                ClearPool();
                 return false;
             }
+            WarnIfRhsPoolIgnored(nameof(CreateRange), name, "range_uses_lhs_only");
 
             bool created = false;
             try
@@ -1257,6 +1647,7 @@ namespace OptimFoundation.Core
                 {
                     AddRangeConstraint(name, LinearExpr(_lhsTerms), lb - _lhsConst, ub - _lhsConst);
                     _verifyConstraints.Add(name);
+                    MarkReferenced(_lhsTerms);
                     created = true;
                 }
                 else
@@ -1287,29 +1678,32 @@ namespace OptimFoundation.Core
 
         #region Pool — 建立目標式
 
-        /// <summary>以 pool 累積的 LHS 為目標式，設為最小化。</summary>
+        /// <summary>以 pool 累積的 LHS（變數項 + 常數項）為目標式，設為最小化。RHS pool 不屬於目標式，有內容會 warn 後捨棄。</summary>
         public void CreateMinimize() => SetObjectiveFromPool(ObjectiveSense.Minimize);
 
-        /// <summary>以 pool 累積的 LHS 為目標式，設為最大化。</summary>
+        /// <summary>以 pool 累積的 LHS（變數項 + 常數項）為目標式，設為最大化。RHS pool 不屬於目標式，有內容會 warn 後捨棄。</summary>
         public void CreateMaximize() => SetObjectiveFromPool(ObjectiveSense.Maximize);
 
         private void SetObjectiveFromPool(ObjectiveSense sense)
         {
             int expectedTerms = _lhsTerms.Count + _softPenaltyTerms.Count;
-            Logging.Info($"[目標式建構開始] sense={sense} terms={expectedTerms}");
+            Logging.Info($"[目標式建構開始] sense={sense} terms={expectedTerms} constant={_lhsConst}");
             if (_lhsTerms.Count == 0 && _softPenaltyTerms.Count == 0)
             {
-                Logging.Warn($"[目標式建構完成] sense={sense} terms=0 reason=no_terms result=skipped");
+                Logging.Warn($"[目標式建構完成] sense={sense} terms=0 constant={_lhsConst} reason=no_terms result=skipped");
+                ClearPool();
                 return;
             }
+            WarnIfRhsPoolIgnored($"Create{sense}", "<objective>", "objective_uses_lhs_only");
             try
             {
                 _objectiveTerms.Clear();
                 _objectiveTerms.AddRange(_lhsTerms);
+                _objectiveConstant = _lhsConst;
                 _objectiveSense = sense;
                 ApplyObjective();
                 ClearPool();
-                Logging.Info($"[目標式建構完成] sense={sense} terms={expectedTerms} result=success");
+                Logging.Info($"[目標式建構完成] sense={sense} terms={expectedTerms} constant={_objectiveConstant} result=success");
             }
             catch (Exception ex)
             {
@@ -1326,7 +1720,24 @@ namespace OptimFoundation.Core
 
         // 以追蹤的目標式項 + 已累積的軟性 penalty 項重設目標式。
         private void ApplyObjective()
-            => SetObjective(LinearExpr(_objectiveTerms.Concat(_softPenaltyTerms)), _objectiveSense);
+        {
+            SetObjective(LinearExpr(_objectiveTerms.Concat(_softPenaltyTerms)), _objectiveConstant, _objectiveSense);
+            MarkReferenced(_objectiveTerms.Concat(_softPenaltyTerms));
+            _ledgerObjective = _objectiveSense;
+            _buildSummaryDirty = true;
+        }
+
+        /// <summary>
+        /// 清掉框架這一側追蹤的目標式（變數項、常數項、soft penalty 項）。
+        /// solver 端已移除目標式時（如 OptEngine.ResetConstraint）MUST 一併呼叫，否則下一條軟性限制式會把舊目標項重新套回去。
+        /// </summary>
+        protected void ResetObjectiveTracking()
+        {
+            _objectiveTerms.Clear();
+            _softPenaltyTerms.Clear();
+            _objectiveConstant = 0;
+            _ledgerObjective = null;
+        }
 
         #endregion
 
@@ -1396,7 +1807,7 @@ namespace OptimFoundation.Core
             double adjustedRhs = rhs + _rhsConst - _lhsConst;
             double p = _objectiveSense == ObjectiveSense.Maximize ? -penalty : penalty;
             var terms = new List<(double coef, TVar var)>(CombinedLhsMinusRhs());
-            const double inf = double.MaxValue;
+            const double inf = OptBounds.Infinity;
             int expectedVariables = sense == ConstraintSense.Equal ? 2 : 1;
             int variablesBefore = Variables.Count;
 
@@ -1432,13 +1843,14 @@ namespace OptimFoundation.Core
                             break;
                         }
                 }
-                RecordVariableBuild("SoftConstraint", expectedVariables, Variables.Count - variablesBefore);
+                RecordVariableBuild("SoftConstraint", VarType.Continuous, expectedVariables, Variables.Count - variablesBefore);
                 RecordConstraintBuild(name, true);
+                MarkReferenced(terms);
                 Logging.Info($"[軟性限制式建立完成] name={name} sense={sense} rhs={rhs} penalty={penalty} result=success");
             }
             catch (Exception ex)
             {
-                RecordVariableBuild("SoftConstraint", expectedVariables, Math.Max(0, Variables.Count - variablesBefore));
+                RecordVariableBuild("SoftConstraint", VarType.Continuous, expectedVariables, Math.Max(0, Variables.Count - variablesBefore));
                 RecordConstraintBuild(name, false);
                 Logging.ErrorOnce(
                     ex,

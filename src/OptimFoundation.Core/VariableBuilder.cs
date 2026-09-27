@@ -158,6 +158,11 @@ namespace OptimFoundation.Core
             return null;
         }
 
+        /// <summary>
+        /// 比對建構的維度與class所需維度是否匹配
+        /// </summary>
+        /// <param name="domains"></param>
+        /// <typeparam name="TVariable"></typeparam>
         private static void ValidateVariableArity<TVariable>(List<string[]>[] domains)
         {
             if (domains.Any(domain => domain.Count == 0)) return;

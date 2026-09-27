@@ -35,6 +35,9 @@ namespace OptimFoundation.Core
         /// <summary>模型的限制式總數。</summary>
         public int ConstraintCount { get; set; }
 
+        /// <summary>求解前的模型統計對帳（框架建模記帳 vs solver 模型實際）；由 EngineBase.Solve() 回填，舊紀錄讀回為 null。</summary>
+        public ModelStatsReport ModelStats { get; set; }
+
         /// <summary>選用的逐點收斂軌跡；未啟用 captureTrajectory 時為空清單。</summary>
         public List<ConvergencePoint> Convergence { get; set; } = new List<ConvergencePoint>();
 

@@ -1,27 +1,27 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
-using System.Threading.Tasks;
 
 namespace OptimFoundation.Core
 {
     /// <summary>
     /// 一組實驗：同一個問題掃不同設定/模型，每次求解記成一個 <see cref="Trial"/>。
-    /// 收集完呼叫 <see cref="Save"/> 輸出 experiments/&lt;Name&gt;.csv + .json（有軌跡時再多一個 -trajectory.csv）。
-    /// 同名實驗為累積（append），不覆寫歷史。
+    /// 收集完呼叫 <see cref="Save"/> 輸出 Experiments/&lt;Name&gt;.csv + -meta.csv（有軌跡時再多一個 -trajectory.csv）。
+    /// 同名實驗直接覆寫，不讀回也不累積舊檔。
     /// </summary>
     public class Experiment
     {
-        /// <summary>實驗名稱，決定輸出檔名 experiments/&lt;Name&gt;.*。</summary>
+        /// <summary>實驗名稱，決定輸出檔名 Experiments/&lt;Name&gt;.*。</summary>
         public string Name { get; set; }
-        /// <summary>實驗目的描述（自由文字，寫進 JSON 供日後辨識）。</summary>
+        /// <summary>實驗目的描述（自由文字，寫進 -meta.csv 供日後辨識）。</summary>
         public string Description { get; set; }
         /// <summary>實驗建立時間。</summary>
         public DateTime CreatedAt { get; set; }
-        /// <summary>本實驗累積的所有 Trial（每次求解一筆）。</summary>
+        /// <summary>本實驗的所有 Trial（每次求解一筆）。</summary>
         public List<Trial> Trials { get; set; }
 
-        /// <summary>建立實驗。name 決定輸出檔名，同名等於接續同一份歷史（Save 會 append）。</summary>
+        /// <summary>建立實驗。name 決定輸出檔名，同名的舊輸出會在 Save 時被覆寫。</summary>
         public Experiment(string name, string description)
         {
             if (string.IsNullOrWhiteSpace(name))
@@ -34,9 +34,6 @@ namespace OptimFoundation.Core
             Trials = new List<Trial>();
         }
 
-        /// <summary>JSON 反序列化用。</summary>
-        public Experiment() { Trials = new List<Trial>(); }
-
         /// <summary>把一次求解的紀錄（Trial）加入本實驗。</summary>
         public void AddTrial(Trial trial)
         {
@@ -48,8 +45,8 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 輸出到 experiments/&lt;Name&gt;.csv + .json。同名實驗為 append：
-        /// 先 Load 既有 JSON、把不在本次記憶體中的 trials 併到前面（以 RunAt+Label 去重，重複 Save 同物件不會重覆）。
+        /// 把記憶體中的 trials 輸出到 Experiments/&lt;Name&gt;.csv + -meta.csv（+ -trajectory.csv），同名檔直接覆寫。
+        /// 本次沒有軌跡時會刪掉同名的舊 -trajectory.csv，避免留下別次的軌跡。
         /// </summary>
         public void Save()
         {
@@ -72,55 +69,21 @@ namespace OptimFoundation.Core
         private void SaveCore()
         {
             FolderDir.Experiment.CreateFolder();
+            Trials ??= new List<Trial>();
 
-            // 1) 讀回同名實驗磁碟上既有的 trials（以 JSON 為權威來源；不存在則空清單）
-            var current = Trials ?? new List<Trial>();
-            string jsonPath = FolderDir.Experiment.GetPathFile($"{Name}.json");
-            var onDisk = new JsonExperimentWriter().Read(jsonPath)?.Trials ?? new List<Trial>();
-
-            // 2) 合併：保留磁碟上「本次記憶體沒有」的舊 trials，本次的接在後面
-            //    去重的鍵是 RunAt + Model + Label —— Label 現在只放設定名稱，
-            //    所以要把 Model 一起算進去，否則兩個模型用同一個設定名會被誤判成同一筆。
-            var merged = onDisk
-                .Where(d => !current.Any(c => c.RunAt == d.RunAt
-                                           && c.Label == d.Label
-                                           && c.Model == d.Model))
-                .ToList();
-            merged.AddRange(current);
-            Trials = merged;
-
-            // 3) 輸出三份給人看的檔 + 一份給程式讀的 json
-            //    主表：一列一 trial，只寫「跟基準差在哪」
-            //    說明檔：整批不會變的東西（模型多大、環境、基準的完整設定）只寫一次
-            //    json：保留當累積與重讀的權威來源，設定已改成只記有設的那些
+            // 主表：一列一 trial，只寫「跟基準差在哪」
+            // 說明檔：整批不會變的東西（模型多大、環境、基準的完整設定）只寫一次
             new CsvExperimentWriter().Write(this, FolderDir.Experiment.GetPathFile($"{Name}.csv"));
             new MetaCsvWriter().Write(this, FolderDir.Experiment.GetPathFile($"{Name}-meta.csv"));
-            new JsonExperimentWriter().Write(this, jsonPath);
 
-            // 4) 只有實際抓到收斂軌跡時才多出 trajectory.csv，避免留下只有表頭的空殼（與 csv/json 永遠有料一致）
+            // 只有實際抓到收斂軌跡時才寫 trajectory.csv，避免留下只有表頭的空殼
+            string trajectoryPath = FolderDir.Experiment.GetPathFile($"{Name}-trajectory.csv");
             if (Trials.Any(t => (t.Metrics?.Convergence?.Count ?? 0) > 0))
-                new TrajectoryCsvWriter().Write(this, FolderDir.Experiment.GetPathFile($"{Name}-trajectory.csv"));
+                new TrajectoryCsvWriter().Write(this, trajectoryPath);
+            else
+                File.Delete(trajectoryPath);
 
             Logging.Info($"[Experiment] Saved '{Name}' ({Trials.Count} trials) → {FolderDir.Experiment.GetPath()}");
-        }
-
-        /// <summary>讀回既有實驗（以 JSON 為權威來源），供累積。檔案不存在回 null。</summary>
-        public static Experiment Load(string name)
-        {
-            if (string.IsNullOrWhiteSpace(name))
-                throw Logging.ErrorOnce(
-                    new ArgumentException("Experiment name is required.", nameof(name)),
-                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(Load), name, "name_is_empty");
-            try
-            {
-                return new JsonExperimentWriter().Read(FolderDir.Experiment.GetPathFile($"{name}.json"));
-            }
-            catch (Exception ex)
-            {
-                Logging.ErrorOnce(ex, "EXPERIMENT_LOAD_FAILED", "公開 API 執行失敗", nameof(Load), name,
-                    ex.GetBaseException().Message);
-                throw;
-            }
         }
     }
 
@@ -138,5 +101,93 @@ namespace OptimFoundation.Core
 
         /// <summary>最近一次求解的軌跡；未開啟或不支援時為空清單。</summary>
         IReadOnlyList<ConvergencePoint> Trajectory { get; }
+    }
+
+    /// <summary>
+    /// 一次求解的完整記錄：設定 Snapshot + 收斂指標。套件化用法的最小單位。
+    /// </summary>
+    public sealed class Trial
+    {
+        /// <summary>這次求解的標籤，格式:r*-description，例 "r1-GomoryCuts=2"。</summary>
+        public string Label { get; set; }
+
+        /// <summary>這批實驗的識別，值是該次執行的開始時間（yyyyMMdd-HHmmss）。
+        /// 同一個實驗跑很多次時，靠它分辨哪些列是同一批。</summary>
+        public string ExperimentId { get; set; }
+
+        /// <summary>同一批實驗內的流水號，從 1 開始。與 <see cref="ExperimentId"/> 合起來唯一。</summary>
+        public int TrialId { get; set; }
+
+        /// <summary>這次跑的是哪個模型。以前是黏在 Label 前面（"模型名 | 設定名"），現在拆開成獨立欄位。</summary>
+        public string Model { get; set; }
+
+        /// <summary>求解記錄的建立時間（Capture 當下）。</summary>
+        public DateTime RunTime { get; set; }
+
+        /// <summary>求解前的設定快照，供事後重現這次結果。</summary>
+        public ConfigSnapshot Config { get; set; }
+
+        /// <summary>求解結果指標（狀態、目標值、gap、耗時、節點數、收斂軌跡）。</summary>
+        public SolveMetrics Metrics { get; set; }
+
+        /// <summary>自由備註，寫進 CSV 供日後辨識。</summary>
+        public string Note { get; set; }
+
+        /// <summary>
+        /// 套件化單次擷取：讀 engine.Config → 跑 solveAction（一次求解）→ 讀 engine.LastMetrics。
+        /// 不接管、不 Dispose engine（生命週期由呼叫端持有）。
+        /// </summary>
+        /// <param name="engine">已 Build 完成的求解引擎</param>
+        /// <param name="label">這次 Trial 的標籤（如 "emphasis=2"）</param>
+        /// <param name="solveAction">執行一次求解的動作，回傳是否成功</param>
+        /// <param name="note">選填備註</param>
+        public static Trial Capture(ISolverEngine engine, string label, Func<bool> solveAction, string note = null)
+        {
+            if (engine == null)
+                throw Logging.ErrorOnce(
+                    new ArgumentNullException(nameof(engine)),
+                    "TRIAL_CAPTURE_INVALID", "實驗紀錄擷取失敗", nameof(Capture), label, "engine_is_null");
+            if (solveAction == null)
+                throw Logging.ErrorOnce(
+                    new ArgumentNullException(nameof(solveAction)),
+                    "TRIAL_CAPTURE_INVALID", "實驗紀錄擷取失敗", nameof(Capture), label, "solve_action_is_null");
+
+            try
+            {
+                return CaptureCore(engine, label, solveAction, note);
+            }
+            catch (Exception ex)
+            {
+                Logging.ErrorOnce(ex, "TRIAL_CAPTURE_FAILED", "公開 API 執行失敗", nameof(Capture), label,
+                    ex.GetBaseException().Message);
+                throw;
+            }
+        }
+
+        private static Trial CaptureCore(ISolverEngine engine, string label, Func<bool> solveAction, string note)
+        {
+
+            var snapshot = ConfigSnapshot.From(engine.Config);
+
+            // 選用：支援軌跡的 engine（本期 CPLEX）在求解前啟用
+            if (engine is ITrajectorySource ts && ts.SupportsTrajectory)
+            {
+                ts.EnableTrajectory();
+            }
+
+            solveAction();   // 跑一次求解；非 Optimal（TimeLimit/Feasible）仍照記錄，不視為失敗
+
+            var metrics = engine.LastMetrics ?? new SolveMetrics { Status = engine.Status };
+
+            return new Trial
+            {
+                Label = label,
+                RunTime = DateTime.Now,
+                Config = snapshot,
+                Metrics = metrics,
+                Note = note
+            };
+            // 不呼叫 engine.Dispose()：engine 生命週期由呼叫端持有
+        }
     }
 }

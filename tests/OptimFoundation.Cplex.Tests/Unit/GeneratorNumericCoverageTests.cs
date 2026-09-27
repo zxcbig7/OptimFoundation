@@ -66,11 +66,28 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
     public class GeneratorNumericCoverageTests
     {
+        private static List<Parameter_GncProfit> LoadProfitCsv(string content)
+        {
+            string fileName = $"profit-{Guid.NewGuid():N}.csv";
+            string path = FolderDir.Input.GetPathFile(fileName);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, content);
+            try
+            {
+                IDataSource source = new CsvDataSource();
+                return source.Load<Parameter_GncProfit>(fileName);
+            }
+            finally
+            {
+                if (File.Exists(path)) File.Delete(path);
+            }
+        }
+
         [Fact]
         public void CsvSource_Load_UsesExplicitFileNameInsteadOfRowClassName()
         {
             string fileName = $"product-master-{Guid.NewGuid():N}.csv";
-            string path = FolderDir.Data.GetPathFile(fileName);
+            string path = FolderDir.Input.GetPathFile(fileName);
 
             try
             {
@@ -125,12 +142,11 @@ namespace OptimFoundation.Cplex.Tests.Unit
         [InlineData(2e15)]
         public void HandwrittenNonQtyDoubleField_BadValue_ReportsNumeric(double badValue)
         {
-            var ex = Assert.Throws<DataValidationException>(() =>
-                OptData.Load(() => new GncDataload(
-                    new[] { "Desk" },
-                    new[] { new Parameter_GncProfit { GncItem = "Desk", Profit = badValue } })));
+            var result = OptData.Load(() => new GncDataload(
+                new[] { "Desk" },
+                new[] { new Parameter_GncProfit { GncItem = "Desk", Profit = badValue } }));
 
-            Assert.Contains(ex.Issues, i => i.Kind == DataIssueKind.Numeric && i.Detail.Contains("Profit"));
+            Assert.Contains(result.DataIssues, i => i.Kind == DataIssueKind.Numeric && i.Detail.Contains("Profit"));
         }
 
         // 正常值不誤擋：確認修正只是「擴大涵蓋範圍」，不是「所有 double 屬性都被誤判成問題」。
@@ -143,20 +159,78 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             Assert.Single(result.ProfitRows);
             Assert.Equal(12.5, result.ProfitRows[0].Profit);
+            Assert.Empty(result.DataIssues);
         }
 
         [Fact]
-        public void DuplicateSetKey_IsRegisteredByGeneratorAndRejected()
+        public void DuplicateSetKey_IsRegisteredByGeneratorAndReportedWithoutBlocking()
         {
-            var ex = Assert.Throws<DataValidationException>(() =>
-                OptData.Load(() => new GncDataload(
-                    new[] { "Desk", "Desk" },
-                    new[] { new Parameter_GncProfit { GncItem = "Desk", Profit = 12.5 } })));
+            var result = OptData.Load(() => new GncDataload(
+                new[] { "Desk", "Desk" },
+                new[] { new Parameter_GncProfit { GncItem = "Desk", Profit = 12.5 } }));
 
-            Assert.Contains(ex.Issues, issue =>
+            Assert.Equal(2, result.GncItemSet.Count);
+            Assert.Contains(result.DataIssues, issue =>
                 issue.Kind == DataIssueKind.DuplicateKey
                 && issue.Parameter == nameof(Set_GncItem)
                 && issue.Detail.Contains("duplicate Set key"));
+        }
+
+        // 值欄位不進名稱：負數、科學記號不得被當成命名保留字元（'-'、'+'）擋下
+        [Fact]
+        public void CsvLoad_NegativeAndScientificValues_AreNotNamingErrors()
+        {
+            var rows = LoadProfitCsv("GncItem,Profit,QTY\nDesk,-1.5,-5\nChair,2,1E-05\n");
+
+            var result = OptData.Load(() => new GncDataload(new[] { "Desk", "Chair" }, rows));
+
+            Assert.Equal(-5, result.ProfitRows[0].QTY);
+            Assert.Equal(1E-05, result.ProfitRows[1].QTY);
+            Assert.Empty(result.DataIssues);
+        }
+
+        [Fact]
+        public void CsvLoad_KeyWithWhitespace_ReportsInvalidKeyWithoutBlocking()
+        {
+            var rows = LoadProfitCsv("GncItem,Profit,QTY\nChair A,1,5\n");
+
+            var result = OptData.Load(() => new GncDataload(new[] { "Desk" }, rows));
+
+            Assert.Equal("Chair A", Assert.Single(result.ProfitRows).GncItem);
+            Assert.Contains(result.DataIssues, issue =>
+                issue.Kind == DataIssueKind.InvalidKey
+                && issue.Parameter == nameof(Parameter_GncProfit)
+                && issue.Detail.Contains("GncItem='Chair A'")
+                && issue.Detail.Contains("reason=contains_whitespace"));
+        }
+
+        [Fact]
+        public void SetKeyWithReservedCharacter_ReportsInvalidKeyAndSkipsDuplicateCheck()
+        {
+            var result = OptData.Load(() => new GncDataload(
+                new[] { "A@B", "A@B" },
+                Array.Empty<Parameter_GncProfit>()));
+
+            Assert.Equal(2, result.DataIssues.Count);
+            Assert.All(result.DataIssues, issue => Assert.Equal(DataIssueKind.InvalidKey, issue.Kind));
+        }
+
+        [Fact]
+        public void DuplicateParameterKey_IsReportedWithoutBlocking()
+        {
+            var result = OptData.Load(() => new GncDataload(
+                new[] { "Desk" },
+                new[]
+                {
+                    new Parameter_GncProfit { GncItem = "Desk", Profit = 1 },
+                    new Parameter_GncProfit { GncItem = "Desk", Profit = 2 }
+                }));
+
+            Assert.Equal(2, result.ProfitRows.Count);
+            Assert.Contains(result.DataIssues, issue =>
+                issue.Kind == DataIssueKind.DuplicateKey
+                && issue.Parameter == nameof(Parameter_GncProfit)
+                && issue.Detail.Contains("duplicate Parameter key"));
         }
     }
 }

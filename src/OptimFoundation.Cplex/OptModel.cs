@@ -20,6 +20,7 @@ namespace OptimFoundation.Cplex
         private readonly List<Action<OptEngine>> _variableSteps = new List<Action<OptEngine>>();
         private readonly List<Action<OptEngine>> _objectiveSteps = new List<Action<OptEngine>>();
         private readonly List<Action<OptEngine>> _constraintSteps = new List<Action<OptEngine>>();
+        private readonly List<Action<OptEngine>> _startSteps = new List<Action<OptEngine>>();
 
         /// <summary>Creates an empty model definition.</summary>
         public OptModel(string name = "Model")
@@ -92,8 +93,43 @@ namespace OptimFoundation.Cplex
         #endregion
 
 
+        #region Read Existing Solution (MIP start)
+        /// <summary>
+        /// 求解前讀入起始解檔（.sol / .mst），與 <see cref="FromFile"/> 對稱：那個讀模型，這個讀起點。
+        /// 套用時走 <see cref="OptEngine.ReadSolution"/>，在所有建模步驟之後執行（變數要先存在）。
+        /// </summary>
+        /// <param name="fileName">檔名或相對路徑，以 Sols 資料夾為基準；絕對路徑原樣使用。</param>
+        public OptModel ReadSolution(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+                throw Logging.ErrorOnce(
+                    new ArgumentException("Solution file name is required.", nameof(fileName)),
+                    "MODEL_DEFINITION_INVALID", "模型定義不合法", nameof(ReadSolution), Name, "file_name_is_empty");
 
-        /// <summary>Applies all recorded phases in variables, objective, constraints order.</summary>
+            _startSteps.Add(engine => engine.ReadSolution(fileName));
+            return this;
+        }
+
+        /// <summary>
+        /// 求解前以「變數全名 → 值」加一組 MIP start，在所有建模步驟之後執行。
+        /// values 延遲到套用時才取值，前段的解可以等前段跑完再接：<c>.AddMIPStart(() => stage1.Engine.GetSolution())</c>。
+        /// </summary>
+        /// <param name="values">套用時呼叫，回傳 MIP start 內容；回傳 null 會在套用時丟例外。</param>
+        /// <param name="name">MIP start 名稱；null 由 solver 自動命名。</param>
+        public OptModel AddMIPStart(Func<IReadOnlyDictionary<string, double>> values, string name = null)
+        {
+            if (values == null)
+                throw Logging.ErrorOnce(
+                    new ArgumentNullException(nameof(values)),
+                    "MODEL_DEFINITION_INVALID", "模型定義不合法", nameof(AddMIPStart), Name, "values_factory_is_null");
+
+            _startSteps.Add(engine => engine.AddMIPStart(values(), name));
+            return this;
+        }
+        #endregion
+
+
+        /// <summary>Applies all recorded phases in variables, objective, constraints, MIP start order.</summary>
         internal void ApplyTo(OptEngine engine)
         {
             if (engine == null)
@@ -109,6 +145,7 @@ namespace OptimFoundation.Cplex
             foreach (var step in _variableSteps) step(engine);
             foreach (var step in _objectiveSteps) step(engine);
             foreach (var step in _constraintSteps) step(engine);
+            foreach (var step in _startSteps) step(engine);
         }
     }
 }

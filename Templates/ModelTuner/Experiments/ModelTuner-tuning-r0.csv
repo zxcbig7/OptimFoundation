@@ -1,0 +1,6 @@
+﻿RunId,TrialId,Model,TrialLabel,BasedOn,DiffKnobs,Seed,RunAt,Status,ObjectiveValue,BestBound,MipGap,RunTimeMs,TFeasMs,TStallMs,DeltaBound,NodeCount,IterationCount,TrajectoryPoints,VarCount,ConstraintCount,Note
+20260825-072707,1,HospitalRostering_Generator,r0-baseline-s11,,,11,2026-08-25 07:27:16,Optimal,3.5999999999999996,3.6,0,8537.4153,358.2309,7916.9484,0.3000000000000007,406,31709,21,5008,9856,
+20260825-072707,2,HospitalRostering_Generator,r0-baseline-s22,r0-baseline-s11,,22,2026-08-25 07:27:30,Optimal,3.6,3.6,0,13291.1254,520.3621,13249.842,0.30000000000000204,2276,148328,36,5008,9856,
+20260825-072707,3,HospitalRostering_Generator,r0-baseline-s33,r0-baseline-s11,,33,2026-08-25 07:27:37,Optimal,3.5999999999999996,3.6,0,6862.4721,484.0448,6216.6241,0.3000000000000047,531,35092,19,5008,9856,
+20260825-072707,4,HospitalRostering_Generator,r0-baseline-s44,r0-baseline-s11,,44,2026-08-25 07:27:54,Optimal,3.6,3.6,0,16902.0465,473.3278,3006.25,0.2999999999999994,3974,267844,38,5008,9856,
+20260825-072707,5,HospitalRostering_Generator,r0-baseline-s55,r0-baseline-s11,,55,2026-08-25 07:28:03,Optimal,3.6,3.6,0,8642.7844,633.4946,6858.1578,0.30000000000000604,1510,58648,25,5008,9856,

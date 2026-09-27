@@ -1,0 +1,34 @@
+﻿Section,Key,Value
+schema,version,2
+experiment,name,StatsExp_4c90581fba5148da8520c9e1f9f87976
+experiment,description,model stats reconciliation
+experiment,trialCount,2
+experiment,writtenAt,2026-09-28 01:17:05
+run,20260928-011705.startedAt,2026-09-28 01:17:05
+run,20260928-011705.trialCount,2
+model,Consistent.varCount,2
+model,Consistent.constraintCount,1
+model,Unreferenced.varCount,3
+model,Unreferenced.constraintCount,1
+modelStats,Consistent.result,MATCH
+modelStats,Consistent.source,Authored
+modelStats,Consistent.variables,framework=2 index=2 solver=2
+modelStats,Consistent.types,binary 2/2 integer 0/0 continuous 0/0
+modelStats,Consistent.constraints,framework=1 index=1 solver=1
+modelStats,Consistent.specialElements,framework=0 solver=0 (SOS=0 QC=0 indicator=0 semiCont=0 semiInt=0 lazy=0 userCut=0)
+modelStats,Consistent.objective,framework=Maximize solver=Maximize
+modelStats,Consistent.mismatchTrials,0/1
+modelStats,Unreferenced.result,"MISMATCH:Variables,Binary"
+modelStats,Unreferenced.source,Authored
+modelStats,Unreferenced.variables,framework=3 index=3 solver=2
+modelStats,Unreferenced.types,binary 3/2 integer 0/0 continuous 0/0
+modelStats,Unreferenced.constraints,framework=1 index=1 solver=1
+modelStats,Unreferenced.specialElements,framework=0 solver=0 (SOS=0 QC=0 indicator=0 semiCont=0 semiInt=0 lazy=0 userCut=0)
+modelStats,Unreferenced.objective,framework=Maximize solver=Maximize
+modelStats,Unreferenced.mismatchTrials,1/1
+modelStats,Unreferenced.mismatch.Variables,1 個變數已宣告但沒被任何限制式或目標式引用，solver 不會收進模型（VariableB_Pick=1）sample=VariableB_Pick@C
+modelStats,Unreferenced.mismatch.Binary,與 Variables 列同因（該型別的變數有未引用或繞過框架的）
+environment,solver,Cplex
+environment,machine,VICLAI
+baseline,label,base
+baseline,TimeLimit,30

@@ -23,15 +23,22 @@ namespace OptimFoundation.Cplex
         /// 模型名稱
         /// </summary>
         private string _modelName { get; set; }
+
+
+        #region Engine Configuration
         private bool _exportLp { get; set; }
         private bool _exportMps { get; set; }
         private bool _exportSol { get; set; }
         private bool _enableLog { get; set; }
+        # endregion
 
         private readonly ProjectConfig _projectConfig;
         private readonly List<IRange> _constraints = new List<IRange>();
         private readonly string _startTime = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+
+        // Log 儲存
         private MemoryStream _solverLogStream;
+        //
         private StreamWriter _solverLogWriter;
 
         // base 的 _verifyConstraints 管單次 Build 內的正常約束去重；這裡管跨 engine 的 thread 約束去重，生命週期不同
@@ -53,6 +60,12 @@ namespace OptimFoundation.Cplex
 
         /// <summary>以 CplexConfig 預設值建立引擎（32 threads、2GB WorkMem、MIPGap 1e-4、無時限）。</summary>
         public OptEngine() : this(new CplexConfig(), new ProjectConfig()) { }
+
+        /// <summary>
+        /// MIP start 的檢查強度，套用到 <see cref="EngineBase{TModel, TVar, TExpr, TConstr}.AddMIPStart"/>。
+        /// 預設 Auto；前段解只含部分變數時可用 SolveFixed / Repair 讓 CPLEX 補齊。檔案讀入的 start（<see cref="ReadSolution"/>）以檔案內容為準。
+        /// </summary>
+        public MIPStartEffort MipStartEffort { get; set; } = MIPStartEffort.Auto;
 
         /// <summary>本引擎已建立的限制式條數（不含尚未併入 model 的 thread 約束）。</summary>
         public override int ConstraintCount => _constraints.Count;
@@ -147,11 +160,12 @@ namespace OptimFoundation.Cplex
         /// 那兩個由 Solve() 自動觸發、檔名帶時間戳；這個隨時可呼叫、檔名自己決定。
         /// </summary>
         /// <param name="fileName">
-        /// 檔名或相對路徑，以 Models 資料夾為基準；絕對路徑原樣使用。副檔名決定格式（.lp / .mps / .sav）。
+        /// 檔名或相對路徑，以 Models 資料夾為基準；絕對路徑原樣使用。
+        /// 副檔名決定格式：.lp / .mps / .sav，以及各自的 .gz / .bz2（大小寫不拘），其餘副檔名直接拒絕。
         /// 匯出後要再讀回來且需精確重現，用 .sav——.lp / .mps 是文字格式，係數經十進位截斷。
         /// </param>
         /// <exception cref="InvalidOperationException">尚未呼叫 Build()。</exception>
-        /// <exception cref="ArgumentException">fileName 為 null 或空白。</exception>
+        /// <exception cref="ArgumentException">fileName 為 null、空白，或副檔名不是支援的模型格式。</exception>
         public void ExportModelFile(string fileName)
         {
             if (Model == null)
@@ -163,6 +177,8 @@ namespace OptimFoundation.Cplex
                 throw Logging.ErrorOnce(
                     new ArgumentException("Export file name cannot be null or whitespace.", nameof(fileName)),
                     "MODEL_EXPORT_FAILED", "模型匯出失敗", nameof(ExportModelFile), fileName, "file_name_is_empty");
+
+            string format = ResolveModelFileFormat(fileName, "MODEL_EXPORT_FAILED", "模型匯出失敗", nameof(ExportModelFile));
 
             string path;
             if (Path.IsPathRooted(fileName))
@@ -186,7 +202,7 @@ namespace OptimFoundation.Cplex
                     ex.GetBaseException().Message, $"exception={ex.GetType().FullName}");
             }
 
-            Logging.Info($"[OptEngine] Model exported: {path}");
+            Logging.Info($"[OptEngine] Model exported: {path} format={format}");
         }
 
         /// <summary>
@@ -203,24 +219,26 @@ namespace OptimFoundation.Cplex
         /// </remarks>
         /// <param name="fileName">
         /// 檔名或相對路徑，以 Models 資料夾為基準；絕對路徑原樣使用。
-        /// 副檔名決定格式：.lp / .mps / .sav，以及各自的 .gz / .bz2。
+        /// 副檔名決定格式：.lp / .mps / .sav，以及各自的 .gz / .bz2（大小寫不拘），其餘副檔名直接拒絕。
         /// 要求精確重現求解結果請用 .sav——.lp / .mps 是文字格式，係數經十進位截斷。
         /// </param>
         /// <returns>re-index 後的變數數與限制式數。</returns>
         /// <exception cref="InvalidOperationException">尚未呼叫 Build()。</exception>
-        /// <exception cref="ArgumentException">fileName 為 null 或空白。</exception>
+        /// <exception cref="ArgumentException">fileName 為 null、空白，或副檔名不是支援的模型格式。</exception>
         /// <exception cref="FileNotFoundException">檔案不存在。</exception>
         public (int VarCount, int ConstraintCount) ImportModel(string fileName)
         {
             if (Model == null)
                 throw Logging.ErrorOnce(
-                    new InvalidOperationException("ImportModel 必須在 Build() 之後呼叫。"),
+                    new InvalidOperationException("ImportModel 必須在 Model Build 之後使用。"),
                     "MODEL_IMPORT_FAILED", "模型匯入失敗", nameof(ImportModel), fileName, "engine_not_built");
 
             if (string.IsNullOrWhiteSpace(fileName))
                 throw Logging.ErrorOnce(
                     new ArgumentException("Import file name cannot be null or whitespace.", nameof(fileName)),
                     "MODEL_IMPORT_FAILED", "模型匯入失敗", nameof(ImportModel), fileName, "file_name_is_empty");
+
+            string format = ResolveModelFileFormat(fileName, "MODEL_IMPORT_FAILED", "模型匯入失敗", nameof(ImportModel));
 
             string path = Path.IsPathRooted(fileName)
                 ? fileName
@@ -246,8 +264,34 @@ namespace OptimFoundation.Cplex
             }
 
             var counts = ReindexFromModel();
-            Logging.Info($"[OptEngine] Model imported: {path} vars={counts.VarCount} constraints={counts.ConstraintCount}");
+            Logging.Info($"[OptEngine] Model imported: {path} format={format} vars={counts.VarCount} constraints={counts.ConstraintCount}");
             return counts;
+        }
+
+        // CPLEX 依副檔名判格式且大小寫不拘；.NET API 文件（ILOG.CPLEX.xml）只列 .lp / .mps / .sav 與其 .gz / .bz2
+        private static readonly string[] ModelFileExtensions = { ".lp", ".mps", ".sav" };
+        private static readonly string[] ModelFileCompressions = { ".gz", ".bz2" };
+
+        /// <summary>
+        /// 由副檔名判定模型檔格式（例：LP、SAV.GZ）；不支援就留 Error Log 後 throw ArgumentException。
+        /// CPLEX 遇到不認得的副檔名也會丟 1424 Invalid filetype，這裡提前擋下，讓錯誤帶上支援清單。
+        /// </summary>
+        private static string ResolveModelFileFormat(string fileName, string eventCode, string description, string context)
+        {
+            // 
+            string ext = Path.GetExtension(fileName);
+            string compression = ModelFileCompressions.FirstOrDefault(c => c.Equals(ext, StringComparison.OrdinalIgnoreCase));
+            string formatExt = compression == null ? ext : Path.GetExtension(Path.GetFileNameWithoutExtension(fileName));
+            string format = ModelFileExtensions.FirstOrDefault(f => f.Equals(formatExt, StringComparison.OrdinalIgnoreCase));
+
+            if (format == null)
+                throw Logging.ErrorOnce(
+                    new ArgumentException(
+                        $"Unsupported model file extension in '{fileName}'. Use .lp / .mps / .sav, optionally followed by .gz / .bz2.",
+                        nameof(fileName)),
+                    eventCode, description, context, fileName, "unsupported_extension", "supported=.lp|.mps|.sav[.gz|.bz2]");
+
+            return (format + compression).TrimStart('.').ToUpperInvariant();
         }
 
         /// <summary>
@@ -283,6 +327,16 @@ namespace OptimFoundation.Cplex
                 }
             }
 
+            // 匯入的內容不經 Build*Vs / Create*，由這裡把索引到的數量登記成建模記帳，Solve() 前再與模型本身的計數對帳
+            int binary = 0, integer = 0;
+            foreach (var v in Variables.Values)
+            {
+                if (v.Type == NumVarType.Bool) binary++;
+                else if (v.Type == NumVarType.Int) integer++;
+            }
+            RecordImportedModel(Variables.Count - binary - integer, integer, binary, _constraints.Count,
+                _objective == null ? (Core.ObjectiveSense?)null : ToCoreSense(_objective.Sense));
+
             return (Variables.Count, _constraints.Count);
         }
 
@@ -296,6 +350,123 @@ namespace OptimFoundation.Cplex
             while (Variables.ContainsKey(unique)) unique += "#";
             Logging.Warn($"[MODEL_IMPORT_DUPLICATE_NAME] 匯入的變數名重複 | name={name} renamed={unique} result=renamed");
             return unique;
+        }
+
+        #endregion
+
+        #region 解匯入 / 匯出（.sol / .mst，MIP start pipeline）
+
+        /// <summary>
+        /// 從檔案讀入起始解，與 <see cref="ImportModel"/> 對稱：那支換模型，這支給模型一個起點。
+        /// .mst → CPLEX ReadMIPStarts（可含多組 start 與各自 effort）；其餘（.sol）→ CPLEX ReadSolution。
+        /// 典型 pipeline：前段 <see cref="ExportSolution"/> 寫出 .sol → 後段讀入當 MIP start。
+        /// </summary>
+        /// <remarks>
+        /// MUST 在模型建完（變數都已存在）、Solve() 之前呼叫；檔內的變數以名稱對應，模型沒有的名稱由 CPLEX 忽略。
+        /// LP 模型讀 .sol 會成為 advanced basis（CPLEX 行為）；.mst 只對 MIP 有意義，LP 會 warn 後略過。
+        /// CplexConfig.AdvancedStart = 0 時 CPLEX 不使用任何起始解，本方法仍讀檔但會 warn。
+        /// </remarks>
+        /// <param name="fileName">檔名或相對路徑，以 Sols 資料夾為基準；絕對路徑原樣使用。</param>
+        /// <returns>讀入後模型持有的 MIP start 數；LP 為 0。</returns>
+        /// <exception cref="InvalidOperationException">尚未呼叫 Build()。</exception>
+        /// <exception cref="ArgumentException">fileName 為 null 或空白。</exception>
+        /// <exception cref="FileNotFoundException">檔案不存在。</exception>
+        public int ReadSolution(string fileName)
+        {
+            if (Model == null)
+                throw Logging.ErrorOnce(
+                    new InvalidOperationException("ReadSolution 必須在 Build() 之後呼叫。"),
+                    "SOLUTION_IMPORT_FAILED", "起始解匯入失敗", nameof(ReadSolution), fileName, "engine_not_built");
+
+            if (string.IsNullOrWhiteSpace(fileName))
+                throw Logging.ErrorOnce(
+                    new ArgumentException("Solution file name cannot be null or whitespace.", nameof(fileName)),
+                    "SOLUTION_IMPORT_FAILED", "起始解匯入失敗", nameof(ReadSolution), fileName, "file_name_is_empty");
+
+            string path = Path.IsPathRooted(fileName)
+                ? fileName
+                : FolderDir.Solution.GetPathFile(fileName);
+
+            if (!File.Exists(path))
+                throw Logging.ErrorOnce(
+                    new FileNotFoundException($"找不到解檔 '{path}'。", path),
+                    "SOLUTION_IMPORT_FAILED", "起始解匯入失敗", nameof(ReadSolution), path, "file_not_found");
+
+            bool isMst = path.EndsWith(".mst", StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith(".mst.gz", StringComparison.OrdinalIgnoreCase);
+            bool isMip = Model.IsMIP();
+
+            if (isMst && !isMip)
+            {
+                Logging.Warn($"[MIP_START_SKIPPED] 略過 MIP start 檔 | path={path} modelType={ModelType} reason=model_is_lp result=skipped");
+                return 0;
+            }
+
+            if (Config is CplexConfig { AdvancedStart: 0 })
+                Logging.Warn($"[SOLUTION_START_DISABLED] AdvancedStart=0，CPLEX 不會使用起始解 | path={path} result=continued");
+
+            try
+            {
+                if (isMst) Model.ReadMIPStarts(path);
+                else Model.ReadSolution(path);
+            }
+            catch (System.Exception ex)
+            {
+                throw Logging.ErrorOnce(
+                    ex, "SOLUTION_IMPORT_FAILED", "起始解匯入失敗", nameof(ReadSolution), path,
+                    ex.GetBaseException().Message, $"exception={ex.GetType().FullName}");
+            }
+
+            int starts = isMip ? Model.GetNMIPStarts() : 0;
+            Logging.Info($"[OptEngine] Solution read: {path} format={(isMst ? "mst" : "sol")} modelType={ModelType} mipStarts={starts}");
+            return starts;
+        }
+
+        /// <summary>
+        /// 立即把目前的解寫成 .sol，檔名自己決定——給 <see cref="ReadSolution"/> 在下一段讀回。
+        /// 與 ProjectConfig.ExportSol 的差別同 <see cref="ExportModelFile"/>：那個由 Solve() 自動觸發、檔名帶時間戳。
+        /// </summary>
+        /// <param name="fileName">檔名或相對路徑，以 Sols 資料夾為基準；絕對路徑原樣使用。</param>
+        /// <returns>實際寫出的完整路徑。</returns>
+        /// <exception cref="InvalidOperationException">尚未 Build()，或最近一次求解沒有可用解。</exception>
+        /// <exception cref="ArgumentException">fileName 為 null 或空白。</exception>
+        public string ExportSolution(string fileName)
+        {
+            if (Model == null || !(Status == SolveStatus.Optimal || Status == SolveStatus.Feasible))
+                throw Logging.ErrorOnce(
+                    new InvalidOperationException("ExportSolution 必須在 Solve() 取得可用解之後呼叫。"),
+                    "SOLUTION_EXPORT_FAILED", "解匯出失敗", nameof(ExportSolution), fileName, "no_solution_available",
+                    $"status={Status}");
+
+            if (string.IsNullOrWhiteSpace(fileName))
+                throw Logging.ErrorOnce(
+                    new ArgumentException("Solution file name cannot be null or whitespace.", nameof(fileName)),
+                    "SOLUTION_EXPORT_FAILED", "解匯出失敗", nameof(ExportSolution), fileName, "file_name_is_empty");
+
+            string path;
+            if (Path.IsPathRooted(fileName))
+            {
+                path = fileName;
+            }
+            else
+            {
+                FolderDir.Solution.CreateFolder();
+                path = FolderDir.Solution.GetPathFile(fileName);
+            }
+
+            try
+            {
+                Model.WriteSolution(path);
+            }
+            catch (System.Exception ex)
+            {
+                throw Logging.ErrorOnce(
+                    ex, "SOLUTION_EXPORT_FAILED", "解匯出失敗", nameof(ExportSolution), path,
+                    ex.GetBaseException().Message, $"exception={ex.GetType().FullName}");
+            }
+
+            Logging.Info($"[OptEngine] Solution exported: {path}");
+            return path;
         }
 
         #endregion
@@ -391,9 +562,11 @@ namespace OptimFoundation.Cplex
         /// 設定目標式（覆寫語意）。
         /// CPLEX 的 AddMinimize / AddMaximize 本身是「新增」語意（重複呼叫會產生多個目標式），
         /// 故這裡先移除既有目標式再新增。如此 base 的軟性 penalty（每加一項就重設一次目標式）才能正確運作。
+        /// 常數項疊加到 expr 的 Constant（CPLEX 的 objective offset），不覆蓋 expr 原本帶的常數。
         /// </summary>
-        protected override void SetObjective(ILinearNumExpr expr, Core.ObjectiveSense sense)
+        protected override void SetObjective(ILinearNumExpr expr, double constant, Core.ObjectiveSense sense)
         {
+            if (constant != 0) expr.Constant += constant;
             if (_objective != null) Model.Remove(_objective);
             _objective = sense == Core.ObjectiveSense.Minimize
                 ? Model.AddMinimize(expr)
@@ -405,6 +578,22 @@ namespace OptimFoundation.Cplex
         {
             if (lb.HasValue) variable.LB = lb.Value;
             if (ub.HasValue) variable.UB = ub.Value;
+        }
+
+        /// <summary>
+        /// 送出 MIP start；effort 取 <see cref="MipStartEffort"/>。CPLEX 以 name 區分多組 start，null 交由 CPLEX 自動命名。
+        /// </summary>
+        protected override void AddMIPStartCore(IReadOnlyList<(INumVar var, double value)> entries, string name)
+        {
+            var vars = new INumVar[entries.Count];
+            var vals = new double[entries.Count];
+            for (int i = 0; i < entries.Count; i++)
+            {
+                vars[i] = entries[i].var;
+                vals[i] = entries[i].value;
+            }
+            if (name == null) Model.AddMIPStart(vars, vals, MipStartEffort);
+            else Model.AddMIPStart(vars, vals, MipStartEffort, name);
         }
 
         /// <summary>
@@ -420,6 +609,41 @@ namespace OptimFoundation.Cplex
             int integer = Model.NintVars;
             return (Math.Max(0, Model.Ncols - binary - integer), integer, binary, Model.IsMIP());
         }
+
+        /// <summary>
+        /// 向 CPLEX 模型讀規模統計：`Ncols` / `Nrows` 與型別分布是模型自己的計數，
+        /// SOS / 二次限制式 / indicator / semi-continuous / lazy / user cut 是框架不建立也不索引的元素，合計進 SpecialElements。
+        /// 同 <see cref="ReadModelComposition"/>，`Ncols` 只算已收進模型的變數。
+        /// </summary>
+        protected override ModelCounts ReadSolverModelCounts()
+        {
+            if (Model == null) return new ModelCounts();
+
+            var composition = ReadModelComposition();
+            int sos = Model.NSOSs;
+            int quadratic = Model.NQCs;
+            int indicators = Model.Nindicators;
+            int semiContinuous = Model.NsemiContVars;
+            int semiInteger = Model.NsemiIntVars;
+            int lazy = Model.NLCs;
+            int userCuts = Model.NUCs;
+            IObjective objective = Model.GetObjective();
+
+            return new ModelCounts
+            {
+                Variables = Model.Ncols,
+                Binary = composition.Binary,
+                Integer = composition.Integer,
+                Continuous = composition.Continuous,
+                Constraints = Model.Nrows,
+                SpecialElements = sos + quadratic + indicators + semiContinuous + semiInteger + lazy + userCuts,
+                SpecialDetail = $"SOS={sos} QC={quadratic} indicator={indicators} semiCont={semiContinuous} semiInt={semiInteger} lazy={lazy} userCut={userCuts}",
+                Objective = objective == null ? (Core.ObjectiveSense?)null : ToCoreSense(objective.Sense),
+            };
+        }
+
+        private static Core.ObjectiveSense ToCoreSense(ILOG.Concert.ObjectiveSense sense)
+            => sense == ILOG.Concert.ObjectiveSense.Maximize ? Core.ObjectiveSense.Maximize : Core.ObjectiveSense.Minimize;
 
         #endregion
 
@@ -485,11 +709,7 @@ namespace OptimFoundation.Cplex
             bool ok = Status == SolveStatus.Optimal || Status == SolveStatus.Feasible;
 
             if (ok)
-            {
-                // Infeasible / Unbounded 時 CPLEX 會 throw，只在有解時才讀
-                BestObjValue = Model.GetBestObjValue();
-                MIPGap = Model.GetMIPRelativeGap();
-            }
+                ReadBoundAndGap();
 
             LastMetrics = new SolveMetrics
             {
@@ -509,7 +729,7 @@ namespace OptimFoundation.Cplex
             };
 
             if (ok && _exportSol)
-                Model.WriteSolution(FolderDir.Sol.GetPathFile($"{proj}_Solution_{_startTime}.sol"));
+                Model.WriteSolution(FolderDir.Solution.GetPathFile($"{proj}_Solution_{_startTime}.sol"));
 
             if (Status == SolveStatus.Infeasible && _constraints.Count > 0)
                 _conflictConstraints = RunConflictAnalysis();
@@ -520,6 +740,23 @@ namespace OptimFoundation.Cplex
                 Logging.Info($"[OptEngine] Status={Status}");
 
             return ok;
+        }
+
+        // BestBound / MIP gap 只對 MIP 有意義：LP 不向 CPLEX 讀 gap（GetMIPRelativeGap 限 MIP），bound 即目標值、gap = 0。
+        // 只在有解時呼叫——Infeasible / Unbounded 時 CPLEX 讀值會 throw。
+        private void ReadBoundAndGap()
+        {
+            if (Model.IsMIP())
+            {
+                BestObjValue = Model.GetBestObjValue();
+                MIPGap = Model.GetMIPRelativeGap();
+                Logging.Info($"[MIP gap 讀取] modelType={ModelType} bestBound={BestObjValue} gap={MIPGap}");
+                return;
+            }
+
+            BestObjValue = Model.GetObjValue();
+            MIPGap = 0;
+            Logging.Info($"[MIP gap 略過] modelType={ModelType} reason=not_mip bestBound={BestObjValue} gap=0");
         }
 
         /// <summary>
@@ -589,10 +826,16 @@ namespace OptimFoundation.Cplex
         // 以下是給「繼承 OptEngine 自己寫建模流程」的子類別用的短名稱包裝；
         // 一般專案走 Pool API（AddLHS / AddRHS / Create*），不需要碰這一區。
 
-        /// <summary>建立單一變數的簡寫。預設為 [0, double.MaxValue] 的連續變數。</summary>
-        protected INumVar CreateVar(string name, double lb = 0, double ub = double.MaxValue,
+        // 這幾個入口不經 pool，但仍是框架的建模 API：一律登記建模記帳，模型統計對帳才不會把它們當成「繞過框架」。
+
+        /// <summary>建立單一變數的簡寫。預設為 [0, <see cref="OptBounds.Infinity"/>] 的連續變數。</summary>
+        protected INumVar CreateVar(string name, double lb = 0, double ub = OptBounds.Infinity,
             VarType type = VarType.Continuous)
-            => AddVariable(name, lb, ub, type);
+        {
+            var variable = AddVariable(name, lb, ub, type);
+            RecordDirectVariable(name, type);
+            return variable;
+        }
 
         /// <summary>組線性表達式的簡寫。</summary>
         protected ILinearNumExpr Expr(IEnumerable<(double coef, INumVar var)> terms)
@@ -600,21 +843,34 @@ namespace OptimFoundation.Cplex
 
         /// <summary>直接建立 lhs ≤ rhs 限制式（不經 pool）。</summary>
         protected IRange AddLE(string name, ILinearNumExpr lhs, double rhs)
-            => AddConstraint(name, lhs, ConstraintSense.LessEqual, rhs);
+            => AddDirectConstraint(name, lhs, ConstraintSense.LessEqual, rhs);
 
         /// <summary>直接建立 lhs ≥ rhs 限制式（不經 pool）。</summary>
         protected IRange AddGE(string name, ILinearNumExpr lhs, double rhs)
-            => AddConstraint(name, lhs, ConstraintSense.GreaterEqual, rhs);
+            => AddDirectConstraint(name, lhs, ConstraintSense.GreaterEqual, rhs);
 
         /// <summary>直接建立 lhs = rhs 限制式（不經 pool）。</summary>
         protected IRange AddEQ(string name, ILinearNumExpr lhs, double rhs)
-            => AddConstraint(name, lhs, ConstraintSense.Equal, rhs);
+            => AddDirectConstraint(name, lhs, ConstraintSense.Equal, rhs);
 
         /// <summary>設定最小化目標式（覆寫既有目標式）。</summary>
-        protected void Minimize(ILinearNumExpr expr) => SetObjective(expr, Core.ObjectiveSense.Minimize);
+        protected void Minimize(ILinearNumExpr expr) => SetDirectObjective(expr, Core.ObjectiveSense.Minimize);
 
         /// <summary>設定最大化目標式（覆寫既有目標式）。</summary>
-        protected void Maximize(ILinearNumExpr expr) => SetObjective(expr, Core.ObjectiveSense.Maximize);
+        protected void Maximize(ILinearNumExpr expr) => SetDirectObjective(expr, Core.ObjectiveSense.Maximize);
+
+        private IRange AddDirectConstraint(string name, ILinearNumExpr lhs, ConstraintSense sense, double rhs)
+        {
+            var range = AddConstraint(name, lhs, sense, rhs);
+            RecordDirectConstraint(name);
+            return range;
+        }
+
+        private void SetDirectObjective(ILinearNumExpr expr, Core.ObjectiveSense sense)
+        {
+            SetObjective(expr, 0, sense);
+            RecordDirectObjective(sense);
+        }
 
         #endregion
 
@@ -632,6 +888,8 @@ namespace OptimFoundation.Cplex
                 Model.Remove(obj);
             }
             _objective = null;
+            ResetObjectiveTracking();
+            ResetReferencedVariables();
             if (_constraints.Count > 0)
             {
                 var arr = _constraints.ToArray();

@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
 using OptimFoundation.Core;
+using OptimFoundation.Core.IO;
 using OptimFoundation.Cplex.Tests.Mocks;
 using Xunit;
 
@@ -12,9 +12,11 @@ namespace OptimFoundation.Cplex.Tests.Integration
     /// <summary>
     /// Solver 參數全覆蓋：逐一設定 Configuration() 接線的每個 CplexConfig 旋鈕，
     /// 用 Trial.Capture 真跑一次 CPLEX 求解（CPLEX 拒絕該參數會丟例外 → 測試失敗），
-    /// 再 Save 成 Experiment CSV/JSON。每個參數一列，Label = "參數=值"。
+    /// 再 Save 成 Experiment CSV。每個參數一列，Label = "參數=值"。
     /// 目的：證明遷移後每個 SetParam 路徑 runtime 可用，且反映在實驗 CSV 上。
     /// </summary>
+    // 每次 Solve() 都會寫 log（建模摘要、模型統計對帳）；Logging 是全域單例，與其他讀 log 斷言的測試同一 collection 才不會互相污染
+    [Collection("Logging")]
     public class SolverParamCoverageTests
     {
         private static readonly bool CplexAvailable =
@@ -181,13 +183,6 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
             const string expName = "solver-param-coverage";
 
-            // Experiment.Save 對同名實驗是 append 語意，先清前次殘留才能 assert 精確筆數
-            foreach (var ext in new[] { ".json", ".csv" })
-            {
-                string stale = FolderDir.Experiment.GetPathFile(expName + ext);
-                if (File.Exists(stale)) File.Delete(stale);
-            }
-
             var exp = new Experiment(expName, "逐一套用每個 CplexConfig solver 旋鈕並記錄一次求解");
 
             var failures = new List<string>();
@@ -244,12 +239,15 @@ namespace OptimFoundation.Cplex.Tests.Integration
             foreach (var (label, _) in Knobs)
                 Assert.Contains(label, csv);
 
-            var saved = Experiment.Load(expName);
+            // 主表只記「跟基準（第一筆 Threads=4）差在哪」：每個 Symmetry trial 的 DiffKnobs 都要帶出它設的值
+            using var reader = new StringReader(csv);
+            var records = CsvCtrl.ParseCsv(reader).ToList();
+            int labelColumn = Array.IndexOf(records[0], "TrialLabel");
+            int diffColumn = Array.IndexOf(records[0], "DiffKnobs");
             foreach (var (label, value) in expectedSymmetry)
             {
-                var trial = Assert.Single(saved.Trials, t => t.Label == label);
-                var recordedValue = Assert.IsType<JsonElement>(trial.Config.SolverSpecific["Symmetry"]);
-                Assert.Equal(value, recordedValue.GetInt32());
+                var row = Assert.Single(records, r => r[labelColumn] == label);
+                Assert.Contains($"Symmetry={value}", row[diffColumn].Split(';'));
             }
         }
 

@@ -14,11 +14,6 @@ namespace OptimFoundation.Cplex
     /// <summary>
     /// <see cref="OptEngine"/> 的組態套用部分：把 <see cref="CplexConfig"/> 與 ProjectConfig 的每個設定送進 CPLEX。
     /// </summary>
-    /// <remarks>
-    /// 拆成獨立檔案的原因：這一段對應官方 CPLEX 22.1.1 的 182 顆旋鈕，
-    /// 混在 OptEngine.cs 裡會把「建模型」的主線淹掉。兩邊是同一個 partial class，
-    /// 私有欄位（_projectConfig、_solverLogWriter…）與巢狀型別（TeeWriter）都共用。
-    /// </remarks>
     public partial class OptEngine
     {
         #region Configuration
@@ -155,11 +150,10 @@ namespace OptimFoundation.Cplex
             if (_exportLp || _exportSol)
             {
                 FolderDir.Model.CreateFolder();
-                FolderDir.Sol.CreateFolder();
+                FolderDir.Solution.CreateFolder();
                 FolderDir.IIS.CreateFolder();
-            }
-            if (_exportMps)
                 FolderDir.Model.CreateFolder();
+            }
 
             #region 設定容忍區間(Optimality tolerance)
             // "CPLEX求解設定 - Optimality tolerance (預設: 1e-06 )
@@ -1213,5 +1207,5 @@ namespace OptimFoundation.Cplex
         }
 
         #endregion
-}
+    }
 }

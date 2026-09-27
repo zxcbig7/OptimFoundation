@@ -79,6 +79,9 @@ namespace OptimFoundation.Cplex.Tests.Unit
             var engine = new MockEngine();
             engine.Build();
             engine.BuildBVs<VarS>(new List<string> { "A" });
+            // 變數要被引用才會進 solver 模型；沒引用的話模型統計對帳會 WARN（MODEL_STATS_MISMATCH），與本測試的 scale guard 無關
+            engine.AddLHS(1.0, new VarS { S = "A" });
+            engine.CreateLessEqual("CapA");
 
             bool ok = engine.Solve();
 

@@ -10,28 +10,28 @@ namespace OptimFoundation.Core
     public class FolderDir
     {
         /// <summary>輸入資料（參數 CSV、set 檔）。唯一的「讀」資料夾，不會被保留期清理掃到。</summary>
-        public static ProjFolder Data = new ProjFolder("Data");
+        public static ProjFolder Input = new ProjFolder("Input");
 
         /// <summary>解輸出的 CSV（CsvSolutionSink 寫這裡）。</summary>
-        public static ProjFolder Solution = new ProjFolder("Solution");
+        public static ProjFolder Output = new ProjFolder("Output");
 
         /// <summary>框架與 solver 的 log 檔。</summary>
-        public static ProjFolder Log = new ProjFolder("Logs");
+        public static ProjFolder Log = new ProjFolder("Log");
 
         /// <summary>模型匯出檔（.lp / .mps）。</summary>
-        public static ProjFolder Model = new ProjFolder("Models");
+        public static ProjFolder Model = new ProjFolder("Model");
 
         /// <summary>infeasible 時的 conflict / IIS 分析結果。</summary>
-        public static ProjFolder IIS = new ProjFolder("IISs");
+        public static ProjFolder IIS = new ProjFolder("IIS");
 
         /// <summary>solver 的解檔（.sol）。</summary>
-        public static ProjFolder Sol = new ProjFolder("Sols");
+        public static ProjFolder Solution = new ProjFolder("Solution");
 
-        /// <summary>實驗記錄（.csv / .json / -trajectory.csv）。</summary>
-        public static ProjFolder Experiment = new ProjFolder("Experiments");
+        /// <summary>實驗記錄（.csv / -meta.csv / -trajectory.csv）。</summary>
+        public static ProjFolder Experiment = new ProjFolder("Experiment");
 
         /// <summary>框架產生的輸出資料夾（不含輸入用的 Data），供保留期清理逐一掃描。</summary>
-        private static readonly ProjFolder[] _outputs = { Log, Model, Sol, IIS, Experiment, Solution };
+        private static readonly ProjFolder[] _outputs = { Log, Model, Solution, IIS, Experiment, Output };
 
         /// <summary>清除所有輸出資料夾中 LastWriteTime 超過 retentionDays 天的舊檔，回傳總刪除數。retentionDays &lt;= 0 時視為關閉、不清理。</summary>
         public static int PurgeAllOutputs(int retentionDays)

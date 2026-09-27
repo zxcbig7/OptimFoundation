@@ -17,7 +17,7 @@ namespace OptimFoundation.Core.IO
         /// 缺檔的錯誤也從 DirectoryNotFound 降為明確的 FileNotFound（少了哪個檔一目了然）。
         /// 與輸出端對稱——Solution/ 等輸出資料夾寫入時本就自動建立（CsvCtrl.WriteSolution → TryCreateFile）。
         /// </summary>
-        public CsvDataSource() => FolderDir.Data.CreateFolder();
+        public CsvDataSource() => FolderDir.Input.CreateFolder();
 
         /// <summary>從 <c>Data/{fileName}</c> 載入完整 RFC4180 資料列，包含必填表頭；副檔名可省略。</summary>
         private IEnumerable<string[]> LoadRows(string fileName)
@@ -27,7 +27,7 @@ namespace OptimFoundation.Core.IO
                     new ArgumentNullException(nameof(fileName)),
                     "CSV_SOURCE_INVALID", "CSV 資料來源不合法", nameof(LoadRows), fileName, "file_name_is_empty");
 
-            using var reader = new StreamReader(FolderDir.Data.GetPathFile(EnsureCsv(fileName)), Encoding.UTF8);
+            using var reader = new StreamReader(FolderDir.Input.GetPathFile(EnsureCsv(fileName)), Encoding.UTF8);
             foreach (var row in CsvCtrl.ParseCsv(reader))
                 yield return row;
         }

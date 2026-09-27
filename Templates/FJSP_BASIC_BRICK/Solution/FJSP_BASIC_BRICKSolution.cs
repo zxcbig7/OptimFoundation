@@ -62,7 +62,7 @@ namespace FJSP_BASIC_BRICK
             var solution = new FJSP_BASIC_BRICKSolution(data, assignedEqp, start, complete, makespan);
             solution.ValidateRules();
 
-            FolderDir.Solution.CreateFolder();
+            FolderDir.Output.CreateFolder();
             CsvCtrl.WriteSolution<VariableB_Assign>(engine, "FJSP_BASIC_BRICK", "SYSTEM");
             CsvCtrl.WriteSolution<VariableC_Start>(engine, "FJSP_BASIC_BRICK", "SYSTEM");
             CsvCtrl.WriteSolution<VariableC_Complete>(engine, "FJSP_BASIC_BRICK", "SYSTEM");

@@ -59,16 +59,12 @@ namespace OptimFoundation.Cplex.Tests.Unit
                 ExportLP = true,
                 ExportMPS = true,
                 ExportSol = true,
-                DataId = new string("data".ToCharArray()),
-                UserId = new string("user".ToCharArray()),
             };
 
             AssertAllPublicMembersEqual(cplex, cplex.Clone());
             ProjectConfig projectClone = project.Clone();
             AssertAllPublicMembersEqual(project, projectClone);
             Assert.Same(project.ProjectName, projectClone.ProjectName);
-            Assert.Same(project.DataId, projectClone.DataId);
-            Assert.Same(project.UserId, projectClone.UserId);
         }
 
         [Fact]

@@ -22,7 +22,7 @@
 | `GetSetVarValues<T>()` / `GetSetVarNames<T>()` / `GetSolution("TypeName")` | **不可用** | `VariableSets` 為空，一律回空字典 |
 | `CsvCtrl.WriteSolution<T>()` / `OracleDBCtrl.WriteSolution<T>()` | **不可用** | 同上，沒有型別可寫 |
 | `RegisteredVariableCount` | **失真** | 恆為 0；請改看 `VariableCount` |
-| `ObjectiveSense` | **失真** | 恆為 `Minimize`（`EngineBase` 預設值），`ImportModel` 不依檔案內容更新它 |
+| `ObjectiveSense` | 可用 | `ImportModel` 依檔案內容同步；`.mps` 沒有方向欄位，CPLEX 把 maximize 寫成係數取負的 minimize，讀回來目標值反號 |
 | `ObjectiveTermCount` / `SoftConstraintCount` / `SoftPenaltyTermCount` | **失真** | 恆為 0；量的是框架 pool 的累積，匯入的目標式沒經過 pool |
 | `VariableBuildCounts` / `ConstraintBuildCounts` | **失真** | 為空；Expected vs Actual 對帳只在 `Build*Vs` 路徑成立 |
 

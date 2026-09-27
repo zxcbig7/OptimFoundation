@@ -35,7 +35,7 @@ namespace RosteringProblem
 
             ValidateRules(data, assign, groupMismatch, nightToDay, doubleOffFlag, doubleOffLT2, off1Day, sixDayWork, belowAvg, weekendLT4);
 
-            FolderDir.Solution.CreateFolder();
+            FolderDir.Output.CreateFolder();
             CsvCtrl.WriteSolution<VariableB_ShiftAssign>(engine, "RosteringProblem", "SYSTEM");
 
             Logging.Info("[RosteringProblem solution] 十條限制式全數驗證通過。");

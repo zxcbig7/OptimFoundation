@@ -17,7 +17,13 @@ namespace OptimFoundation.Core
              .Where(p => p.CanRead && p.CanWrite && p.GetIndexParameters().Length == 0)
              .ToArray());
 
-        public void InitClassBySets(params object[] values)
+        public void InitClassBySets(params object[] values) => Init(values, validateTokens: true);
+
+        // 資料來源載入走這條：只有 index 欄位的 key 合法性有意義，交給 DataContext 驗證以 Warning 回報，
+        // 值欄位（QTY 等）本來就不進名稱，負數或科學記號不該被當成命名錯誤擋下
+        internal void InitFromDataRow(object[] values) => Init(values, validateTokens: false);
+
+        private void Init(object[] values, bool validateTokens)
         {
             var properties = GetProps(GetType());
             if (values.Length != properties.Length)
@@ -35,7 +41,8 @@ namespace OptimFoundation.Core
                 try
                 {
                     object? converted = ConvertValue(values[index], properties[index].PropertyType);
-                    ModelNaming.Token(context, converted);
+                    if (validateTokens)
+                        ModelNaming.Token(context, converted);
                     properties[index].SetValue(this, converted);
                 }
                 catch (Exception ex) when (ex is FormatException || ex is OverflowException)

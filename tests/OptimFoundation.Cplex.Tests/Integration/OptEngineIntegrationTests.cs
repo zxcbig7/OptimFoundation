@@ -363,7 +363,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             }
             finally
             {
-                foreach (string suffix in new[] { ".csv", ".json", "-trajectory.csv" })
+                foreach (string suffix in new[] { ".csv", "-meta.csv", "-trajectory.csv" })
                 {
                     string path = FolderDir.Experiment.GetPathFile(tag + suffix);
                     if (File.Exists(path)) File.Delete(path);

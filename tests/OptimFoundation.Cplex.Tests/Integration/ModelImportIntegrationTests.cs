@@ -47,6 +47,16 @@ namespace OptimFoundation.Cplex.Tests.Integration
             return fileName;
         }
 
+        private static string ReadLog(string tag)
+        {
+            string file = Directory.GetFiles(FolderDir.Log.GetPath(), $"{tag}_*.txt")
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .First();
+            using var fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(fs);
+            return reader.ReadToEnd();
+        }
+
         [Theory(DisplayName = "匯入後 re-index：變數與限制式索引復原，解值正確")]
         [InlineData(".lp")]
         [InlineData(".mps")]
@@ -69,6 +79,27 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.True(engine.Solve());
             Assert.Equal(SolveStatus.Optimal, engine.Status);
             Assert.Equal(26.0, engine.GetObjectiveValue(), 6);
+        }
+
+        [Theory(DisplayName = "副檔名大小寫不拘、支援 .gz / .bz2 壓縮，匯出與匯入 log 都帶 format")]
+        [InlineData(".LP", "LP")]
+        [InlineData(".sav.gz", "SAV.GZ")]
+        [InlineData(".mps.bz2", "MPS.BZ2")]
+        public void ExportImport_ExtensionVariants_RoundTripAndLogFormat(string extension, string expectedFormat)
+        {
+            if (!CplexAvailable) return;
+            string tag = "ModelFormat_" + Guid.NewGuid().ToString("N");
+            Logging.SetLogFileName(tag);
+
+            string fileName = ExportReferenceModel(extension);
+            using var engine = NewEngine();
+            var counts = engine.ImportModel(fileName);
+
+            Assert.Equal(2, counts.VarCount);
+            Assert.Equal(2, counts.ConstraintCount);
+            string log = ReadLog(tag);
+            Assert.Contains($"format={expectedFormat}", log.Split('\n').Single(l => l.Contains("[OptEngine] Model exported:")));
+            Assert.Contains($"format={expectedFormat}", log.Split('\n').Single(l => l.Contains("[OptEngine] Model imported:")));
         }
 
         [Theory(DisplayName = "匯入後 ModelType 依原模型變數型別判定：Binary / Integer / 連續不混淆")]
@@ -285,6 +316,42 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
             using var engine = new OptEngine(new CplexConfig(), new ProjectConfig { EnableSolverLog = false });
             Assert.Throws<InvalidOperationException>(() => engine.ImportModel("anything.lp"));
+        }
+
+        [Theory(DisplayName = "匯出副檔名不支援：交給 CPLEX 前就擋下，留 Error Log、不產生檔案")]
+        [InlineData(".txt")]
+        [InlineData("")]
+        [InlineData(".bz2")]
+        public void ExportModelFile_UnsupportedExtension_ThrowsAndLogs(string extension)
+        {
+            if (!CplexAvailable) return;
+            string tag = "ModelExportExt_" + Guid.NewGuid().ToString("N");
+            Logging.SetLogFileName(tag);
+            string fileName = $"ExportExtTest_{Guid.NewGuid():N}{extension}";
+
+            using var engine = NewEngine();
+            BuildReferenceModel(engine);
+
+            Assert.Throws<ArgumentException>(() => engine.ExportModelFile(fileName));
+            Assert.False(File.Exists(FolderDir.Model.GetPathFile(fileName)));
+            Assert.Contains(
+                $"[MODEL_EXPORT_FAILED] 模型匯出失敗 | context=ExportModelFile value={fileName} reason=unsupported_extension supported=.lp|.mps|.sav[.gz|.bz2] result=aborted",
+                ReadLog(tag));
+        }
+
+        [Fact(DisplayName = "匯入副檔名不支援：先於檔案存在檢查，丟 ArgumentException 並留 Error Log")]
+        public void ImportModel_UnsupportedExtension_ThrowsAndLogs()
+        {
+            if (!CplexAvailable) return;
+            string tag = "ModelImportExt_" + Guid.NewGuid().ToString("N");
+            Logging.SetLogFileName(tag);
+
+            using var engine = NewEngine();
+
+            Assert.Throws<ArgumentException>(() => engine.ImportModel("no_such_model.txt"));
+            Assert.Contains(
+                "[MODEL_IMPORT_FAILED] 模型匯入失敗 | context=ImportModel value=no_such_model.txt reason=unsupported_extension supported=.lp|.mps|.sav[.gz|.bz2] result=aborted",
+                ReadLog(tag));
         }
     }
 }

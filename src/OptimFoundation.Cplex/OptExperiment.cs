@@ -141,6 +141,7 @@ namespace OptimFoundation.Cplex
             // 這批實驗的識別：用開始時間。同一個實驗跑很多次時，靠它分辨哪些列是同一批。
             string runId = DateTime.Now.ToString("yyyyMMdd-HHmmss");
             int trialId = 0;
+            var runTrials = new List<Trial>();
 
             foreach (var cell in cells)
             {
@@ -154,14 +155,33 @@ namespace OptimFoundation.Cplex
 
                 // Label 只放設定名稱；模型名放到 Trial.Model，不再黏成一個字串
                 var trial = Trial.Capture(engine, cell.Label, () => engine.Solve());
-                trial.RunId = runId;
+                trial.ExperimentId = runId;
                 trial.TrialId = ++trialId;
                 trial.Model = cell.Model.Name;
                 experiment.AddTrial(trial);
+                runTrials.Add(trial);
             }
 
+            LogModelStatsSummary(runTrials);
             experiment.Save();
             return experiment;
+        }
+
+        // 每個 cell 的對帳細節已由 Solve() 寫進 log；這裡只收一行總結，tuning 時看一眼就知道整批的模型是否一致
+        private void LogModelStatsSummary(List<Trial> runTrials)
+        {
+            var checkedTrials = runTrials.Where(t => t.Metrics?.ModelStats != null).ToList();
+            var mismatched = checkedTrials.Where(t => !t.Metrics.ModelStats.IsMatch).ToList();
+            if (mismatched.Count == 0)
+            {
+                Logging.Info($"[Experiment] 模型統計對帳：{checkedTrials.Count}/{runTrials.Count} 個 cell 全部一致");
+                return;
+            }
+
+            string detail = string.Join(" ", mismatched
+                .GroupBy(t => t.Model)
+                .Select(g => $"{g.Key}({g.First().Metrics.ModelStats.Summary})"));
+            Logging.Warn($"[MODEL_STATS_MISMATCH] 實驗中有 cell 的框架建模統計與 solver 模型不一致 | experiment={_name} cells={mismatched.Count}/{checkedTrials.Count} models={detail} result=continued");
         }
 
         /// <summary>

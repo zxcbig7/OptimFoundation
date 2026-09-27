@@ -6,7 +6,7 @@ namespace Tutorial
 {
     // 三態 CLI：
     //   dotnet run              -- 正式求解（預設）：讀 Data/*.csv → solve → ValidateRules → 解寫回 Solution/*.csv
-    //   dotnet run -- exp       -- 實驗模式：同一模型 × 三組 MIP emphasis 對照，Experiments/*.csv/json
+    //   dotnet run -- exp       -- 實驗模式：同一模型 × 三組 MIP emphasis 對照，Experiment/*.csv
     internal static class Program
     {
         private static int Main(string[] args)
@@ -24,8 +24,6 @@ namespace Tutorial
                 EnableSolverLog = true,
                 ExportLP = true,
                 ExportSol = true,
-                DataId = "Tutorial",
-                UserId = "SYSTEM",
             };
             // 唯一 production baseline/champion；experiment clone 它，prod 直接使用它。
             var productionBaseline = new CplexConfig

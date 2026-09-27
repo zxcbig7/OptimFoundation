@@ -166,7 +166,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Contains("[變數建立完成] type=VarS count=2/2", log);
             Assert.Contains("[變數建立摘要] 已建立=2/2（實際/預期） 變數類別=1 種 模型內合計=2", log);
             Assert.Contains("[目標式建構開始] sense=Minimize terms=1", log);
-            Assert.Contains("[目標式建構完成] sense=Minimize terms=1 result=success", log);
+            Assert.Contains("[目標式建構完成] sense=Minimize terms=1 constant=0 result=success", log);
             Assert.Contains("[限制式建立] 群組=Demand 已建立=1/2（實際/預期）", log);
             Assert.Contains("[限制式建立] 群組=Capacity 已建立=0/1（實際/預期）", log);
             Assert.Contains("[限制式建立摘要] 已建立=1/3（實際/預期） 群組=2 個 solver 實際持有=", log);
@@ -385,6 +385,43 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Contains("key=Chair", log);
             Assert.Contains("reason=no_matching_row", log);
             Assert.Contains("result=missing", log);
+        }
+
+        [Fact]
+        public void DataValidation_Issue_LogsWarningAndContinues()
+        {
+            string tag = StartLog("DataValidationWarn");
+
+            var data = OptData.Load(() => new GncDataload(
+                new[] { "Desk", "Desk" },
+                new[] { new Parameter_GncProfit { GncItem = "Desk", Profit = double.NaN } }));
+
+            Assert.Equal(2, data.DataIssues.Count);
+            string log = ReadLog(tag);
+            Assert.Contains("[DATA_VALIDATION_WARNING]", log);
+            Assert.Contains("context=Set_GncItem reason=DuplicateKey", log);
+            Assert.Contains("context=Parameter_GncProfit reason=Numeric", log);
+            Assert.Contains("result=continued", log);
+            Assert.Contains("Issues (2)", log);
+            Assert.DoesNotContain("| ERROR |", log);
+        }
+
+        [Fact]
+        public void DataValidation_InvalidKey_LogsWarningWithoutNamingError()
+        {
+            string tag = StartLog("DataValidationInvalidKey");
+
+            var data = OptData.Load(() => new GncDataload(
+                new[] { "Chair A" },
+                Array.Empty<Parameter_GncProfit>()));
+
+            var issue = Assert.Single(data.DataIssues);
+            Assert.Equal(DataIssueKind.InvalidKey, issue.Kind);
+            string log = ReadLog(tag);
+            Assert.Contains("context=Set_GncItem reason=InvalidKey", log);
+            Assert.Contains("reason=contains_whitespace", log);
+            Assert.DoesNotContain("[MODEL_NAME_INVALID]", log);
+            Assert.DoesNotContain("| ERROR |", log);
         }
 
         [Fact]

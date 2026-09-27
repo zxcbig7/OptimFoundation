@@ -10,7 +10,7 @@ namespace OptimFoundation.Core
 
     #region Data 驗證
 
-    public enum DataIssueKind { DuplicateKey, Numeric }
+    public enum DataIssueKind { DuplicateKey, Numeric, InvalidKey }
 
     public sealed class DataIssue
     {
@@ -19,15 +19,6 @@ namespace OptimFoundation.Core
         public string Detail { get; }
         public DataIssue(DataIssueKind kind, string parameter, string detail)
             => (Kind, Parameter, Detail) = (kind, parameter, detail);
-    }
-
-    /// <summary>資料驗證失敗例外，包含所有重複 key 與數值不合理的問題。</summary>
-    public sealed class DataValidationException : Exception
-    {
-        public IReadOnlyList<DataIssue> Issues { get; }
-        public DataValidationException(IReadOnlyList<DataIssue> issues) : base(BuildMessage(issues)) => Issues = issues;
-        private static string BuildMessage(IReadOnlyList<DataIssue> issues)
-            => string.Join(Environment.NewLine, issues.Select(i => $"[{i.Kind}] {i.Parameter}: {i.Detail}"));
     }
 
     /// <summary>驗證已載入的 Set 與 Parameter 資料列。</summary>
@@ -60,8 +51,8 @@ namespace OptimFoundation.Core
             var seen = new HashSet<string>(StringComparer.Ordinal);
             for (var row = 0; row < set.Rows.Count; row++)
             {
-                var key = ComposeKey(set.Name, row, set.Rows[row]);
-                if (!seen.Add(key))
+                var key = ComposeKey(set.Name, set.IndexFields, row, set.Rows[row], issues);
+                if (key != null && !seen.Add(key))
                     issues.Add(new DataIssue(
                         DataIssueKind.DuplicateKey,
                         set.Name,
@@ -74,8 +65,8 @@ namespace OptimFoundation.Core
             var seen = new HashSet<string>(StringComparer.Ordinal);
             for (var row = 0; row < parameter.Rows.Count; row++)
             {
-                var key = ComposeKey(parameter.Name, row, parameter.Rows[row].Index);
-                if (!seen.Add(key))
+                var key = ComposeKey(parameter.Name, parameter.IndexFields, row, parameter.Rows[row].Index, issues);
+                if (key != null && !seen.Add(key))
                     issues.Add(new DataIssue(
                         DataIssueKind.DuplicateKey,
                         parameter.Name,
@@ -83,9 +74,29 @@ namespace OptimFoundation.Core
             }
         }
 
-        private static string ComposeKey(string source, int row, IReadOnlyList<object> values)
-            => string.Join("\u001f", values.Select((value, index) =>
-                ModelNaming.Token($"{source} row #{row + 1} index #{index + 1}", value)));
+        // key 值不合法（與模型命名同一套規則）→ 記 InvalidKey 並回 null，該列不參與重複比對
+        private static string ComposeKey(
+            string source, string[] indexFields, int row, IReadOnlyList<object> values, List<DataIssue> issues)
+        {
+            var tokens = new string[values.Count];
+            var valid = true;
+            for (var index = 0; index < values.Count; index++)
+            {
+                if (ModelNaming.TryToken(values[index], out var token, out var reason))
+                {
+                    tokens[index] = token;
+                    continue;
+                }
+
+                valid = false;
+                var field = index < indexFields.Length ? indexFields[index] : $"index #{index + 1}";
+                issues.Add(new DataIssue(
+                    DataIssueKind.InvalidKey,
+                    source,
+                    $"row {row + 1}, {field}='{ModelNaming.DisplayValue(token)}' reason={reason}"));
+            }
+            return valid ? string.Join("\u001f", tokens) : null;
+        }
 
         private static void CheckNumericValues(ParamRegistration parameter, List<DataIssue> issues)
         {
@@ -183,6 +194,9 @@ namespace OptimFoundation.Core
         private readonly List<SetRegistration> _sets = new();
         private readonly List<ParamRegistration> _params = new();
 
+        /// <summary>載入時資料驗證發現的問題；每筆都已寫成 Warning，不阻擋後續建模。</summary>
+        public IReadOnlyList<DataIssue> DataIssues { get; private set; } = Array.Empty<DataIssue>();
+
         /// <summary>註冊一份 Set 資料及其 key schema，供重複 key 驗證與摘要輸出。</summary>
         protected void RegisterSet<T>(
             IReadOnlyList<T> rows,
@@ -231,21 +245,20 @@ namespace OptimFoundation.Core
 
         protected void ValidateData()
         {
-            var issues = DataValidator.Validate(_sets, _params);
-            if (issues.Count > 0)
-                throw Logging.ErrorOnce(
-                    new DataValidationException(issues),
-                    "DATA_VALIDATION_FAILED", "資料驗證失敗", nameof(ValidateData), issues.Count,
-                    "validation_issues_found",
-                    $"issues={string.Join(" || ", issues.Select(issue => $"{issue.Parameter}:{issue.Detail}"))}");
+            DataIssues = DataValidator.Validate(_sets, _params);
+            foreach (var issue in DataIssues)
+                Logging.Warn(
+                    $"[DATA_VALIDATION_WARNING] 資料驗證發現問題 | context={issue.Parameter} " +
+                    $"reason={issue.Kind} detail={issue.Detail} result=continued");
 
             Logging.Info("===== Data load summary =====");
             Logging.Info($"Sets ({_sets.Count}):");
             foreach (var set in _sets)
-                Logging.Info($"  {set.Name}: index=[{string.Join(",", set.IndexFields)}], rows={set.RowCount}, duplicateKeys=0");
+                Logging.Info($"  {set.Name}: index=[{string.Join(",", set.IndexFields)}], rows={set.RowCount}");
             Logging.Info($"Parameters ({_params.Count}):");
             foreach (var parameter in _params)
                 Logging.Info($"  {parameter.Name}: index=[{string.Join(",", parameter.IndexFields)}], rows={parameter.RowCount}");
+            Logging.Info($"Issues ({DataIssues.Count})");
         }
     }
 
