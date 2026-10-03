@@ -224,7 +224,7 @@ flowchart TD
 4. **接一條龍**：`new OptProject(名稱).Solve(模型, solver 設定, onSolved: 解輸出)`。
 5. **求解**：引擎算，解由輸出插頭寫出去。
 
-> 現成範例：`Templates/Tutorial/` 就是這套架構的最小可跑實作，照它的模式起手最快（第 23 章）。
+> 現成範例：`Templates/Template/` 是標準範本，每個積木以它示範的框架功能命名，照它的模式起手最快（第 23 章）。
 
 ### 2.8 進階：對應哪些設計模式（新手可跳過）
 
@@ -451,6 +451,8 @@ $$Produce_p \le Demand_p Open_p \quad \forall p$$
 ## 6. 建立固定專案結構
 
 本文案例放在 AI-Modeling 的 `Projects/MiniProduction/`；放在 framework repo 時對應 `Templates/<Project>/`，兩者只差在 csproj 怎麼參考框架（第 7 章）。
+
+framework repo 的標準範本是 `Templates/Template/`：同樣的八個資料夾，積木以框架功能命名；新專案從它複製起手（第 23 章）。
 
 專案根目錄放 `Program.cs`、`<Project>.csproj` 與 `status.json`。
 
@@ -2001,7 +2003,9 @@ canonical hard model 不使用 soft constraint API。
 
 ## 23. 範本導覽
 
-`Templates/` 下每個資料夾都是可以直接 build、run 的專案，照它們的模式起手最快。
+`Templates/Template/` 是標準範本：每個積木以它示範的框架功能命名（例如 `Set_SparsePair`、`Constraint_LessEqualSoft`），數學意義只寫在 `Model/Template_Model.md`。新專案從它複製起手。
+
+其他資料夾是以實際題目寫成的舊範例，同樣可以直接 build、run：
 
 | 範本 | 示範什麼 |
 | --- | --- |
@@ -2011,26 +2015,44 @@ canonical hard model 不使用 soft constraint API。
 | `Sudoku_SHC279` | 多維集合與題盤匯入（用法見該範本 `README.md`） |
 | `TSP_MultiDimSet` | 稀疏弧集合（多維 Set）與 TSP；資料直接維護在 CSV |
 
-### 23.1 Tutorial 的結構
+### 23.1 Template 功能對照
 
-```text
-Tutorial/
-├── Model/Tutorial_Model.md
-├── Set/Set_*.cs
-├── Parameter/Parameter_*.cs
-├── Variable/Variable[B|C|I]_*.cs
-├── Objective/ObjectiveFunction.cs
-├── Constraint/Constraint_*.cs
-├── Solution/TutorialSolution.cs
-├── Data/Dataload.cs
-├── Data/*.csv（範例資料；執行時一律讀 FolderDir.Input，不會自動複製）
-└── Program.cs
-```
+| 框架功能 | 檔案 | API |
+| --- | --- | --- |
+| 一維 Set | `Set/Set_StringKey.cs` | `[OptSet]` + `[OptDim<string>]` |
+| DateTime 維度 | `Set/Set_DateKey.cs` | `[OptDim<DateTime>]`；CSV 寫 `yyyy-MM-dd`，模型名稱轉成 `yyyy_MM_dd` |
+| 稀疏多維 Set | `Set/Set_SparsePair.cs` | 兩個 `OptDim`；資料列只放實際存在的組合 |
+| Scalar / 一維 / 二維 Parameter | `Parameter/Parameter_Scalar.cs`、`Parameter_OneDim.cs`、`Parameter_TwoDim.cs` | `[OptParam]`；scalar 用 `.Single().QTY`，其餘用 `FindParameterOrLog` 查 |
+| B / I / C 三種變數 | `Variable/VariableB_Binary.cs`、`VariableI_Integer.cs`、`VariableC_Continuous.cs` | 類別名前綴決定型別 |
+| 稀疏 domain、笛卡兒積 domain、零維變數 | `Program.cs` 的 `BuildModel` | `BuildVars<T>(set_SparsePair)`、`BuildVars<T>(set_StringKey, set_DateKey)`、`BuildVars<T>()` |
+| 目標式 | `Objective/ObjectiveFunction.cs` | `AddLHS` + `CreateMinimize`（最大化用 `CreateMaximize`） |
+| `=`、`<=`、`>=` | `Constraint/Constraint_Equal.cs`、`Constraint_LessEqual.cs`、`Constraint_GreaterEqual.cs` | `AddLHS` / `AddRHS` + `CreateEqual` / `CreateLessEqual` / `CreateGreaterEqual(this, dims...)` |
+| 範圍限制式 | `Constraint/Constraint_Range.cs` | `CreateRange(lb, ub, this)`；只吃 `AddLHS` |
+| 軟性限制式 | `Constraint/Constraint_LessEqualSoft.cs` | `CreateLessEqualSoft(rhs, penalty, this)`；違反量罰分由框架加進目標式 |
+| 資料載入與 import-data | `Data/Dataload.cs` | `IDataSource.Load<T>`、`CsvDataSource.LoadData`、`CsvCtrl.WriteRows` |
+| 記憶體資料來源 | `Data/Dataload.cs` 的 `CreateScaledSource` | `InMemoryDataSource.AddRows<T>`，交給 `Dataload(IDataSource)` |
+| 資料驗收 | `Program.cs`、`Solution/TemplateSolution.cs` | `OptData.Load(() => new Dataload())` 後由 `ValidateData` 先看 `DataIssues`，再檢查全格矩陣與跨表關聯 |
+| 解驗證 | `Solution/TemplateSolution.cs` | `GetSetVarValues<T>`；變數全名用 `new VariableX { ... }.ToString()` 取得，不手工拼 |
+| 解輸出 | `Program.cs` 的 `onSolved`、`Solution/TemplateSolution.cs` | `Solve(..., onSolved: ...)` 傳入 `CsvSolutionSink`；`ISolutionSink.BeginBatch` → `Write<T>` → `Commit`；改寫 DB 只換傳入的 sink |
+| 輸出設定與 solver 設定 | `Program.cs` | `ProjectConfig` + `project.LoadConfig`；`productionBaseline` 是唯一的 `CplexConfig`，實驗用 `Clone()` 後改 Seed |
+| Warm start | `TemplateSolution.CreateStartValues` + `BuildModel` | `OptModel.AddMIPStart` |
+| 收斂軌跡 | `Program.cs` | 正式求解 `beforeSolve: engine => engine.EnableTrajectory()`；實驗 `CaptureTrajectory(true)` |
+| 兩軸 CLI | `Program.cs` | 模型來源二選一：`OptModel.ReadModel(file)` 或 CSV → `BuildModel`；exp 與正式求解只拿 `model`（第 16 章） |
+| 多模型實驗 | `Program.cs` 的 exp | `AddModel` 兩次（Canonical、Scaled）× `AddConfig` 五個 seed，共 10 個 trial |
 
 ```powershell
-dotnet run          # 正式求解：讀 FolderDir.Input 的 CSV → solve → ValidateRules → 解寫到 FolderDir.Output
-dotnet run -- exp   # 實驗：同一模型 × 三組 MIP emphasis，紀錄寫成 Experiment/Tutorial-tuning-r1-*.csv
+dotnet run # CSV → 正式求解 → 解驗證 → 解寫到 Output/
+dotnet run -- exp # Canonical、Scaled 兩個模型 × 5 seeds
+dotnet run -- import-data raw-source # Input/raw-source.csv 拆成 canonical CSV
+dotnet run -- read-model <file> exp # 讀模型檔做實驗；不加 exp 就是正式求解
 ```
+
+### 23.2 從 Template 起手新專案
+
+1. 複製整個資料夾（不含 `bin/`、`obj/`、`Generated/`），資料夾改成新專案名。
+2. 檔名與檔案內容裡的 `Template` 全部換成新專案名：csproj 檔名與 `RootNamespace` / `AssemblyName`、`namespace`、`new OptProject(...)`、`TemplateSolution.cs` 與類別名、`Model/Template_Model.md`、`BeginBatch` 的 dataId、錯誤訊息。換完用搜尋確認一處不剩。
+3. 依新的 Model.md 逐個積木替換：從 23.1 找到同類功能的檔案，複製後改成業務名；用不到的功能（soft、range、MIP start、Scaled 實驗等）整段刪掉，`BuildModel` 與 `TemplateSolution` 跟著改。
+4. framework 範本不自動複製資料，第一次執行前把 CSV 放進輸出目錄：`New-Item -ItemType Directory -Force .\bin\Debug\net8.0\Input; Copy-Item .\Data\*.csv .\bin\Debug\net8.0\Input\`。
 
 ---
 

@@ -35,6 +35,9 @@ namespace OptimFoundation.Cplex.Tests.Mocks
         public string S { get; set; } = "";
     }
 
+    // 零維變數：沒有任何維度 property
+    internal class VariableC_ZeroDim : VariableBase { }
+
     // 相容前綴：X → Continuous；Y → Integer
     internal class VariableX_LegacyAmt : VariableBase
     {

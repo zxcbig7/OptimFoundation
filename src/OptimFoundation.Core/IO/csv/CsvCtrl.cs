@@ -112,7 +112,7 @@ namespace OptimFoundation.Core.IO
         }
 
         /// <summary>
-        /// 把某變數型別的解值寫到 FolderDir.Output 下的 {型別名}.csv（表頭：VAR_TYPE,set…,QTY）。
+        /// 把某變數型別的解值寫到 FolderDir.Output 下的 {型別名}.csv（表頭：VAR_TYPE,set…,QTY；零維變數為 VAR_TYPE,QTY）。
         /// 表頭欄名 = property 名；欄位相容時可被 IDataSource.Load&lt;T&gt; 讀回（按名對位、多餘欄自動忽略）。
         /// dataId / userId 僅供 DB sink 用；CSV 不輸出這兩欄。
         /// </summary>
@@ -131,14 +131,17 @@ namespace OptimFoundation.Core.IO
                 var sol = engine.GetSolution(classInfo.TypeName);
 
                 using var sw = new StreamWriter(file, append: false, _csvWrite);
-                string cols = "VAR_TYPE," + string.Join(",", classInfo.SetNames.Select(s => s.ToUpper())) + ",QTY";
-                sw.WriteLine(cols);
+                // 逐欄 Join：零維變數沒有 set 欄，不能在 VAR_TYPE 與 QTY 之間留空欄
+                var cols = new[] { "VAR_TYPE" }
+                    .Concat(classInfo.SetNames.Select(s => s.ToUpper()))
+                    .Append("QTY");
+                sw.WriteLine(string.Join(",", cols));
 
                 foreach (var kv in sol)
                 {
                     string[] parts = kv.Key.Split('@');
                     // 數值用 InvariantCulture round-trip 格式，讀回不失真
-                    string row = parts[0] + "," + string.Join(",", parts.Skip(1)) + "," + kv.Value.ToString("R", CultureInfo.InvariantCulture);
+                    string row = string.Join(",", parts.Append(kv.Value.ToString("R", CultureInfo.InvariantCulture)));
                     sw.WriteLine(row);
                 }
 

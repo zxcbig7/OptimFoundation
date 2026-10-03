@@ -27,7 +27,7 @@ OptimFoundation 是 C# / .NET 8 的 solver-agnostic MILP framework。Core 不引
 - `src/OptimFoundation.Core/`：data rows、IO、naming、EngineBase、logging、experiments。
 - `src/OptimFoundation.Generators/`：`[OptSet]` / `[OptParam]` / `[OptVar]` + primitive `OptDim` source generation。
 - `src/OptimFoundation.Cplex/`：CPLEX engine、model、project、experiment、config。
-- `Templates/`：現行 consumer examples。
+- `Templates/`：現行 consumer examples；`Templates/Template/` 是標準範本（積木以示範的框架功能命名，功能對照見 developer-guide 第 23 章，新專案從它複製）。
 - `tests/OptimFoundation.Cplex.Tests/`：unit/integration tests。
 - `specs/developer-guide.md`：唯一說明文件（概念入門、逐步教學、範本導覽、API 權威）；教學內容一律寫進這份，不另開文件。
 - `CodeMap.md`：source map。

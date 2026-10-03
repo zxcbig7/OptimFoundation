@@ -108,11 +108,18 @@ namespace OptimFoundation.Core
 
         /// <summary>解結果表的 INSERT（欄位 DATA_ID, VAR_TYPE, 各維度, QTY, USER_ID），對得上 <see cref="VarTableCreateCmd"/>。</summary>
         public string VarInsertCmd(string tableName) =>
-            $"INSERT INTO {tableName} (DATA_ID, VAR_TYPE, {ColNames}, QTY, USER_ID) VALUES (:DATA_ID, :VAR_TYPE, {ParamPlaceholders}, :QTY, :USER_ID)";
+            InsertCmd(tableName, new[] { "DATA_ID", "VAR_TYPE" }.Concat(SetNames).Concat(new[] { "QTY", "USER_ID" }));
 
         /// <summary>參數表的 INSERT（欄位 DATA_ID + 各維度），對得上 <see cref="ParamTableCreateCmd"/>。</summary>
         public string ParamInsertCmd(string tableName) =>
-            $"INSERT INTO {tableName} (DATA_ID, {ColNames}) VALUES (:DATA_ID, {ParamPlaceholders})";
+            InsertCmd(tableName, new[] { "DATA_ID" }.Concat(SetNames));
+
+        // 逐欄 Join：零維型別沒有維度欄，不能留下「, ,」這種空欄位
+        private static string InsertCmd(string tableName, IEnumerable<string> columns)
+        {
+            var names = columns.ToArray();
+            return $"INSERT INTO {tableName} ({string.Join(", ", names)}) VALUES ({string.Join(", ", names.Select(name => $":{name}"))})";
+        }
 
         /// <summary>解結果表的 CREATE TABLE：DATA_ID / VAR_TYPE / 各維度 / QTY / USER_ID（預設 USER）/ TIME（預設 SYSTIMESTAMP）。</summary>
         public string VarTableCreateCmd(string tableName) =>
