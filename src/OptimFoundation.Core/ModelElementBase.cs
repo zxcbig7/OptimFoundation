@@ -20,8 +20,7 @@ namespace OptimFoundation.Core
         /// <summary>依 public 可寫屬性的宣告順序轉型並填入維度值，同時檢查命名 token；數量不符、無法轉型或 token 不合法都會拋例外。</summary>
         public void InitClassBySets(params object[] values) => Init(values, validateTokens: true);
 
-        // 載入資料時先轉換欄位值；只有維度欄位會組成名稱，命名檢查交由 DataContext 記錄警告，
-        // 值欄位（QTY 等）本來就不進名稱，負數或科學記號不該被當成命名錯誤擋下
+        // 值欄位不參與命名；維度命名檢查交由 DataContext 記警告。
         internal void InitFromDataRow(object[] values) => Init(values, validateTokens: false);
 
         private void Init(object[] values, bool validateTokens)
@@ -83,8 +82,7 @@ namespace OptimFoundation.Core
     /// <summary>一筆 Set 資料代表一組有效的維度值，不包含 QTY。</summary>
     public abstract class SetRowBase : ModelElementBase
     {
-        // Set 只用 @ 串接維度值，供限制式命名與查解。加上類別名會與 BuildVars 的名稱不符，
-        // 導致 TryGetValue 查不到；呼叫端若將缺值當成 0，便會誤讀解答。
+        // Set 名稱須與 BuildVars 的維度部分一致，否則查不到解。
         /// <summary>只用 @ 串接維度值，不含類別名。</summary>
         public override string ToString() => string.Join(KeySeparator, KeyParts());
     }

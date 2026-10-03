@@ -101,9 +101,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
     }
 
     /// <summary>
-    /// 驗證 DbCtrlBase.ExecuteInTransaction 如何開始、提交及回滾交易：
-    /// 以測試用 IDbConnection/IDbTransaction 取代資料庫連線，不需要 Oracle 也能檢查這些流程。
-    /// 若移除 Rollback() 呼叫，處理失敗的測試必須失敗，確保測試有檢查到回滾行為。
+    /// 以假連線驗證交易開始、提交、回滾與巢狀交易，不連線 Oracle。
     /// </summary>
     public class DbCtrlBaseTransactionTests
     {
@@ -120,8 +118,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Equal(0, conn.LastTransaction.RollbackCallCount);
         }
 
-        // work 丟例外 → Rollback 被呼叫、例外原樣傳出、Commit 未被呼叫。
-        // 若刪除 DbCtrlBase 的 tx.Rollback() 呼叫，本測試必須失敗。
+        // work 失敗須回滾、保留原例外且不得提交。
         [Fact]
         public void ExecuteInTransaction_WorkThrows_RollsBack_RethrowsOriginalException_NeverCommits()
         {
@@ -136,8 +133,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Equal(0, conn.LastTransaction.CommitCallCount);
         }
 
-        // 巢狀呼叫：外層已在交易中，內層再呼叫 ExecuteInTransaction → 只建立一次連線、只 begin/commit 一次，
-        // 內層不提前 commit。
+        // 巢狀交易共用連線；僅由外層提交。
         [Fact]
         public void ExecuteInTransaction_Nested_OnlyCreatesConnectionOnce_OnlyCommitsOnce()
         {
@@ -158,8 +154,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Equal(0, conn.LastTransaction.RollbackCallCount);
         }
 
-        // 交易期間的內層 Execute 使用同一組連線與交易，且 work 尚未執行完前不釋放連線；
-        // 交易結束後清空共用連線與交易的參照，讓下一次呼叫可以重新開始交易。
+        // 內層共用連線與交易；外層結束後釋放並清空參照。
         [Fact]
         public void ExecuteInTransaction_InnerOperationsShareAmbientConnection_NotDisposedDuringWork_ClearedAfter()
         {

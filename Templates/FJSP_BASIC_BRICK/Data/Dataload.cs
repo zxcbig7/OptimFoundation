@@ -37,7 +37,6 @@ namespace FJSP_BASIC_BRICK
             .GroupBy(x => x.Lot)
             .Max(g => g.Sum(x => x.MinTime)) - 1;
 
-        //public Dataload() : this(new DbDataSource()) { }
         public Dataload() : this(new CsvDataSource()) { }
 
         /// <summary>載入資料來源中已備妥的集合與參數，不在此產生範例資料。</summary>
@@ -56,9 +55,8 @@ namespace FJSP_BASIC_BRICK
         }
 
         /// <summary>
-        /// import 模式：依規模、seed 與工時範圍產生標準 CSV；相同輸入與 seed 會產生相同資料。
-        /// rawFile 相對於 FolderDir.Input、不帶副檔名；內容見 FolderDir.Input 下的 raw/FJSP_Instance.csv（表頭 Lots,Operations,Eqps,Seed,MinHours,MaxHours）。
-        /// 產生資料所需的迴圈與 Random 集中在 import；求解時使用上面的 IDataSource 建構子，只讀取已備妥的 CSV。
+        /// import：依規模、seed 與工時範圍產生可重現的 CSV。
+        /// rawFile 相對於 FolderDir.Input，不帶副檔名；表頭為 Lots,Operations,Eqps,Seed,MinHours,MaxHours。
         /// </summary>
         public Dataload(string rawFile)
         {

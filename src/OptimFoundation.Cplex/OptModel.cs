@@ -16,7 +16,6 @@ namespace OptimFoundation.Cplex
         private readonly string _sourceFile;
 
         #region  Build Model Steps
-        // 註冊要執行的建模步驟
         private readonly List<Action<OptEngine>> _variableSteps = new List<Action<OptEngine>>();
         private readonly List<Action<OptEngine>> _objectiveSteps = new List<Action<OptEngine>>();
         private readonly List<Action<OptEngine>> _constraintSteps = new List<Action<OptEngine>>();
@@ -63,15 +62,12 @@ namespace OptimFoundation.Cplex
         public string SourceFile => _sourceFile;
 
         /// <summary>
-        /// 以既有模型檔（.lp / .mps / .sav）定義模型，取代逐步建模。
-        /// 套用時呼叫 <see cref="OptEngine.ReadModel"/>，讀檔後自動建立變數與限制式的查找索引，
-        /// 因此仍可記錄求解統計、分析衝突限制式（IIS）或依名稱取解；無法依 C# 變數類別取解，因為匯入模型沒有這些類別。
+        /// 指定既有模型檔（.lp / .mps / .sav），套用模型時才呼叫 <see cref="OptEngine.ReadModel"/>。
         /// </summary>
         /// <param name="fileName">檔名或相對路徑，以 FolderDir.Model 為基準；絕對路徑原樣使用。</param>
         /// <param name="name">實驗紀錄用的模型名；省略時取檔名（不含副檔名）。</param>
         /// <remarks>
-        /// 仍可再串 <see cref="AddVariables"/> / <see cref="AddObjective"/> / <see cref="AddConstraints"/>：
-        /// 匯入先執行，之後才依序套用這些步驟，用於在既有模型上追加內容。
+        /// 先匯入，再執行追加的建模步驟；型別化取解的命名限制見 <see cref="OptEngine.ReadModel"/>。
         /// </remarks>
         public static OptModel ReadModel(string fileName, string name = null)
         {
@@ -112,7 +108,7 @@ namespace OptimFoundation.Cplex
 
         /// <summary>
         /// 指定一組起始解（MIP start），內容為「變數全名 → 值」；建模完成後、求解前才加入引擎。
-        /// 套用模型時才呼叫 values，因此可讀取前一次求解的結果，例如 <c>.AddMIPStart(() => stage1.Engine.GetSolution())</c>。
+        /// values 延後至套用模型時呼叫，可讀取前一次求解結果。
         /// </summary>
         /// <param name="values">套用時呼叫，回傳 MIP start 內容；回傳 null 會在套用時丟例外。</param>
         /// <param name="name">MIP start 名稱；null 由 solver 自動命名。</param>

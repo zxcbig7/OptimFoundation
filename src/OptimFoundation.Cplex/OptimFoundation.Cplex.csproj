@@ -5,7 +5,7 @@
     <RootNamespace>OptimFoundation.Cplex</RootNamespace>
     <Nullable>disable</Nullable>
     <LangVersion>latest</LangVersion>
-    <!-- 產出 XML 文件，讓引用 DLL 的專案能顯示 IntelliSense 說明。 -->
+    <!-- 供引用 DLL 的專案顯示 IntelliSense。 -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <CplexDir Condition="'$(CplexDir)' == ''">C:\IBM\ILOG\CPLEX_Studio2211</CplexDir>
   </PropertyGroup>

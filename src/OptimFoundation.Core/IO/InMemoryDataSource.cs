@@ -6,8 +6,7 @@ using System.Linq;
 namespace OptimFoundation.Core.IO
 {
     /// <summary>
-    /// 把程式提供的資料列存放在記憶體，供範例、單元測試或程式產生的模型資料使用。
-    /// 用 AddRows 加入含表頭的字串列，或 Set/Parameter 物件；Dataload 可透過 IDataSource 讀取。
+    /// 以 AddRows 登記含表頭的字串列或 Set/Parameter 物件，供 IDataSource 讀取。
     /// </summary>
     public sealed class InMemoryDataSource : IDataSource
     {

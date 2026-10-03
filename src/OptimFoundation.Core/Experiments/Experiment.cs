@@ -7,16 +7,13 @@ using System.Text.RegularExpressions;
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 收集同一問題在不同模型或設定下的求解結果，每次求解記成一筆 <see cref="Trial"/>。
-    /// 收集完呼叫 <see cref="Save"/>，把紀錄接在 FolderDir.Experiment 下這個專案的四個累積檔尾端：
-    /// {Project}-trial.csv（一列一 trial）、-meta.csv（說明）、-summary.csv（每組設定一列）、-trajectory.csv（一列一個軌跡點，有才寫）。
-    /// 檔案依功能分、不依實驗或批次分：每一列最前面是 RecordedAt（寫入時間）、Experiment（實驗名）、RunId（批次），靠這三欄分辨；舊列不改不刪。
+    /// 收集多組模型與設定的 Trial；Save 寫出同名覆寫的實驗 CSV，詳見該方法。
     /// </summary>
     public class Experiment
     {
-        /// <summary>專案名，決定寫進哪一組累積檔：FolderDir.Experiment 下的 {Project}-trial.csv 等。</summary>
+        /// <summary>專案名，輸出檔名的前段：FolderDir.Experiment 下的 {Project}-{Name}-trial.csv 等。</summary>
         public string Project { get; set; }
-        /// <summary>實驗名，寫在每一列的 Experiment 欄，用來分辨同一專案的不同實驗（例：tuning-r1；正式求解是 solve）。</summary>
+        /// <summary>實驗名，輸出檔名的後段（例：tuning-r1；正式求解是 solve）。</summary>
         public string Name { get; set; }
         /// <summary>實驗目的描述（自由文字，寫進 -meta.csv 供日後辨識）。</summary>
         public string Description { get; set; }
@@ -29,14 +26,13 @@ namespace OptimFoundation.Core
         public bool WriteSummary { get; set; } = true;
 
         /// <summary>
-        /// 彙總同一模型與設定在不同 seed 下的結果：各狀態、找到解及與基準比較的勝負次數。
-        /// 每次讀取都從 <see cref="Trials"/> 重新計算；比法見 <see cref="ConfigSummary"/>。
+        /// 依模型與設定彙總各 seed 的狀態及勝負；每次讀取重新計算。
         /// </summary>
         public IReadOnlyList<ConfigSummary> Summaries => ConfigSummary.From(Trials);
 
         /// <summary>建立實驗；建立時不求解也不寫檔。</summary>
-        /// <param name="project">專案名，決定寫進哪一組累積檔（{project}-trial.csv 等）；不可空白或含非法檔名字元。</param>
-        /// <param name="name">實驗名，寫在每一列的 Experiment 欄；同名實驗再跑一次會多一批 RunId，不覆寫舊列。</param>
+        /// <param name="project">專案名，輸出檔名的前段（{project}-{name}-trial.csv 等）；不可空白或含非法檔名字元。</param>
+        /// <param name="name">實驗名，輸出檔名的後段；不可空白或含非法檔名字元。同名實驗再跑一次整組覆寫。</param>
         /// <param name="description">實驗目的，寫進 -meta.csv。</param>
         public Experiment(string project, string name, string description)
         {
@@ -52,6 +48,10 @@ namespace OptimFoundation.Core
                 throw Logging.ErrorOnce(
                     new ArgumentException("Experiment name is required.", nameof(name)),
                     "EXPERIMENT_INVALID", "實驗設定不合法", nameof(Experiment), name, "name_is_empty");
+            if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                throw Logging.ErrorOnce(
+                    new ArgumentException($"Experiment name '{name}' contains invalid file name characters.", nameof(name)),
+                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(Experiment), name, "invalid_file_name_char");
             Project = project;
             Name = name;
             Description = description;
@@ -70,9 +70,8 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 把記憶體中的 Trial 接在 FolderDir.Experiment 下這個專案的累積檔尾端：{Project}-trial.csv、-meta.csv、-summary.csv（<see cref="WriteSummary"/> 為 true 時），
-        /// 有軌跡點時再寫 -trajectory.csv。舊列不改不刪；同一個物件 Save 兩次會寫兩次。
-        /// 檔案表頭跟這一版不同時，舊檔改名成 -old-&lt;時間&gt; 保留、另開新檔；寫不進去（例：檔案被 Excel 開著）時改寫到 -locked-&lt;時間&gt; 檔。兩者都留 WARN。
+        /// 寫出 FolderDir.Experiment 下的 {Project}-{Name}-trial.csv、-meta.csv，依設定加寫 -summary.csv，有軌跡才寫 -trajectory.csv。
+        /// 同名整組覆寫，未再產出的舊檔刪除；覆寫或改寫 -locked-&lt;時間&gt; 備援檔時記 WARN。
         /// </summary>
         public void Save()
         {
@@ -106,28 +105,28 @@ namespace OptimFoundation.Core
                 return;
             }
 
-            // 同一次 Save 的四個檔用同一個寫入時間，才對得起來
-            var recordedAt = DateTime.Now;
+            var existing = FileKinds.Select(PathOf).Where(File.Exists).Select(Path.GetFileName).ToList();
+            if (existing.Count > 0)
+                Logging.Warn($"[EXPERIMENT_OVERWRITTEN] 同名實驗已有紀錄，整組覆寫 | value={Project}-{Name} files={string.Join("|", existing)} result=overwritten");
 
-            // 主表：一列一 trial，只寫「跟基準差在哪」
-            // 說明檔：每批不會變的東西（模型多大、環境、基準的完整設定）每批寫一份
-            new CsvExperimentWriter().Write(this, PathOf("trial"), recordedAt);
-            new MetaCsvWriter().Write(this, PathOf("meta"), recordedAt);
-            // 彙總：每組設定一列，列出各 seed 與基準比較的結果。
+            new CsvExperimentWriter().Write(this, PathOf("trial"));
+            new MetaCsvWriter().Write(this, PathOf("meta"));
             if (WriteSummary)
-                new SummaryCsvWriter().Write(this, PathOf("summary"), recordedAt);
-            // 軌跡：沒有任何軌跡點就不寫，也不建只有表頭的空殼
-            new TrajectoryCsvWriter().Write(this, PathOf("trajectory"), recordedAt);
+                new SummaryCsvWriter().Write(this, PathOf("summary"));
+            else
+                ExperimentCsv.Delete(PathOf("summary"));
+            new TrajectoryCsvWriter().Write(this, PathOf("trajectory"));
 
             Logging.Info($"[Experiment] Saved '{Name}' ({Trials.Count} trials) → {PathOf("trial")}");
         }
 
-        private string PathOf(string kind) => FolderDir.Experiment.GetPathFile($"{Project}-{kind}.csv");
+        private static readonly string[] FileKinds = { "trial", "meta", "summary", "trajectory" };
+
+        private string PathOf(string kind) => FolderDir.Experiment.GetPathFile($"{Project}-{Name}-{kind}.csv");
     }
 
     /// <summary>
-    /// 供引擎提供求解過程紀錄的介面。EngineBase 預設不支援，
-    /// 支援的引擎（如 CPLEX）會覆寫相關方法。不支援的引擎不記錄，也不拋例外。
+    /// 求解軌跡介面；不支援的引擎預設不記錄、不拋例外。
     /// </summary>
     public interface ITrajectorySource
     {
@@ -150,7 +149,7 @@ namespace OptimFoundation.Core
         public string Label { get; set; }
 
         /// <summary>這批實驗的識別，值是該次執行的開始時間（yyyyMMdd-HHmmss）。
-        /// 同一個實驗跑很多次時，靠它分辨哪些列是同一批。</summary>
+        /// 同一個 Experiment 裡的 trial 依它分批選基準、跟基準比較；不寫進 CSV。</summary>
         public string ExperimentId { get; set; }
 
         /// <summary>同一批實驗內的流水號，從 1 開始。與 <see cref="ExperimentId"/> 合起來唯一。</summary>
@@ -169,15 +168,13 @@ namespace OptimFoundation.Core
         public SolveMetrics Metrics { get; set; }
 
         /// <summary>
-        /// 記錄一次求解：先複製 engine.Config，再執行 solveAction，最後讀取 engine.LastMetrics。
-        /// 引擎仍由呼叫端管理；此方法不會呼叫 Dispose。
+        /// 複製 Config、執行 solveAction 並讀取 LastMetrics；引擎由呼叫端釋放。
         /// </summary>
         /// <param name="engine">已 Build 完成的求解引擎</param>
         /// <param name="label">這次 Trial 的標籤（如 "emphasis=2"）</param>
         /// <param name="solveAction">執行一次求解的動作，回傳是否成功</param>
         /// <param name="captureTrajectory">
-        /// 是否在求解前開啟過程記錄（引擎需支援）。記錄用的 callback 可能影響搜尋順序與耗時，
-        /// 正式求解，以及用保留資料確認新設定成效、決定是否採用時，應關閉此功能。
+        /// 求解前啟用軌跡（須引擎支援）；callback 可能影響搜尋與耗時，正式求解及設定採用驗證應關閉。
         /// </param>
         public static Trial Capture(ISolverEngine engine, string label, Func<bool> solveAction, bool captureTrajectory = true)
         {
@@ -207,7 +204,6 @@ namespace OptimFoundation.Core
 
             var snapshot = ConfigSnapshot.From(engine.Config);
 
-            // 使用者要求記錄，且引擎支援此功能時，在求解前啟用。
             if (captureTrajectory && engine is ITrajectorySource ts && ts.SupportsTrajectory)
             {
                 ts.EnableTrajectory();
@@ -224,19 +220,16 @@ namespace OptimFoundation.Core
                 Config = snapshot,
                 Metrics = metrics
             };
-            // 不呼叫 engine.Dispose()：engine 生命週期由呼叫端持有
         }
     }
 
     /// <summary>
-    /// 一組設定的彙總：同一批（RunId）、同一模型、同一設定（Trial label 去掉結尾 -s&lt;seed&gt;）跑不同 seed 的結果，寫成 -summary.csv 一列。
-    /// 統計各狀態、找到解及逐 seed 與基準比較的勝負次數（規則見 <see cref="BaselineComparer"/>），不計算其他統計指標。
-    /// 要不要換成這組設定由使用端的規則決定，例如 AI-Modeling tuning 規範：一個 seed 都不能輸，而且至少贏 3 個。
-    /// label 含 "warmup" 的 trial 是暖機，不計入也不當基準。
+    /// 依批次、模型及設定彙總各 seed 的狀態與勝負（見 <see cref="BaselineComparer"/>）。
+    /// label 含 warmup 的 trial 不計入，也不作基準；是否採用設定由呼叫端決定。
     /// </summary>
     public sealed class ConfigSummary
     {
-        /// <summary>批次識別，同主表的 RunId。</summary>
+        /// <summary>批次識別，同 <see cref="Trial.ExperimentId"/>；不寫進 CSV。</summary>
         public string RunId { get; set; }
 
         /// <summary>模型名。</summary>
@@ -365,7 +358,7 @@ namespace OptimFoundation.Core
     }
 
     /// <summary>
-    /// 逐 seed 跟基準比大小，不算任何統計指標。對手是同一批、同一模型、同一個 seed 的基準 trial，依序比：
+    /// 與同批、同模型、同 seed 的基準比較，依序判斷：
     /// <list type="number">
     /// <item>有找到解的贏過沒找到解的</item>
     /// <item>都有解：證明最佳（Optimal）的贏過沒證明的</item>

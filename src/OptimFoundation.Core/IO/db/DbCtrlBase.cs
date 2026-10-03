@@ -5,17 +5,14 @@ using System.Data;
 namespace OptimFoundation.Core.IO
 {
     /// <summary>
-    /// IDbCtrl 的共用基底類別，負責交易中的連線共用、成功時 Commit、失敗時 Rollback，
-    /// 並在結束後釋放資源。巢狀呼叫會沿用外層交易。這些操作使用 .NET 的
-    /// IDbConnection/IDbTransaction；子類別（如 Oracle）提供 CreateRawConnection 與資料存取方法。
+    /// 管理共用連線與交易：成功 Commit，失敗 Rollback，結束後釋放；巢狀呼叫沿用外層交易。
     /// </summary>
     public abstract class DbCtrlBase : IDbCtrl
     {
         /// <summary>建構時傳入的連線字串；每次操作據此開連線（transaction 期間例外，見 AmbientConnection）。</summary>
         protected readonly string ConnectionString;
 
-        // 交易進行期間，各資料存取方法應共用這裡的連線與交易，不另建連線，
-        // 也不自行釋放；由 ExecuteInTransaction 在交易結束後統一處理。
+        // 交易資源由 ExecuteInTransaction 統一釋放，子類別不可另建或自行釋放。
         /// <summary>transaction 期間共用的連線；非 null 代表正在交易中。由 ExecuteInTransaction 設定與清除。</summary>
         protected IDbConnection AmbientConnection { get; private set; }
 
@@ -50,9 +47,8 @@ namespace OptimFoundation.Core.IO
         protected abstract IDbConnection CreateRawConnection();
 
         /// <summary>
-        /// 開啟連線與交易執行 work，存入 AmbientConnection / AmbientTransaction，供期間的
-        /// Query / Execute / QueryScalar / ExecuteBatch 共用。成功則 Commit，例外則 Rollback 後原樣拋出。
-        /// 巢狀呼叫沿用外層交易，不另開連線，也不提前 Commit 或 Rollback。
+        /// 共用 AmbientConnection / AmbientTransaction 執行 work；成功 Commit，例外 Rollback 後原樣拋出。
+        /// 巢狀呼叫沿用外層交易，不自行提交或回滾。
         /// </summary>
         public void ExecuteInTransaction(Action<IDbCtrl> work)
         {

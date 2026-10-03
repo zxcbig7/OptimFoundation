@@ -2,7 +2,7 @@ using OptimFoundation.Modeling;
 
 namespace Tutorial
 {
-    /// <summary>單位利潤（元/件）。數學：UnitProfit_p，值在 QTY。1D 參數。</summary>
+    /// <summary>UnitProfit_p（元/件，QTY）：單位利潤。</summary>
     [OptParam]
     [OptDim<string>("Product")]
     public sealed partial class Parameter_UnitProfit { }

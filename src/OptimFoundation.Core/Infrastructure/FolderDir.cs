@@ -4,9 +4,7 @@ using System.IO;
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 框架固定的資料夾配置：全部掛在執行檔目錄下，一個屬性對應一個用途。
-    /// 建立 OptProject 時以 <see cref="CreateAll"/> 一次全部建好，不論之後有沒有用到；
-    /// 寫入端也會呼叫 CreateFolder，資料夾已存在時不會重建，因此不必先建立專案。
+    /// 執行檔目錄下的框架資料夾；OptProject 與寫入端會自動建立。
     /// </summary>
     public class FolderDir
     {
@@ -28,7 +26,7 @@ namespace OptimFoundation.Core
         /// <summary>solver 的解檔（.sol）。</summary>
         public static ProjFolder Solution = new ProjFolder("Solution");
 
-        /// <summary>實驗與正式求解紀錄：每個專案四個累積檔 {專案}-trial.csv / -meta.csv / -summary.csv / -trajectory.csv。</summary>
+        /// <summary>實驗與正式求解紀錄：每個實驗四個檔 {專案}-{實驗}-trial.csv / -meta.csv / -summary.csv / -trajectory.csv。</summary>
         public static ProjFolder Experiment = new ProjFolder("Experiment");
 
         /// <summary>全部資料夾，供 <see cref="CreateAll"/> 一次建立。</summary>
@@ -75,7 +73,7 @@ namespace OptimFoundation.Core
             public string GetPathFile(string fileName) => Path.Combine(GetPath(), fileName);
 
             /// <summary>
-            /// 建立資料夾；目錄已存在時保留原有內容，不會因此拋出例外。
+            /// 建立資料夾，保留既有內容。
             /// </summary>
             public void CreateFolder()
             {

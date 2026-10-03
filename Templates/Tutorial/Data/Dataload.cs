@@ -4,8 +4,7 @@ using OptimFoundation.Cplex;
 
 namespace Tutorial
 {
-    // 在建構子中逐一呼叫資料來源，載入模型需要的集合與參數。
-    // 切換 CSV 或記憶體資料時，只需更換傳入的 IDataSource；資料庫查詢使用型別化 DbDataSource，見 developer-guide。
+    // 更換 IDataSource 即可切換來源；型別化 DbDataSource 用法見 developer-guide。
     public sealed partial class Dataload : DataContext
     {
         // Set 資料列：維度型別包含 string / DateTime / int
@@ -21,7 +20,7 @@ namespace Tutorial
         public List<Parameter_Demand> parameter_Demand = new();
         public List<Parameter_Capacity> parameter_Capacity = new();
 
-        // BigM = max Capacity / min{正的 MachineHours}：以最大可用工時除以最小正工時耗用量，計算單班單品的產量上界。
+        // 單班單品產量上界：BigM = max Capacity / min{正的 MachineHours}。
         public double BigM => parameter_Capacity.Max(c => c.QTY) /
             parameter_MachineHours.Where(h => h.QTY > 0).Min(h => h.QTY);
 

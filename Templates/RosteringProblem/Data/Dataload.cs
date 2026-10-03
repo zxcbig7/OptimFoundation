@@ -69,16 +69,14 @@ namespace RosteringProblem
         }
 
         /// <summary>
-        /// import 模式：用固定種子 Random(42) 產生範例排班資料，沿用原始版本的生成方式，
-        /// 不讀取外部矩陣或報表；需要的迴圈、亂數、列舉與日期運算都放在此建構子，
-        /// 讓 Dataload(IDataSource) 只負責載入資料。<paramref name="rawFile"/> 用來保持各範例 CLI 呼叫方式一致，實際不會讀取這個檔案。
-        /// 產生的數值與原始 Dataload() 相同；先執行 import，再由 Export() 寫出 CSV，之後求解只讀取 CSV。
+        /// import：以固定種子 Random(42) 產生排班資料，再由 Export() 寫出 CSV。
+        /// <paramref name="rawFile"/> 僅供 CLI 介面一致，不會讀取。
         /// </summary>
         public Dataload(string rawFile)
         {
             Logging.Info($"[Dataload] import 模式：以固定種子重新生成範例排班資料（來源引數 '{rawFile}' 僅供 CLI 介面一致，本專案資料為程式生成，不讀取外部檔案）。");
 
-            // 罰分權重（與 Objective 的係數一一對應，數值與原始 Dataload 完全相同）
+            // 目標式罰分權重
             double offOneDayPenalty = 0.1;
             double sixDayPenalty = 1;
             double groupMismatchPenalty = 0.2;
@@ -89,7 +87,7 @@ namespace RosteringProblem
             double weekend4DayPenalty = 0.1;
             double backupGroupPenalty = 0;     // 寫入 CrossGroup 表中 Backup 班別的權重；目前未被任何 Constraint 讀取
 
-            // 限制式使用的固定值；先前直接寫在 Constraint 內，現在會輸出到 CSV。
+            // 限制式常數，匯出至 CSV。
             double one = 1;
             double sixDayWindow = 6;
             double nightToDayWindow = 2;

@@ -35,7 +35,7 @@ namespace OptimFoundation.Cplex.Tests.Mocks
         public string S { get; set; } = "";
     }
 
-    // 舊前綴相容：X → Continuous；Y → Integer
+    // 相容前綴：X → Continuous；Y → Integer
     internal class VariableX_LegacyAmt : VariableBase
     {
         public string S { get; set; } = "";

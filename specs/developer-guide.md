@@ -1,8 +1,244 @@
-# OptimFoundation Coding 開發指南
+# OptimFoundation 開發指南
 
-本指南以 Coding 架構與目前 public API 為核心。數學建模是 Coding 的輸入，tuning 是完成正確 baseline 後的延伸；兩者不主導本文順序。
+OptimFoundation 是以 .NET 8 建立 MILP 模型的 solver-agnostic framework，目前提供 IBM CPLEX adapter。
 
-## 0. Coding runtime architecture
+這是框架唯一的說明文件：概念入門、從 Model.md 寫到可執行專案的逐步教學、範本導覽與完整 public API reference 都在這一份。`Templates/Sudoku_SHC279/README.md` 只講該範本的用法。
+
+## 怎麼讀這份文件
+
+| 你要做的事 | 讀 |
+| --- | --- |
+| 第一次接觸，想先懂框架在做什麼 | 第 1–2 章 |
+| 查 runtime 架構、某個任務該用哪個 API | 第 3 章 |
+| 搞懂 Modeling → Coding → Tuning 的分工 | 第 4 章 |
+| 把一份已確認的 `Model.md` 寫成可以 build、solve、驗證與重現的 C# 專案 | 第 5–22 章（MiniProduction 案例貫穿） |
+| 找一個可以照抄的範本 | 第 23 章 |
+| 查 public signature 與行為 | 文件最後的 API reference |
+
+AI-Modeling 端給 AI 照著做的規範與檢查表：
+
+- API 使用細節：[OptimFoundation API Guide](../../../AI-Modeling/.claude/skills/coding/optimfoundation-api-guide.md)
+- 交付前逐項核對：[Coding Checklist](../../../AI-Modeling/.claude/skills/coding/checklist.md)
+- 模型設計規則：[Model Design Guide](../../../AI-Modeling/.claude/skills/modeling/model-design-guide.md)
+- 需要調參時：[Solver Tuning Guide](../../../AI-Modeling/.claude/skills/tuning/solver-tuning-guide.md) 與 [Tuning Checklist](../../../AI-Modeling/.claude/skills/tuning/checklist.md)
+
+---
+
+## 1. OptimFoundation 是什麼
+
+| Package | 責任 |
+| --- | --- |
+| `OptimFoundation.Core` | 資料列、IO、命名、變數 / 限制式通用邏輯、logging、experiments；不引用任何 solver SDK |
+| `OptimFoundation.Generators` | `[OptSet]` / `[OptParam]` / `[OptVar]` 的 source generator（netstandard2.0） |
+| `OptimFoundation.Cplex` | IBM CPLEX adapter：engine、model、project、experiment、config |
+
+最小範例：
+
+```csharp
+using OptimFoundation.Core;
+using OptimFoundation.Core.IO;
+using OptimFoundation.Modeling;
+using OptimFoundation.Cplex;
+
+[OptSet]
+[OptDim<string>("Employee")]
+public sealed partial class Set_Employee { }
+
+[OptSet]
+[OptDim<DateTime>("Date")]
+public sealed partial class Set_Date { }
+
+[OptVar]
+[OptDim<DateTime>("Date")]
+[OptDim<string>("Employee")]
+public sealed partial class VariableB_Assign { }
+
+var data = OptData.Load(() => new Dataload());
+
+var model = new OptModel("Canonical")
+    .AddVariables(engine =>
+        engine.BuildVars<VariableB_Assign>(data.set_Date, data.set_Employee))
+    .AddObjective(engine => new ObjectiveFunction(/* dependencies */).Build(engine))
+    .AddConstraints(engine => new Constraint_Assign(/* dependencies */).Build(engine));
+
+using var project = new OptProject("Example")
+    .LoadConfig(new ProjectConfig { ExportLP = true });
+
+bool solved = project.Solve(model, new CplexConfig());
+```
+
+Build 與測試：
+
+```powershell
+dotnet build OptimFoundation.sln
+dotnet test tests/OptimFoundation.Cplex.Tests/OptimFoundation.Cplex.Tests.csproj
+```
+
+CPLEX 的 managed / native DLL 與 license 不在 repo 內，build 時由 `CplexDir`（預設 `C:\IBM\ILOG\CPLEX_Studio2211`）找；不得 commit solver DLL 或 license。
+
+---
+
+## 2. 把建模當成組積木（新手向）
+
+> 一句話：這個框架把「寫數學規劃模型」拆成一顆一顆小積木，你只要把現成積木照順序拼起來，就有一個能求解的模型。
+> 就像組樂高——你不用自己造塑膠，只要把零件照說明書拼好。
+
+### 2.1 什麼是「模型」
+
+假設你是家具廠老闆，每天要決定：**每種產品做幾件、要不要開生產線**。你想讓**利潤最大**，但又不能超過機器產能、要滿足客戶需求。
+
+把這種「要做一堆決定、有目標、有限制」的問題，寫成電腦能算的數學，就叫**模型**。這個框架幫你把模型拆成積木來組。
+
+### 2.2 積木有哪幾種
+
+| 積木 | 白話 | 它回答什麼 | 範例（`Templates/Tutorial`） |
+| --- | --- | --- | --- |
+| **Set** | 哪些索引或索引組合存在 | 產品有哪些？哪些弧可用？ | `Set_Product` 或 `Set_Arc(From,To)` |
+| **Parameter** | 已知的「數字」 | 每件多少利潤？每班多少產能？ | `Parameter_Capacity`（每機每日每班工時上限） |
+| **Variable** | 要「決定」的東西 | 每班生產多少？開不開線？ | `VariableC_Produce`（生產量）、`VariableB_Setup`（開不開線） |
+| **Constraint** | 「規則」 | 不能超過產能、要滿足需求 | `Constraint_Capacity`（用量 ≤ 產能） |
+| **目標式** | 你要「最好的什麼」 | 利潤最大 | `ObjectiveFunction`（max 利潤 − 成本） |
+| **模型** | 把上面全部照順序組成一顆 | —— | `OptModel`（Tutorial 在 `Program.cs` 組裝） |
+
+> 記法：**Set = 有哪些、Parameter = 已知數字、Variable = 要決定、Constraint = 規則、目標式 = 追求什麼**。
+
+**積木是疊上去的，有先後順序**（後面的用前面的搭）：
+Set 是地基 → Parameter / Variable 站在 Set 上（拿 Set 當維度：產品 × 日期 × 班次）→ Constraint / 目標式又是拿**變數 + 參數**拼出一條條式子 → 模型把它們組成一顆。
+所以 Constraint 不是憑空長出來的——它裡面每一項都是引用某個 Variable（未知數）配某個 Parameter（係數）。
+
+### 2.3 為什麼要拆成積木
+
+1. **每顆只管一小塊**：`Constraint_Capacity` 只管「產能規則」，壞了一眼找到、要改只改這顆。
+2. **加規則 = 加一顆積木**：想多一條「加班上限」，就多寫一顆 `Constraint_X`，其他積木完全不動。
+3. **換來源像換插頭**：資料放 CSV 還是資料庫、結果寫檔還是寫 DB、solver 怎麼調——這些都是可換的「插頭」，換了**模型積木一行都不用改**。
+
+### 2.4 架構圖
+
+由上而下就是「你組模型的順序」：**先宣告有哪些東西 → 寫每顆積木 → 照順序組起來 → 交給 OptProject → 引擎算出答案**。左下角那三個是「可換的插頭」。
+
+```mermaid
+%%{init: {'theme':'base','themeVariables':{
+  'fontFamily':'ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif',
+  'fontSize':'14px',
+  'primaryColor':'#eef2ff',
+  'primaryTextColor':'#1e293b',
+  'primaryBorderColor':'#6366f1',
+  'lineColor':'#94a3b8',
+  'secondaryColor':'#f1f5f9',
+  'tertiaryColor':'#f8fafc'
+},'flowchart':{'curve':'basis','nodeSpacing':55,'rankSpacing':60,'htmlLabels':true}}}%%
+flowchart TD
+  subgraph L0["① 宣告層：你宣告一半，程式補另一半"]
+    direction LR
+    DECL["你手寫：空殼 + attribute<br/>（只說有哪些維度）"]:::muted
+    GEN["Source Generator"]:::accent
+    BLKV["合體的變數 / 參數積木<br/>空殼 + 生成的維度欄位 + 基底"]:::success
+    DECL -->|"標註"| GEN -->|"補欄位＋基底"| BLKV
+  end
+
+  subgraph L1["② 積木層：每顆都有 Build()"]
+    direction LR
+    BASE["共同基底<br/>統一 Build 契約"]:::primary
+    OBJ["目標式積木"]:::success
+    CON["限制式積木 ×N"]:::success
+    OBJ -.繼承.-> BASE
+    CON -.繼承.-> BASE
+  end
+
+  subgraph L2["③ 組裝層：照說明書拼"]
+    MODEL["OptModel<br/>只定組裝順序"]:::primary
+  end
+
+  subgraph L3["④ 一鍵求解：一條龍入口"]
+    OPT["OptProject.Solve<br/>專案 → 模型 × 設定 → 求解 → 拿結果"]:::primary
+  end
+
+  subgraph L4["⑤ 可換插頭"]
+    direction LR
+    DS["資料來源<br/>CSV/DB/記憶體"]:::accent
+    CFG["求解設定"]:::accent
+    SINK["解輸出<br/>檔案/DB"]:::accent
+  end
+
+  ENGINE["求解引擎 CPLEX"]:::warn
+
+  BLKV -.當變數/係數被引用.-> OBJ
+  BLKV -.當變數/係數被引用.-> CON
+  BLKV -.型別安全展開變數.-> MODEL
+  OBJ -->|"當組裝元件"| MODEL
+  CON -->|"當組裝元件"| MODEL
+  DS -->|"餵資料"| MODEL
+  MODEL -->|"交給一條龍"| OPT
+  CFG -->|"Solve(model, config)"| OPT
+  OPT ==>|"Execute"| ENGINE
+  ENGINE -->|"寫解"| SINK
+
+  classDef primary fill:#eef2ff,stroke:#6366f1,stroke-width:2px,color:#3730a3;
+  classDef success fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#065f46;
+  classDef warn fill:#fffbeb,stroke:#f59e0b,stroke-width:2px,color:#92400e;
+  classDef accent fill:#eff6ff,stroke:#3b82f6,stroke-width:2px,color:#1e40af;
+  classDef muted fill:#f8fafc,stroke:#cbd5e1,stroke-width:1px,color:#64748b;
+```
+
+### 2.5 五層，一層一句白話
+
+**① 宣告層——你只要「說」，程式幫你「寫」**
+你想要一個叫 `Product` 的集合、一個叫 `Produce` 的變數，只要用 attribute 標一下有哪些維度（產品 × 日期 × 班次），程式就自動幫你生出對應的欄位和存取碼。你不用手刻那些重複樣板。
+注意一個關鍵：你手寫那半是**空殼**（`partial class ... { }`，連欄位都沒有），要跟 generator 生的那半**合體**才是能用的積木。所以②的限制式 / 目標式引用的，是這顆**合體後**的積木——你 `new Variable...{ Product=, Date=, Shift= }` 時填的那些欄位，全是 generator 生的那半提供的。
+> 像填一張表格：你填欄位名，系統生出整張表；你手上那張空表單，要系統補完欄位才能真的拿來填。
+
+**② 積木層——每顆積木長得一樣，而且是拿①的積木拼的**
+每條限制式、每個目標式都有一個 `Build()`。所以組裝的時候不用認得每顆積木的細節，只要知道「一顆一顆 Build 下去」。
+更關鍵的是：**這層的積木是用①的變數積木 + 參數積木搭出來的**——變數是「未知數」、參數是「已知係數」，湊成一條式子。例如「用量 = Σ(工時 × 生產量) ≤ 產能」裡，生產量是變數積木、工時和產能是參數積木。這就是圖上①→②那兩條虛線的意思。
+> 像樂高零件：形狀百百種但**接口都一樣**所以能互拼——而且每顆積木本身，又是用①那些更小的顆粒組成的。
+
+**③ 組裝層——說明書（`OptModel`）**
+`OptModel` 把積木照正確順序組起來（例如「soft 放鬆規則一定要排在目標式之後」）。它**只管順序**，不管每顆積木內部在算什麼。
+> 像樂高說明書：告訴你先裝哪塊、再裝哪塊；零件本身長怎樣它不管。
+
+**④ 一鍵求解——一條龍入口（`OptProject.Solve`）**
+先開一個專案 `new OptProject("名稱")`（它管 log、輸出資料夾、保留期），再 `.Solve(模型, 設定, onSolved: 解出來要做什麼)`，一個呼叫就跑完。你不用自己去戳求解引擎那些細節（怎麼開、怎麼跑、跑完怎麼收）——它一手包辦，還會順手把這次求解記成一筆紀錄。想比較多組設定時改走實驗層（第 18 章）。
+> 像自助點餐機：一路點下去（設定 → 內容 → 送出），後面廚房怎麼運作你不用管。
+
+**⑤ 可換插頭——資料 / 設定 / 輸出**
+資料從哪來（CSV、資料庫、記憶體）、solver 參數怎麼調、解寫去哪，全都是「插頭」。換一個插頭，模型積木一行不動。
+> 像家電插頭：換插座不用換家電。
+
+### 2.6 換一個東西，只需要動一處
+
+| 想換的東西 | 只需動 | 模型 / 積木 code |
+| --- | --- | --- |
+| 資料來源（檔案 ↔ 記憶體 ↔ DB） | 換傳入的資料來源 | **完全不動** |
+| solver 參數（gap / 時限 / log） | 換一個設定 | **完全不動** |
+| 解要寫去哪 | 換一個輸出 | **完全不動** |
+| 多一條限制式 | 加一顆積木 + 組裝時登記一行 | 其他積木不動 |
+| 改集合 / 維度定義 | 改積木 attribute，程式自動重產 | 手寫 code 不動 |
+
+> 這就是同一個專案能用 `dotnet run`（正式求解）/ `dotnet run -- exp`（實驗）兩種跑法、但**模型只寫一次**的原因。
+
+### 2.7 從零到解出來，五步驟
+
+1. **宣告積木**：Set / Parameter / Variable 用 attribute 標好維度。
+2. **寫積木**：每個限制式、目標式各寫一顆，只碰自己那段數學。
+3. **組裝**：`OptModel` 把積木照順序組成一顆完整模型。
+4. **接一條龍**：`new OptProject(名稱).Solve(模型, solver 設定, onSolved: 解輸出)`。
+5. **求解**：引擎算，解由輸出插頭寫出去。
+
+> 現成範例：`Templates/Tutorial/` 就是這套架構的最小可跑實作，照它的模式起手最快（第 23 章）。
+
+### 2.8 進階：對應哪些設計模式（新手可跳過）
+
+| 層 | Design Pattern | 一句話 |
+| --- | --- | --- |
+| ① 宣告層 | **Declarative Codegen** + Convention over Configuration | 宣告 *what*，codegen 產 *how*，消掉維度樣板 |
+| ② 積木層 | **Builder**（帶 Command 味）+ **Template Method** | 每個關注點 = 一顆自足、可依序執行的積木 |
+| ③ 組裝層 | **Composite** + **Director** | 子積木組成一顆完整大積木，組裝器只定順序 |
+| ④ 一鍵求解 | **Fluent Builder** + **Facade** + Callback 注入 | 一條鏈接起整個求解流程；填內容外包給積木 |
+| ⑤ 策略層 | **Strategy** + **Dependency Injection** | 換一個實作，模型 code 一行不動 |
+
+---
+
+## 3. Runtime 架構與 API 地圖
 
 ```text
 attributes + domain rows
@@ -19,7 +255,7 @@ OptProject.Solve ──► OptEngine.Build ──► CPLEX solve
        │                                      ├─ solution / status / metrics
        │                                      └─ import / export / conflict
        ▼
-Trial / Experiment ──► main / meta / summary / trajectory CSV
+Trial / Experiment ──► trial / meta / summary / trajectory CSV
 ```
 
 | 模組 | 責任 | 日常入口 |
@@ -32,7 +268,7 @@ Trial / Experiment ──► main / meta / summary / trajectory CSV
 | Experiment | 展開 model/config trials 並序列化結果 | `OptExperiment`、`Experiment`、`Trial` |
 | Infrastructure | 路徑、CSV、DB、logging | `ProjectConfig`、`CsvCtrl`、`IDbCtrl` |
 
-### 0.1 典型呼叫順序
+### 3.1 典型呼叫順序
 
 1. `OptData.Load(() => new Dataload(source))` 建立資料。
 2. `new OptModel(name)` 後依序註冊 `AddVariables`、`AddObjective`、`AddConstraints`；需要 warm start 再加 `AddMIPStart`。
@@ -44,7 +280,7 @@ Trial / Experiment ──► main / meta / summary / trajectory CSV
 
 `OptProject` 是 **Recommended path**。直接建立 `OptEngine` 適合 library integration、測試或需自行控制 lifecycle 的 **Advanced API**。
 
-### 0.2 依任務找 API
+### 3.2 依任務找 API
 
 | 任務 | API |
 | --- | --- |
@@ -64,29 +300,15 @@ Trial / Experiment ──► main / meta / summary / trajectory CSV
 | 多設定實驗 | `OptProject.Experiment`、`OptExperiment` |
 | CSV／DB | `CsvDataSource`、`DbDataSource`、`IDbCtrl`、`CsvCtrl` |
 
-### 0.3 API 使用層級
+### 3.3 API 使用層級
 
 - **Recommended**：`OptData.Load`、typed `BuildVars<T>`、owner/dim constraint overload、`OptModel`、`OptProject`、`OptExperiment`。
 - **Advanced**：直接操作 `OptEngine`、string builders、bounds/reset、native CPLEX special constraints、copy/merge/thread、直接 import/export。
 - **Framework integration**：generator base types、registration DTO、IO/DB contracts、CSV writers、logging 與 infrastructure helpers。
 
-這份 Guide 給第一次接手 OptimFoundation 專案的人。
-
-目標是把一份已確認的 `Model.md`，實作成可以 build、solve、驗證與重現的 C# 專案。
-
-本文使用一個小型生產規劃案例貫穿所有步驟。
-
-API 使用細節另見 AI-Modeling 的 [OptimFoundation API Guide](../../../AI-Modeling/.claude/skills/coding/optimfoundation-api-guide.md)。
-
-交付前逐項核對 [Coding Checklist](../../../AI-Modeling/.claude/skills/coding/checklist.md)。
-
-模型設計規則見 [Model Design Guide](../../../AI-Modeling/.claude/skills/modeling/model-design-guide.md)。
-
-需要調參時，再讀 [Solver Tuning Guide](../../../AI-Modeling/.claude/skills/tuning/solver-tuning-guide.md) 與 [Tuning Checklist](../../../AI-Modeling/.claude/skills/tuning/checklist.md)。
-
 ---
 
-## 1. 先理解三個 phase
+## 4. 三個 phase
 
 OptimFoundation 的工作分成三個 phase。
 
@@ -132,7 +354,7 @@ Coding 不得自行移項、改號、補規則或改 domain。
 - 可讀取並驗證的 solution。
 - 可重現的 production baseline。
 
-本 Guide 的主要內容就是 Phase 2。
+第 5–22 章就是 Phase 2。
 
 ### Phase 3：Tuning（選用）
 
@@ -152,7 +374,9 @@ Tuning 不應偷偷改 Model.md、資料語意或 constraint。
 
 ---
 
-## 2. 本文案例：MiniProduction
+## 5. 案例：MiniProduction
+
+第 5–22 章用一個小型生產規劃案例，把已確認的 `Model.md` 實作成可以 build、solve、驗證與重現的 C# 專案。
 
 工廠要生產多種產品。
 
@@ -164,11 +388,11 @@ Tuning 不應偷偷改 Model.md、資料語意或 constraint。
 
 允許缺貨，但缺貨有高額懲罰。
 
-### 2.1 Sets
+### 5.1 Sets
 
 $$Product = \{A, B\}$$
 
-### 2.2 Parameters
+### 5.2 Parameters
 
 $$Demand_p \ge 0 \quad \forall p \in Product$$
 
@@ -178,7 +402,7 @@ $$FixedCost_p \ge 0 \quad \forall p \in Product$$
 
 $$ShortagePenalty > 0$$
 
-### 2.3 Decision Variables
+### 5.3 Decision Variables
 
 $$Open_p \in \{0,1\}$$
 
@@ -186,11 +410,11 @@ $$Produce_p \in \mathbb{Z}_{\ge 0}$$
 
 $$Shortage_p \in \mathbb{R}_{\ge 0}$$
 
-### 2.4 Objective
+### 5.4 Objective
 
 $$\min \sum_p FixedCost_p Open_p + ShortagePenalty \sum_p Shortage_p$$
 
-### 2.5 Constraints
+### 5.5 Constraints
 
 需求平衡：
 
@@ -212,7 +436,7 @@ $$Produce_p \le Demand_p Open_p \quad \forall p$$
 
 這條規則必須先寫回 Model.md 並經確認，不能只在 Coding 階段臨時加入。
 
-### 2.6 Validation Rules
+### 5.6 Validation Rules
 
 解出後重新檢查：
 
@@ -224,7 +448,9 @@ $$Produce_p \le Demand_p Open_p \quad \forall p$$
 
 ---
 
-## 3. 建立固定專案結構
+## 6. 建立固定專案結構
+
+本文案例放在 AI-Modeling 的 `Projects/MiniProduction/`；放在 framework repo 時對應 `Templates/<Project>/`，兩者只差在 csproj 怎麼參考框架（第 7 章）。
 
 專案根目錄放 `Program.cs`、`<Project>.csproj` 與 `status.json`。
 
@@ -266,9 +492,13 @@ Projects/MiniProduction/
 
 ---
 
-## 4. 設定 csproj
+## 7. 設定 csproj
 
-`Projects/MiniProduction/MiniProduction.csproj` 可使用以下設定：
+csproj 只差在「怎麼參考框架」與「輸入資料怎麼到 `Input/`」，依專案放在哪裡選一種。
+
+### 7.1 AI-Modeling 專案（本文案例）
+
+`Projects/MiniProduction/MiniProduction.csproj` 不參考 framework source，改用 AI-Modeling repo 根 `dlls/` 下預先 build 的 DLL：
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -289,9 +519,58 @@ Projects/MiniProduction/
 
   <ItemGroup>
     <None Remove="Data\**\*.csv" />
-    <None Include="Data\**\*.csv"
-          CopyToOutputDirectory="PreserveNewest"
-          Link="Input\%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="Data\**\*.csv" CopyToOutputDirectory="PreserveNewest" Link="Input\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Analyzer Include="..\..\dlls\OptimFoundation.Generators.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="ILOG.Concert">
+      <HintPath>..\..\dlls\ILOG.Concert.dll</HintPath>
+    </Reference>
+    <Reference Include="ILOG.CPLEX">
+      <HintPath>..\..\dlls\ILOG.CPLEX.dll</HintPath>
+    </Reference>
+    <Reference Include="NLog">
+      <HintPath>..\..\dlls\NLog.dll</HintPath>
+    </Reference>
+    <Reference Include="OptimFoundation.Core">
+      <HintPath>..\..\dlls\OptimFoundation.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="OptimFoundation.Cplex">
+      <HintPath>..\..\dlls\OptimFoundation.Cplex.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>
+```
+
+- generator 以 `<Analyzer Include=...>` 掛入，不是一般 reference。
+- `Data\**\*.csv` 複製到輸出目錄的 `Input\`：AI-Modeling 刻意保留這個設定，`Data/` 是版控的原始檔，`Input/` 是執行時的副本。
+- `dlls/` 的設置與更新方式見 AI-Modeling 的 `dlls/README.md`。
+
+### 7.2 framework repo 內的範本
+
+`Templates/<Project>/<Project>.csproj` 直接參考 framework source：
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>MiniProduction</RootNamespace>
+    <AssemblyName>MiniProduction</AssemblyName>
+    <CplexDir Condition="'$(CplexDir)' == ''">C:\IBM\ILOG\CPLEX_Studio2211</CplexDir>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>Generated</CompilerGeneratedFilesOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Generated/**/*.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -301,26 +580,31 @@ Projects/MiniProduction/
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="ILOG.Concert">
+      <HintPath>$(CplexDir)\cplex\bin\x64_win64\ILOG.Concert.dll</HintPath>
+    </Reference>
+    <Reference Include="ILOG.CPLEX">
+      <HintPath>$(CplexDir)\cplex\bin\x64_win64\ILOG.CPLEX.dll</HintPath>
+    </Reference>
+  </ItemGroup>
 </Project>
 ```
 
-這裡有三個不可省略的重點。
+- framework 內部依賴一律用 `ProjectReference`。
+- Generators 的 `ProjectReference` 必須設定 `OutputItemType="Analyzer"` 與 `ReferenceOutputAssembly="false"`。
+- CPLEX 從 `$(CplexDir)` 引用；DLL 與 license 不進 git。
+- 不做資料複製：`Data/*.csv` 是範例資料，執行前由使用者放進 `FolderDir.Input`。
 
-第一，framework repo 內的 template 使用 `ProjectReference` 直接參考 Core 與 Cplex source。
+### 7.3 兩者共通
 
-第二，Generators 的 `ProjectReference` 必須設定 `OutputItemType="Analyzer"` 與 `ReferenceOutputAssembly="false"`。
-
-第三，`Data/**/*.csv` 必須被複製到輸出目錄的 `Input/`。
-
-AI-Modeling 的消費端專案不直接參考 framework source；它改用 repo `dlls/` 下的 runtime DLL 與 generator analyzer DLL。
-
-`FolderDir.Input` 指向執行時的 `Input/`，不是原始碼下的 `Data/`。
-
-`Generated/` 只供閱讀 generator 產物，不可再次當成一般 source 編譯。
+- 執行時一律讀 `FolderDir.Input`（輸出目錄下的 `Input/`），不是原始碼下的 `Data/`；資料位置一律用 `FolderDir`（例如 `FolderDir.Input.GetPathFile(...)`）決定，不在 code 裡寫死資料夾字串。
+- `Generated/` 只供閱讀 generator 產物，用 `Compile Remove` 排除，不可再當一般 source 編譯。
 
 ---
 
-## 5. 宣告 Set
+## 8. 宣告 Set
 
 `Set/Set_Product.cs`：
 
@@ -350,11 +634,28 @@ B
 
 Key 不得重複。
 
+多維 Set 用同一種寫法。每個 `OptDim` 生成一個 property，資料列表示「實際存在的組合」（例如可走的弧），不是笛卡兒積：
+
+```csharp
+[OptSet]
+[OptDim<string>("From")]
+[OptDim<string>("To")]
+public sealed partial class Set_Arc { }
+```
+
+```csv
+From,To
+A,B
+B,C
+```
+
+Set 至少一維，而且沒有 `QTY`。`OptDim<T>` 的泛型參數是 C# 資料型別（`string`、`int`、`DateTime` 等），CSV 欄位依它轉型。
+
 ---
 
-## 6. 宣告 Parameter
+## 9. 宣告 Parameter
 
-### 6.1 逐產品參數
+### 9.1 逐產品參數
 
 `Parameter/Parameter_Demand.cs`：
 
@@ -398,7 +699,22 @@ A,2
 B,3
 ```
 
-### 6.2 Scalar 參數
+多維 Parameter 依 `OptDim` 順序列出各維欄位，最後一欄是 `QTY`，例如弧成本：
+
+```csharp
+[OptParam]
+[OptDim<string>("From")]
+[OptDim<string>("To")]
+public sealed partial class Parameter_ArcCost { }
+```
+
+```csv
+From,To,QTY
+A,B,12.5
+B,C,8
+```
+
+### 9.2 Scalar 參數
 
 Scalar 仍然是 `[OptParam]`，只是沒有 `[OptDim<T>]`。
 
@@ -446,7 +762,7 @@ QTY
 
 ---
 
-## 7. 實作 Dataload
+## 10. 實作 Dataload
 
 `Data/Dataload.cs`：
 
@@ -573,17 +889,31 @@ MiniProductionSolution.ValidateData(data);
 
 載入完成後，把 `data` 視為唯讀。
 
+### 10.1 資料來源
+
+`Load<T>` 對 Set 與 Parameter 是同一個入口，依 public property 名稱映射欄位並轉型。CSV、InMemory 與 DB 都實作 `IDataSource`；換資料來源只換傳進 `Dataload(IDataSource)` 的 source，模型 code 不動。
+
+| Source | 名稱引數 |
+| --- | --- |
+| `CsvDataSource` | `FolderDir.Input` 下的檔名，例如 `"Set_Product"` 或 `"demand-2026.csv"` |
+| `InMemoryDataSource` | 註冊名稱 |
+| `DbDataSource` | 完整 SQL；需要 bind parameters 時用具體 `DbDataSource.Load<T>(sql, parameters)` overload |
+
+所有輸入 CSV 都必須有表頭，欄名與 generated property 名稱、型別、順序一致。
+
+import-data 產出 canonical CSV 時，Set 與 Parameter 都用 `CsvCtrl.WriteRows(rows, "TypeName")`（見上方 `Export()`）。
+
 ---
 
-## 8. 宣告三種 Variable
+## 11. 宣告三種 Variable
 
 Variable 類別名稱的前綴決定 solver type。
 
 | 前綴 | 類型 | 預設界限 |
 | --- | --- | --- |
 | `VariableB_` | Binary | 0 到 1 |
-| `VariableI_` | Integer | 0 到 infinity |
-| `VariableC_` | Continuous | 0 到 infinity |
+| `VariableI_` | Integer | 0 到 1E20（CPLEX 的無上界） |
+| `VariableC_` | Continuous | 0 到 1E20（CPLEX 的無上界） |
 
 這些前綴是 generator 與 `BuildVars<T>` 的契約。
 
@@ -633,13 +963,27 @@ public sealed partial class VariableC_Shortage { }
 .AddVariables(engine => engine.BuildVars<VariableC_Shortage>(data.set_Product))
 ```
 
+多維 Variable 依 `OptDim` 順序傳入各維的 domain，例如 Tutorial 的 Product × Date × Shift：
+
+```csharp
+[OptVar]
+[OptDim<string>("Product")]
+[OptDim<DateTime>("Date")]
+[OptDim<int>("Shift")]
+public sealed partial class VariableC_Produce { }
+
+engine.BuildVars<VariableC_Produce>(data.set_Product, data.set_Date, data.set_Shift);
+```
+
+domain 也可以是一個多維 Set：`BuildVars<VariableB_UseArc>(data.set_Arc)` 只在存在的弧上建變數。傳入 domain 的維度總寬度必須等於 Variable 的維度數。
+
 零維 Variable 使用 `BuildVars<T>()`。
 
 不要為了零維 Variable 建一個虛構的一元素 Set。
 
 ---
 
-## 9. 實作 Objective
+## 12. 實作 Objective
 
 `Objective/ObjectiveFunction.cs`：
 
@@ -689,7 +1033,7 @@ Objective 的 linear expression 用 `AddLHS` 建立。
 
 ---
 
-## 10. 實作 Constraints
+## 13. 實作 Constraints
 
 原始 Model.md 左側的項放 `AddLHS`。
 
@@ -701,7 +1045,7 @@ Objective 的 linear expression 用 `AddLHS` 建立。
 
 本文三種比較符號都各自展示。
 
-### 10.1 Equal：需求平衡
+### 13.1 Equal：需求平衡
 
 `Constraint/Constraint_DemandBalance.cs`：
 
@@ -747,7 +1091,7 @@ public sealed class Constraint_DemandBalance : ConstraintBase
 
 不要手工拼 `Constraint_DemandBalance@A`。
 
-### 10.2 LessEqual：總產能
+### 13.2 LessEqual：總產能
 
 `Constraint/Constraint_TotalCapacity.cs`：
 
@@ -781,7 +1125,7 @@ public sealed class Constraint_TotalCapacity : ConstraintBase
 
 這條 constraint 沒有索引，因此 `CreateLessEqual` 只傳 owner。
 
-### 10.3 GreaterEqual：最低啟用量
+### 13.3 GreaterEqual：最低啟用量
 
 `Constraint/Constraint_MinimumWhenOpen.cs`：
 
@@ -814,7 +1158,7 @@ public sealed class Constraint_MinimumWhenOpen : ConstraintBase
 
 這裡保留 Model.md 的方向：`Produce` 在左，`Open` 在右。
 
-### 10.4 LessEqual：啟用上界連結
+### 13.4 LessEqual：啟用上界連結
 
 `Constraint/Constraint_ProduceOnlyWhenOpen.cs`：
 
@@ -862,9 +1206,15 @@ public sealed class Constraint_ProduceOnlyWhenOpen : ConstraintBase
 | `<=` | `CreateLessEqual` |
 | `>=` | `CreateGreaterEqual` |
 
+### 13.5 限制式命名
+
+`CreateXxx(this, dims...)` 傳 owner 與原始維度值，framework 以 owner 類別名與維度值組出 canonical 名稱（例如 `Constraint_DemandBalance@A`），不要手工拼。
+
+日期維度在模型名稱裡寫成 `yyyy_MM_dd`，帶時分秒時為 `yyyy_MM_dd_HH_mm_ss`；CSV 的日期對應 `yyyy-MM-dd` 與 `yyyy-MM-dd HH:mm:ss`。粒度到秒，秒以下精度會被拒絕（捨去後不同時刻會撞名）。
+
 ---
 
-## 11. 實作資料驗收與解驗證
+## 14. 實作資料驗收與解驗證
 
 `Solution/MiniProductionSolution.cs`：
 
@@ -987,7 +1337,7 @@ public sealed class MiniProductionSolution
 
 ---
 
-## 12. 組裝 OptModel
+## 15. 組裝 OptModel
 
 canonical model 集中在一個方法：
 
@@ -1019,25 +1369,43 @@ private static OptModel BuildModel(Dataload data)
 }
 ```
 
-順序固定為 Variables、Objective、Constraints。
+`OptModel` 不會立即建模：每個 `AddXxx` 只記下一段「在 engine 上怎麼建」的 callback，資料透過 lambda closure 傳入，callback 在 `OptProject.Solve` 建好 engine 後才執行。這讓資料依賴固定在組裝點，Objective / Constraint 類別只收到自己需要的材料。
+
+完整執行順序：
+
+1. `AddVariables`
+2. `AddObjective`
+3. `AddConstraints`
+4. `beforeSolve`（`Solve` 的參數；例如開收斂軌跡）
+5. CPLEX 求解
+6. `onSolved`（只在有可用解時執行；讀解、驗證、寫出）
+
+Objective 要在 Constraints 之前加入：soft constraint 的 penalty 依目標方向加入目標式。
 
 每種 variable、objective 與 constraint 各占一個 fluent call。
 
-同一份 canonical `data` 供 production 與 experiment 使用。
+正式求解與實驗共用同一顆 model（第 16 章）。
 
 ---
 
-## 13. Program：三態 CLI 與兩軸流程
+## 16. Program：兩軸 CLI
 
-執行模式有三個主要入口：
+`import-data` 是獨立的資料前處理；其餘是「模型來源 × 執行方式」兩軸自由組合：
 
-| CLI | 行為 |
+| 軸 | 預設 | 另一個選項 |
+| --- | --- | --- |
+| 模型來源 | 讀 `FolderDir.Input` 的 CSV 建構 canonical model | `read-model <file>`：讀既有模型檔（.lp / .mps / .sav，相對路徑以 `FolderDir.Model` 為基準），不讀 CSV |
+| 執行方式 | 用 production baseline 正式求解 | `exp`：同一顆 model 跑實驗 |
+
+| 指令 | 行為 |
 | --- | --- |
-| `import-data <raw>` | 整理或產生 canonical CSV，完成後立即離開 |
-| `exp` | 對同一模型跑 experiment，完成後立即離開 |
-| 無參數 | 使用 production baseline 正式求解 |
+| `dotnet run` | CSV → canonical model → 正式求解 → 解驗證 |
+| `dotnet run -- exp` | CSV → canonical model → R0 實驗 |
+| `dotnet run -- read-model <file>` | 模型檔 → 正式求解（沒有資料，不跑解驗證） |
+| `dotnet run -- read-model <file> exp` | 模型檔 → 實驗 |
+| `dotnet run -- import-data <raw>` | 整理 raw 資料成 canonical CSV，完成後立即離開 |
 
-完整 `Program.cs` 骨架如下：
+`Program.cs` 固定四段：1. import-data、2. 設定、3. 模型來源、4. 環境。exp 與正式求解都只拿 `model`，不管它從哪來。
 
 ```csharp
 using OptimFoundation.Core;
@@ -1049,6 +1417,7 @@ internal static class Program
 {
     private static int Main(string[] args)
     {
+        // 1. import-data：整理 raw 資料成 canonical CSV，完成後立即離開
         if (args.Length >= 2 && args[0] == "import-data")
         {
             var imported = OptData.Load(() => new Dataload(args[1]));
@@ -1059,8 +1428,17 @@ internal static class Program
 
         bool isExperiment = args.Any(arg =>
             string.Equals(arg, "exp", StringComparison.OrdinalIgnoreCase));
+        int readModelAt = Array.IndexOf(args, "read-model");
+        string? modelFile = readModelAt >= 0 && readModelAt + 1 < args.Length ? args[readModelAt + 1] : null;
+        if (readModelAt >= 0 && modelFile == null)
+        {
+            Console.Error.WriteLine("read-model 需要模型檔路徑，例：dotnet run -- read-model <file> [exp]");
+            return 2;
+        }
+
         using var project = new OptProject("MiniProduction");
 
+        // 2. 設定
         var projectConfig = new ProjectConfig
         {
             EnableSolverLog = true,
@@ -1077,15 +1455,26 @@ internal static class Program
             Seed = 11,
         };
 
-        var data = OptData.Load(() => new Dataload());
-        MiniProductionSolution.ValidateData(data);
-        OptModel model = BuildModel(data);
+        // 3. 模型來源：read-model 讀模型檔、不讀 CSV；否則資料 → 資料驗收 → canonical model
+        Dataload? data = null;
+        OptModel model;
+        if (modelFile != null)
+        {
+            model = OptModel.ReadModel(modelFile);
+        }
+        else
+        {
+            data = OptData.Load(() => new Dataload());
+            MiniProductionSolution.ValidateData(data);
+            model = BuildModel(data);
+        }
 
+        // 4. 環境
         if (isExperiment)
         {
-            var experiment = project.Experiment(
-                "tuning-r0",
-                "R0 校準：baseline x 5 seeds");
+            // read-model 的實驗名加上模型名，紀錄檔跟 canonical 同一輪的分得開
+            string experimentName = modelFile == null ? "tuning-r0" : $"tuning-r0-{model.Name}";
+            var experiment = project.Experiment(experimentName, "R0 校準：baseline x 5 seeds");
             experiment.AddModel(model);
 
             foreach (int seed in new[] { 11, 22, 33, 44, 55 })
@@ -1107,11 +1496,12 @@ internal static class Program
             return 0;
         }
 
+        // 正式求解；read-model 沒有資料，不跑解驗證
         project.LoadConfig(projectConfig);
         bool solved = project.Solve(
             model,
             productionBaseline,
-            onSolved: engine => MiniProductionSolution.ReadAndValidate(engine, data));
+            onSolved: data == null ? null : engine => MiniProductionSolution.ReadAndValidate(engine, data));
         return solved ? 0 : 1;
     }
 
@@ -1143,51 +1533,48 @@ internal static class Program
 }
 ```
 
-### 13.1 import-data 狀態
-
-執行：
+### 16.1 import-data
 
 ```powershell
 dotnet run --project .\Projects\MiniProduction\MiniProduction.csproj -- import-data raw-source
 ```
 
-此模式讀取 `Input/raw-source.csv`，依本節定義的 raw schema 拆成 canonical Set 與 Parameter CSV。
-
-它輸出 canonical CSV 後立即 `return 0`。
+讀取 `Input/raw-source.csv`，依第 10 章定義的 raw schema 拆成 canonical Set 與 Parameter CSV，輸出後立即 `return 0`。
 
 不要在同一次執行接著 build model 或 solve。
 
-### 13.2 exp 狀態
-
-執行：
+### 16.2 exp
 
 ```powershell
 dotnet run --project .\Projects\MiniProduction\MiniProduction.csproj -- exp
 ```
 
-此模式使用同一份 data、同一顆 model 與 baseline clone。
+使用同一份 data、同一顆 model 與 baseline clone。R0 先固定其他條件，只改 Seed。
 
-R0 先固定其他條件，只改 Seed。
-
-### 13.3 default 狀態
-
-執行：
+### 16.3 正式求解
 
 ```powershell
 dotnet run --project .\Projects\MiniProduction\MiniProduction.csproj
 ```
 
-此模式載入 `ProjectConfig`，再用 production `CplexConfig` 正式求解。
+載入 `ProjectConfig`，再用 production `CplexConfig` 正式求解；`onSolved` 讀取並驗證解。
 
-`onSolved` 讀取並驗證解。
+### 16.4 read-model
+
+```powershell
+dotnet run --project .\Projects\MiniProduction\MiniProduction.csproj -- read-model MiniProduction_LP_<時間戳>.lp
+dotnet run --project .\Projects\MiniProduction\MiniProduction.csproj -- read-model MiniProduction_LP_<時間戳>.lp exp
+```
+
+模型從檔案來，不讀 CSV，所以正式求解不跑需要資料的解驗證。兩條模型來源共用同一組 `projectConfig` / `productionBaseline`，新舊模型的 Trial 可以直接對照。
 
 ---
 
-## 14. ProjectConfig 與 CplexConfig
+## 17. ProjectConfig 與 CplexConfig
 
 兩種 config 管不同層級。
 
-### ProjectConfig
+### 17.1 ProjectConfig
 
 `ProjectConfig` 管專案輸出行為。
 
@@ -1208,7 +1595,7 @@ var projectConfig = new ProjectConfig
 
 `ExportSol` 控制 solution 匯出。
 
-### CplexConfig
+### 17.2 CplexConfig
 
 `CplexConfig` 管求解器參數。
 
@@ -1228,56 +1615,96 @@ Experiment 對 baseline 呼叫 `Clone()`，再改本輪唯一的實驗因子。
 
 ---
 
-## 15. Experiment schema v10
+## 18. 實驗層與 Experiment 紀錄檔
 
-`Experiment.Run()` 與 `OptProject.Solve()` 都把紀錄接在 `FolderDir.Experiment` 下這個專案的累積檔尾端。
+前面各章是「把一顆模型組出來、解**一次**」。實驗層是同一個專案底下的另一種用法：把同一顆模型跑很多次，每次只換 solver 設定（也可以多個模型交叉），每次結果收成一筆 Trial 存起來比較。模型只寫一次，就能被實驗層當成黑盒子反覆跑。
 
-檔案依功能分、不依實驗或批次分，每個專案只有四個：
+```text
+OptProject：專案（名稱、輸出資料夾、log、保留期）
+├─ Solve：跑 1 次 → 交出解 + 留一筆 Trial
+└─ Experiment：N 個模型 × M 組設定 → 只留 Trial
+兩者底層都是同一條「跑一次」路徑：建 engine → 套模型 → 求解 → 記成 Trial
+```
 
-- `{專案名}-trial.csv`：主表，一列一個 trial。
-- `{專案名}-meta.csv`：說明檔，每批（RunId）一份。
-- `{專案名}-summary.csv`：彙總，每組設定一列；正式求解不寫。
-- `{專案名}-trajectory.csv`：收斂軌跡，一列一個軌跡點；有軌跡點才寫。
+```mermaid
+%%{init: {'theme':'base','themeVariables':{
+  'fontFamily':'ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif',
+  'fontSize':'14px',
+  'primaryColor':'#eef2ff','primaryTextColor':'#1e293b','primaryBorderColor':'#6366f1',
+  'lineColor':'#94a3b8','secondaryColor':'#f1f5f9','tertiaryColor':'#f8fafc'
+},'flowchart':{'curve':'basis','nodeSpacing':50,'rankSpacing':55,'htmlLabels':true}}}%%
+flowchart LR
+  M["模型積木<br/>只寫一次"]:::primary
+  subgraph CFG["只換這個插頭：solver 設定 ×3"]
+    direction TB
+    C1["balanced"]:::accent
+    C2["feasible-first"]:::accent
+    C3["optimal-first"]:::accent
+  end
+  CAP["每跑一次<br/>收成一筆 Trial"]:::success
+  OUT["Experiment/{專案}-{實驗}-*.csv<br/>trial · meta · summary · trajectory"]:::muted
+  M --> CAP
+  CFG -.每組各跑一次.-> CAP
+  CAP --> OUT
 
-四個檔的前三欄都是 `RecordedAt`（寫入時間）、`Experiment`（實驗名；正式求解是 `solve`）、`RunId`（批次）。
+  classDef primary fill:#eef2ff,stroke:#6366f1,stroke-width:2px,color:#3730a3;
+  classDef success fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#065f46;
+  classDef accent fill:#eff6ff,stroke:#3b82f6,stroke-width:2px,color:#1e40af;
+  classDef muted fill:#f8fafc,stroke:#cbd5e1,stroke-width:1px,color:#64748b;
+```
 
-同名實驗再跑一次會多一批 RunId，舊列不改不刪。
+以 `Templates/Tutorial/Program.cs` 的 exp 分支為例（`project.Experiment("tuning-r1", ...)`），實驗層做四件事：
 
-只看某一輪時，篩 `Experiment` + `RunId`。
+1. **重用同一顆模型**：每個 trial 都在全新的 engine 上套用同一個 `OptModel`，跟正式求解共用**同一顆**模型，模型 code 一行不改。
+2. **只換 solver 設定**：三組 MIP emphasis 對照——`balanced`(0) / `feasible-first`(1) / `optimal-first`(2)，換的只有設定插頭。
+3. **每次 solve 收成一筆 Trial**：記下當次設定（`ConfigSnapshot`）+ 結果（狀態、目標值、耗時、收斂軌跡）。收斂軌跡的 callback 會改變 solver 搜尋路徑，要和正式求解對照的驗證用 `.CaptureTrajectory(false)` 關掉。
+4. **存檔比較**：`Run()` 把這個實驗寫成一組四個 CSV（18.1–18.5）。
 
-`RunId` 是開始時間 `yyyyMMdd-HHmmss`；同一個 process 同一秒內再開一批時加 `-2`、`-3`。
+> 一句話：**正式求解 = 把模型解一次拿答案；實驗層 = 同一顆模型在不同 solver 設定下各跑一次，收集數據做 tuning 比較。** 屬於 Phase 3（Tuning）的工具——模型正確之後，用它系統化地找「哪組 solver 設定最快 / 最好」。
 
-檔案表頭跟這一版不同時，舊檔改名成 `{檔名}-old-<時間>.csv` 保留，另開新檔，並留 WARN。
+### 18.1 紀錄檔
+
+`Experiment.Run()` 與 `OptProject.Solve()` 都在 `FolderDir.Experiment` 下為這個實驗寫一組四個檔：
+
+- `{專案名}-{實驗名}-trial.csv`：主表，一列一個 trial。
+- `{專案名}-{實驗名}-meta.csv`：說明檔。
+- `{專案名}-{實驗名}-summary.csv`：彙總，每組設定一列；正式求解不寫。
+- `{專案名}-{實驗名}-trajectory.csv`：收斂軌跡，一列一個軌跡點；有軌跡點才寫。
+
+`{專案名}-{實驗名}` 就是 `OptExperiment.FullName`；正式求解的實驗名是 `solve`，檔名為 `{專案名}-solve-trial.csv` 等。
+
+欄位固定，只有一種格式，沒有版本號。
+
+同名實驗再跑一次整組覆寫，並留 `[EXPERIMENT_OVERWRITTEN]` WARN；這次沒寫到的舊檔（例：上次有軌跡、這次沒有）一併刪掉，檔裡只有最後一次的紀錄。
+
+要留住某一輪的結果，換一個實驗名（例：`tuning-r1` → `tuning-r2`），或跑完就把四個檔複製到 archive。
 
 寫不進去（例：檔案被 Excel 開著）時，這次改寫到 `{檔名}-locked-<時間>.csv`，並留 WARN。
 
-保留期清理不清 Experiment，累積檔只會長大。
+保留期清理不清 Experiment。
 
-### 15.1 主表：21 欄
+### 18.2 主表：18 欄
 
-schema v10 主表（`-trial.csv`）欄位依序為：
+主表（`-trial.csv`）欄位依序為：
 
-1. `RecordedAt`
-2. `Experiment`
-3. `RunId`
-4. `TrialId`
-5. `Model`
-6. `ModelType`
-7. `TrialLabel`
-8. `ConfigChanges`
-9. `Seed`
-10. `VsBaseline`
-11. `Status`
-12. `ObjectiveValue`
-13. `BestBound`
-14. `Gap`
-15. `BuildAndSolveTimeMs`
-16. `SolveTimeMs`
-17. `FirstSolutionMs`
-18. `LastBoundChangeMs`
-19. `BoundChange`
-20. `NodeCount`
-21. `IterationCount`
+1. `TrialId`
+2. `Model`
+3. `ModelType`
+4. `TrialLabel`
+5. `ConfigChanges`
+6. `Seed`
+7. `VsBaseline`
+8. `Status`
+9. `ObjectiveValue`
+10. `BestBound`
+11. `Gap`
+12. `BuildAndSolveTimeMs`
+13. `SolveTimeMs`
+14. `FirstSolutionMs`
+15. `LastBoundChangeMs`
+16. `BoundChange`
+17. `NodeCount`
+18. `IterationCount`
 
 `VsBaseline` 是 framework 對同 seed baseline 的比較結果。
 
@@ -1289,45 +1716,42 @@ schema v10 主表（`-trial.csv`）欄位依序為：
 
 `SolveTimeMs` 只計 `Solve()`；`BuildAndSolveTimeMs` = 建模 + 求解，只有經由 `OptProject.Solve` / `OptExperiment` 才有值，自己呼叫 `Trial.Capture` 時是 null（CSV 寫 `n/a`）。
 
-同一批每列的基準是誰，看同 `Experiment` + `RunId` 的 `-meta.csv` 的 `baseline.label`；模型結構數量（VarCount、ConstraintCount 等）同一模型每列一樣，看 `-meta.csv` 的 `model.<Model>.*`。
+基準是誰，看同一個實驗 `-meta.csv` 的 `baseline.label`；模型結構數量（varCount、constraintCount 等）同一模型每列一樣，看 `-meta.csv` 的 `model.<Model>.*`。
 
-缺值語意由同一批 `-meta.csv` 的 legend 解釋。
+缺值語意由 `-meta.csv` 的 legend 解釋。
 
-### 15.2 Summary：17 欄
+### 18.3 Summary：14 欄
 
 `-summary.csv` 欄位依序為：
 
-1. `RecordedAt`
-2. `Experiment`
-3. `RunId`
-4. `Model`
-5. `Config`
-6. `IsBaseline`
-7. `Trials`
-8. `Seeds`
-9. `Optimal`
-10. `Feasible`
-11. `NoSolution`
-12. `Failed`
-13. `FoundSolution`
-14. `Wins`
-15. `Losses`
-16. `Ties`
-17. `NotCompared`
+1. `Model`
+2. `Config`
+3. `IsBaseline`
+4. `Trials`
+5. `Seeds`
+6. `Optimal`
+7. `Feasible`
+8. `NoSolution`
+9. `Failed`
+10. `FoundSolution`
+11. `Wins`
+12. `Losses`
+13. `Ties`
+14. `NotCompared`
 
 Summary 提供 status count 與同 seed 的 W/L/T/NotCompared count。
 
 它沒有 sgm、PAR10、theta、gap 平均或 improvement 欄位；framework 不算這些統計，勝負直接看 `Wins` / `Losses`。
 
-### 15.3 Meta
+### 18.4 Meta
 
-`-meta.csv` 欄位為 `RecordedAt`、`Experiment`、`RunId`、`Section`、`Key`、`Value`。
+`-meta.csv` 欄位為 `Section`、`Key`、`Value`。
 
-每批寫一份完整說明：`schema`、`legend`、`experiment.description`、`run.startedAt`、`run.trialCount`、`model.*`、`modelStats.*`、`environment.*`、`baseline.*`。
+內容：`legend`、`experiment.description`、`run.startedAt`、`run.trialCount`、`model.*`（含 `objectiveSense`）、`environment.*`、`baseline.*`。
 
-### 15.4 Trajectory 的條件
+### 18.5 Trajectory 的條件
 
-`-trajectory.csv` 欄位為 `RecordedAt`、`Experiment`、`RunId`、`TrialId`、`TrialLabel`、`PointIndex`、`ElapsedMs`、`ObjectiveValue`、`BestBound`、`Gap`；`Experiment` + `RunId` + `TrialId` 對回主表那一列。
+`-trajectory.csv` 欄位為 `TrialId`、`TrialLabel`、`PointIndex`、`ElapsedMs`、`ObjectiveValue`、`BestBound`、`Gap`；`TrialId` 對回同一個實驗主表那一列。
 
 Trajectory 只有在該 trial 啟用 trajectory 收集、且 CPLEX 實際呼叫 callback 時才有資料。
 
@@ -1337,9 +1761,9 @@ Trajectory 只有在該 trial 啟用 trajectory 收集、且 CPLEX 實際呼叫 
 
 ---
 
-## 16. Build、Run 與驗證順序
+## 19. Build、Run 與驗證順序
 
-### 16.1 Build
+### 19.1 Build
 
 ```powershell
 dotnet build .\Projects\MiniProduction\MiniProduction.csproj
@@ -1352,11 +1776,11 @@ dotnet build .\Projects\MiniProduction\MiniProduction.csproj
 - class 是否為 `partial`。
 - attribute 是否正確。
 - Variable 名稱是否有合法 B/C/I 前綴。
-- 三個 framework `ProjectReference` 路徑是否正確。
-- Generators reference 是否以 Analyzer 載入。
+- 框架參考是否正確（AI-Modeling：`dlls/` 的 HintPath；framework 範本：`ProjectReference` 路徑）。
+- generator 是否以 Analyzer 掛入。
 - `Generated/` 是否被排除編譯。
 
-### 16.2 確認 generator 產物
+### 19.2 確認 generator 產物
 
 build 後查看 `Generated/`。
 
@@ -1366,7 +1790,7 @@ build 後查看 `Generated/`。
 
 執行時的資料載入摘要不應顯示 `Sets（0）` 或 `Parameters（0）`。
 
-### 16.3 Run production
+### 19.3 Run production
 
 ```powershell
 dotnet run --project .\Projects\MiniProduction\MiniProduction.csproj
@@ -1382,7 +1806,7 @@ dotnet run --project .\Projects\MiniProduction\MiniProduction.csproj
 - `ReadAndValidate` 沒有丟例外。
 - LP 與 solution 輸出符合 `ProjectConfig`。
 
-### 16.4 Run experiment
+### 19.4 Run experiment
 
 ```powershell
 dotnet run --project .\Projects\MiniProduction\MiniProduction.csproj -- exp
@@ -1391,12 +1815,12 @@ dotnet run --project .\Projects\MiniProduction\MiniProduction.csproj -- exp
 檢查：
 
 - 五個 seed 都有 trial。
-- `-trial.csv` 正好是 schema v10 的 21 欄，前三欄是 RecordedAt / Experiment / RunId。
-- summary 正好是 17 欄。
-- metadata 的 schema 與 legend 存在。
+- `{專案名}-{實驗名}-trial.csv` 正好是 18.2 的 18 欄，第一欄是 `TrialId`。
+- summary 正好是 14 欄。
+- metadata 的 legend 存在。
 - trajectory 只在啟用時出現。
 
-### 16.5 反向驗證
+### 19.5 反向驗證
 
 至少做一次刻意破壞：
 
@@ -1409,15 +1833,15 @@ dotnet run --project .\Projects\MiniProduction\MiniProduction.csproj -- exp
 
 ---
 
-## 17. 除錯路線
+## 20. 除錯路線
 
-### 17.1 找不到 CSV
+### 20.1 找不到 CSV
 
-先看 build output 的 `Input/`，不要只看 source 的 `Data/`。
+先看輸出目錄的 `Input/`（`FolderDir.Input`），不要只看 source 的 `Data/`。
 
-若缺檔，檢查 csproj 的 `None Include`、`Link` 與 `CopyToOutputDirectory`。
+AI-Modeling 專案缺檔時，檢查 csproj 的 `None Include`、`Link` 與 `CopyToOutputDirectory`；framework 範本不自動複製，要自己把 CSV 放進 `Input/`。
 
-### 17.2 Set 或 Parameter 數量是零
+### 20.2 Set 或 Parameter 數量是零
 
 檢查：
 
@@ -1427,13 +1851,13 @@ dotnet run --project .\Projects\MiniProduction\MiniProduction.csproj -- exp
 - Parameter 是否有 `[OptParam]`。
 - generator 是否以 Analyzer 掛入。
 
-### 17.3 `OPTF001` 或 variable type 錯誤
+### 20.3 `OPTF001` 或 variable type 錯誤
 
 檢查類名是否以 `VariableB_`、`VariableI_` 或 `VariableC_` 開頭。
 
 一般建立一律先用 `BuildVars<T>`。
 
-### 17.4 Constraint 數值不對
+### 20.4 Constraint 數值不對
 
 逐條對照 Model.md：
 
@@ -1445,7 +1869,7 @@ dotnet run --project .\Projects\MiniProduction\MiniProduction.csproj -- exp
 6. `FindParameterOrLog` 的 key 是否完整。
 7. `CreateXxx(this, dims)` 的 dims 是否使用原始值。
 
-### 17.5 解值看起來都是零
+### 20.5 解值看起來都是零
 
 先看 solver status 與 objective。
 
@@ -1457,7 +1881,7 @@ dotnet run --project .\Projects\MiniProduction\MiniProduction.csproj -- exp
 
 不要直接內插整個 row object。
 
-### 17.6 Solve 失敗
+### 20.6 Solve 失敗
 
 保留 solver log 與匯出的 LP。
 
@@ -1471,7 +1895,7 @@ dotnet run --project .\Projects\MiniProduction\MiniProduction.csproj -- exp
 
 ---
 
-## 18. 禁用與不建議 API
+## 21. 禁用與不建議 API
 
 新程式碼不要使用舊縮寫名稱：
 
@@ -1510,9 +1934,9 @@ canonical hard model 不使用 soft constraint API。
 
 ---
 
-## 19. 交付前檢查
+## 22. 交付前檢查
 
-### Modeling 契約
+### 22.1 Modeling 契約
 
 - [ ] Model.md 已確認。
 - [ ] 固定八段齊全。
@@ -1521,53 +1945,92 @@ canonical hard model 不使用 soft constraint API。
 - [ ] 每條 Constraint 的量詞、domain、左右式與比較符號一致。
 - [ ] Validation Rules 已轉成可執行檢查。
 
-### 專案結構
+### 22.2 專案結構
 
 - [ ] 固定八資料夾存在。
-- [ ] csproj 以 `ProjectReference` 引用 Core 與 Cplex。
-- [ ] Generators `ProjectReference` 以 Analyzer 載入。
+- [ ] csproj 參考框架的方式符合第 7 章（AI-Modeling 用 `dlls/`，framework 範本用 `ProjectReference`）。
+- [ ] generator 以 Analyzer 掛入。
 - [ ] `Generated/**/*.cs` 不重複編譯。
-- [ ] Data CSV 複製到 output `Input/`。
+- [ ] 執行時的 CSV 在 `FolderDir.Input`（AI-Modeling 由 csproj 複製；framework 範本手動放）。
 
-### 資料與 generator
+### 22.3 資料與 generator
 
 - [ ] Set、Parameter、Variable 類別都是 `partial`。
+- [ ] Set / Parameter class、CSV 與 Dataload 一一對應。
+- [ ] `OptDim` 名稱、型別、順序與 CSV 表頭一致。
 - [ ] Dataload 是 `public sealed partial` 並繼承 `DataContext`。
 - [ ] 正式入口使用 `OptData.Load`。
 - [ ] `ValidateData` 緊接在 Load 後。
 - [ ] 資料載入摘要的 Set/Parameter 數量正確。
 - [ ] `DataIssues` 已處理。
 
-### 模型
+### 22.4 模型
 
 - [ ] Variable 使用合法 B/C/I 前綴。
 - [ ] 一般建立使用 `BuildVars<T>`。
+- [ ] Variable 維度總寬度與 `BuildVars` 傳入的 domain 一致。
 - [ ] Objective 在 Constraints 前加入。
 - [ ] 左式使用 `AddLHS`。
 - [ ] 右式使用 `AddRHS`。
 - [ ] `=`, `<=`, `>=` 使用正確的完整 API 名稱。
 - [ ] `CreateXxx` 直接接收原始維度值。
+- [ ] 每條限制式可逐條反推回 Model.md 原式。
 
-### 執行與驗證
+### 22.5 執行與驗證
 
 - [ ] import-data 完成後立即結束。
-- [ ] exp 與 default 共用 canonical model。
+- [ ] exp 與正式求解共用同一顆 model（來源是 CSV 或 read-model 都一樣）。
 - [ ] production baseline 唯一且可重現。
 - [ ] 解值逐條代回 Validation Rules。
 - [ ] 已做一次刻意破壞驗證。
 - [ ] build 成功。
 - [ ] production run 成功。
-- [ ] experiment 輸出符合 schema v10。
+- [ ] experiment 輸出符合第 18 章的固定欄位。
 
-### Tuning gate
+### 22.6 Tuning gate
 
 - [ ] Phase 2 正確性 gate 全部通過。
 - [ ] R0 baseline 使用多個 seed。
 - [ ] 每輪只改已聲明的實驗因子。
 - [ ] 直接使用 summary 的 count 與 W/L/T。
-- [ ] 額外聚合統計從主表依公式計算並記錄來源。
+- [ ] 不另算平均或統計指標（sgm、PAR10 等）；勝負只看主表 `VsBaseline` 與 summary 的 `Wins` / `Losses`。
 
 完成這份檢查後，才把專案交給 production 或 Phase 3 Tuning。
+
+---
+
+## 23. 範本導覽
+
+`Templates/` 下每個資料夾都是可以直接 build、run 的專案，照它們的模式起手最快。
+
+| 範本 | 示範什麼 |
+| --- | --- |
+| `Tutorial` | 最小可跑：B/C/I 三種變數、Product × Date × Shift 三維參數與變數、標準組裝；`exp` 比較三組 MIP emphasis |
+| `RosteringProblem` | 排班限制式與解驗證；`import` 以固定種子產生排班 CSV |
+| `FJSP_BASIC_BRICK` | 彈性製程排程、soft constraint 與 IIS |
+| `Sudoku_SHC279` | 多維集合與題盤匯入（用法見該範本 `README.md`） |
+| `TSP_MultiDimSet` | 稀疏弧集合（多維 Set）與 TSP；資料直接維護在 CSV |
+
+### 23.1 Tutorial 的結構
+
+```text
+Tutorial/
+├── Model/Tutorial_Model.md
+├── Set/Set_*.cs
+├── Parameter/Parameter_*.cs
+├── Variable/Variable[B|C|I]_*.cs
+├── Objective/ObjectiveFunction.cs
+├── Constraint/Constraint_*.cs
+├── Solution/TutorialSolution.cs
+├── Data/Dataload.cs
+├── Data/*.csv（範例資料；執行時一律讀 FolderDir.Input，不會自動複製）
+└── Program.cs
+```
+
+```powershell
+dotnet run          # 正式求解：讀 FolderDir.Input 的 CSV → solve → ValidateRules → 解寫到 FolderDir.Output
+dotnet run -- exp   # 實驗：同一模型 × 三組 MIP emphasis，紀錄寫成 Experiment/Tutorial-tuning-r1-*.csv
+```
 
 ---
 
@@ -1852,21 +2315,20 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 ### `OptimFoundation.Core/Experiments/ExpCsvWriter.cs`
 
 - `public sealed class CsvExperimentWriter` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:20`
-- `public const string Off = "off";` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:25`
-- `public const string None = "none";` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:28`
-- `public const string NotAvailable = "n/a";` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:31`
-- `public const string Baseline = "baseline";` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:34`
-- `public const string Win = "win";` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:41`
-- `public const string Lose = "lose";` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:44`
-- `public const string Tie = "tie";` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:47`
-- `public void Write(Experiment experiment, string path, DateTime recordedAt)` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:74` | 讀取 `experiment.Trials`、各 trial 的 config/metrics 與同 run baseline comparison，把一列一 trial 接在 `path`（`{專案}-trial.csv`）檔尾；每列前三欄 RecordedAt / Experiment / RunId；不建立 Experiment result 或執行求解。
-- `public sealed class MetaCsvWriter` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:269`
-- `public const int SchemaVersion = 10;` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:265`
-- `public void Write(Experiment experiment, string path, DateTime recordedAt)` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:298` | 每批（RunId）把 schema、legend、描述、批次資訊、model statistics、環境與 baseline config 寫成一份 Section/Key/Value，接在 `path` 檔尾；只序列化既有資料，不修改 trials。
-- `public sealed class SummaryCsvWriter` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:400`
-- `public void Write(Experiment experiment, string path, DateTime recordedAt)` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:429` | 讀取每次存取時由 `experiment.Trials` 計算的 `Summaries`，把每個 run/model/config 一列的 status、incumbent 與 W/L/T 接在 `path` 檔尾；不回寫 summary 或 trial state。
-- `public sealed class TrajectoryCsvWriter` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:462`
-- `public void Write(Experiment experiment, string path, DateTime recordedAt)` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:493` | 逐一讀取 `experiment.Trials[*].Metrics.Convergence`，跳過沒有軌跡的 trial，把一列一 sampling point（含 TrialId）接在 `path` 檔尾；整批沒有點就不動檔案；NaN/Infinity 寫成 `#N/A`，不補造取樣點。
+- `public const string Off = "off";` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:27`
+- `public const string None = "none";` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:30`
+- `public const string NotAvailable = "n/a";` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:34`
+- `public const string Baseline = "baseline";` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:37`
+- `public const string Win = "win";` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:44`
+- `public const string Lose = "lose";` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:47`
+- `public const string Tie = "tie";` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:50`
+- `public void Write(Experiment experiment, string path)` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:67` | 讀取 `experiment.Trials`、各 trial 的 config/metrics 與同 run baseline comparison，一列一 trial 整檔寫到 `path`（`{專案}-{實驗}-trial.csv`），同名舊檔覆寫；不建立 Experiment result 或執行求解。
+- `public sealed class MetaCsvWriter` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:235`
+- `public void Write(Experiment experiment, string path)` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:244` | 把 legend、描述、開始時間與 trial 數、model、環境與 baseline config 寫成一份 Section/Key/Value，整檔寫到 `path`；只序列化既有資料，不修改 trials。
+- `public sealed class SummaryCsvWriter` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:333`
+- `public void Write(Experiment experiment, string path)` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:347` | 讀取每次存取時由 `experiment.Trials` 計算的 `Summaries`，每個 model/config 一列的 status、incumbent 與 W/L/T 整檔寫到 `path`；不回寫 summary 或 trial state。
+- `public sealed class TrajectoryCsvWriter` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:393`
+- `public void Write(Experiment experiment, string path)` | `OptimFoundation.Core/Experiments/ExpCsvWriter.cs:410` | 逐一讀取 `experiment.Trials[*].Metrics.Convergence`，跳過沒有軌跡的 trial，一列一 sampling point（含 TrialId）整檔寫到 `path`；整個實驗沒有點就不建檔並刪掉同名舊檔；NaN/Infinity 寫成 `#N/A`，不補造取樣點。
 
 ### `OptimFoundation.Core/Experiments/Experiment.cs`
 
@@ -1878,9 +2340,9 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 - `public DateTime CreatedAt` | `OptimFoundation.Core/Experiments/Experiment.cs:21`
 - `public List<Trial> Trials` | `OptimFoundation.Core/Experiments/Experiment.cs:23`
 - `public IReadOnlyList<ConfigSummary> Summaries` | `OptimFoundation.Core/Experiments/Experiment.cs:29`
-- `public Experiment(string project, string name, string description)` | `OptimFoundation.Core/Experiments/Experiment.cs:41` | 驗證 project（不可空白、不可含非法檔名字元）與 name、設定 CreatedAt 並初始化 Trials；建立容器時不求解也不寫檔。
+- `public Experiment(string project, string name, string description)` | `OptimFoundation.Core/Experiments/Experiment.cs:41` | 驗證 project 與 name（都不可空白、不可含非法檔名字元：兩者組成檔名）、設定 CreatedAt 並初始化 Trials；建立容器時不求解也不寫檔。
 - `public void AddTrial(Trial trial)` | `OptimFoundation.Core/Experiments/Experiment.cs:45` | 驗證 `trial` 非 null 後，只把既有 `Trial` reference 加入 `Trials`；不呼叫 `Run`、不求解、不複製 trial，也不寫檔。
-- `public void Save()` | `OptimFoundation.Core/Experiments/Experiment.cs:77` | 建立 Experiment 目錄，把 trials 接在 `{Project}-trial.csv` / `-meta.csv` / `-summary.csv`（`WriteSummary` 時）/ `-trajectory.csv`（有點才寫）檔尾；表頭不同舊檔改名 `-old-<時間>`、寫不進去改寫 `-locked-<時間>`，皆留 WARN；沒有 trial 只留 WARN；失敗記 log 後重拋。
+- `public void Save()` | `OptimFoundation.Core/Experiments/Experiment.cs:81` | 建立 Experiment 目錄，把 trials 寫成 `{Project}-{Name}-trial.csv` / `-meta.csv` / `-summary.csv`（`WriteSummary` 時）/ `-trajectory.csv`（有點才寫）；同名實驗整組覆寫並留 `[EXPERIMENT_OVERWRITTEN]` WARN，這次沒寫到的舊檔一併刪掉；寫不進去改寫 `-locked-<時間>` 並留 WARN；沒有 trial 只留 WARN；失敗記 log 後重拋。
 - `public interface ITrajectorySource` | `OptimFoundation.Core/Experiments/Experiment.cs:103`
 - `public sealed class Trial` | `OptimFoundation.Core/Experiments/Experiment.cs:118`
 - `public string Label` | `OptimFoundation.Core/Experiments/Experiment.cs:121`
@@ -1891,8 +2353,8 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 - `public ConfigSnapshot Config` | `OptimFoundation.Core/Experiments/Experiment.cs:137`
 - `public SolveMetrics Metrics` | `OptimFoundation.Core/Experiments/Experiment.cs:140`
 - `public static Trial Capture(ISolverEngine engine, string label, Func<bool> solveAction, bool captureTrajectory = true)` | `OptimFoundation.Core/Experiments/Experiment.cs:182` | 要求非 null engine 與 action；先從 `engine.Config` 建 `ConfigSnapshot`，若要求 trajectory 且 engine 實作並支援 `ITrajectorySource`，在求解前呼叫 `EnableTrajectory()`。接著實際呼叫一次 `solveAction()`；其 bool 回傳不決定是否建 Trial。action 正常返回後讀 `engine.LastMetrics`，若為 null 則以當下 `engine.Status` 建最小 metrics，再連同 label、目前時間、snapshot 組成新 Trial；trajectory 由 solve 後的 `LastMetrics.Convergence` 一併保存。action 或 capture 失敗時記 `TRIAL_CAPTURE_FAILED` 並原例外重拋，不回傳 Trial；此方法不呼叫 `Dispose()`，engine lifecycle 仍由呼叫端管理。
-- `public sealed class ConfigSummary` | `OptimFoundation.Core/Experiments/Experiment.cs:214`
-- `public string RunId` | `OptimFoundation.Core/Experiments/Experiment.cs:217`
+- `public sealed class ConfigSummary` | `OptimFoundation.Core/Experiments/Experiment.cs:246`
+- `public string RunId` | `OptimFoundation.Core/Experiments/Experiment.cs:249` | 批次識別（同 `Trial.ExperimentId`），不寫進 CSV。
 - `public string Model` | `OptimFoundation.Core/Experiments/Experiment.cs:220`
 - `public string Config` | `OptimFoundation.Core/Experiments/Experiment.cs:223`
 - `public bool IsBaseline` | `OptimFoundation.Core/Experiments/Experiment.cs:226`
@@ -2360,5 +2822,5 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 - `public TimeSpan BuildModelElapsed` | `OptimFoundation.Cplex/OptProject.cs:86`
 - `public bool Solve(OptModel model, CplexConfig config, Action<OptEngine> onSolved = null, Action<OptEngine> beforeSolve = null)` | `OptimFoundation.Cplex/OptProject.cs:96` | 用途：執行求解；模型與設定必須完成，會更新 status、metrics 與 solution state。
 - `public void Dispose()` | `OptimFoundation.Cplex/OptProject.cs:152` | 用途：釋放 native/IO resources；scope 結束時呼叫，之後不可再使用 instance。
-- `public const string SolveExperimentName = "solve";` | `OptimFoundation.Cplex/OptProject.cs:154` | 正式求解紀錄在累積檔 Experiment 欄的值。
+- `public const string SolveExperimentName = "solve";` | `OptimFoundation.Cplex/OptProject.cs:155` | 正式求解紀錄的實驗名：檔名為 `{專案名}-solve-trial.csv` 等，每次 Solve 覆寫。
 - `public OptExperiment Experiment(string name, string description = null)` | `OptimFoundation.Cplex/OptProject.cs:162` | 只建立並回傳綁定目前 project、name、description 的 `OptExperiment` builder；不建立 `Experiment` result、`CreatedAt` 或 `Trials`，也不執行求解。

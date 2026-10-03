@@ -7,11 +7,8 @@ using Xunit;
 
 namespace OptimFoundation.Cplex.Tests.Unit
 {
-    // 模型大小檢查（EngineBase.PreSolveGuard）：已登記變數數量超過 ScaleWarnThreshold 時，只記錄警告，仍繼續求解。
-    // Logging 直接將訊息寫入 Console 與檔案，所以測試讀回 log 檔，確認是否真的寫入警告。
-    // Logging.SetLogFileName(tag) 把之後所有寫入導向一個帶 tag 的新檔，Solve() 後讀該檔內容比對是否含 WARN。
-    // [Collection("Logging")] 讓使用同一 collection 的測試依序執行，
-    // 避免其他共用 Logging 的測試改掉 log 檔名或混入訊息；不必停用所有測試的平行執行。
+    // Scale guard 只警告、不阻擋求解；讀回 log 驗證。
+    // 共用 Logging 的測試依序執行，避免互改檔名或混入訊息。
     [Collection("Logging")]
     public class ScaleGuardTests
     {

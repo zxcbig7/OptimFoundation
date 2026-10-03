@@ -12,15 +12,14 @@ namespace OptimFoundation.Core.IO
     /// </summary>
     public static class CsvCtrl
     {
-        // CSV 給人 / Excel 開啟：UTF-8 with BOM，避免 zh-TW Excel 以 Big5(950) 誤判中文成亂碼
+        // BOM 供 Excel 正確辨識 UTF-8 中文。
         private static readonly Encoding _csvWrite = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
-        // 檔名慣例統一：帶不帶 .csv 皆可（寫出端補齊，呼叫端不必記哪個 API 要帶副檔名）
+        // 寫出時補上 .csv 副檔名。
         private static string EnsureCsv(string fileName)
             => fileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) ? fileName : fileName + ".csv";
 
         /// <summary>
-        /// 依 RFC4180 規則解析輸入資料。引號內換行保留為 <c>\n</c>、逸出引號會解碼，
-        /// 即使引號內有換行，也會先讀完整筆資料，再回傳各欄的字串陣列。
+        /// 依 RFC4180 解析完整資料列；引號內換行保留為 <c>\n</c>，雙引號逸出會解碼。
         /// </summary>
         public static IEnumerable<string[]> ParseCsv(TextReader reader)
         {
@@ -154,11 +153,8 @@ namespace OptimFoundation.Core.IO
         }
 
         /// <summary>
-        /// 把 Set/Parameter 寫到 FolderDir.Input 下的 {fileName}.csv；第一列為大寫 property 名稱，後續每列一筆，可由 Load&lt;T&gt; 讀回。
-        /// 可在 import 階段先把原始資料轉成這種格式；求解時 CsvDataSource 會從同一輸入資料夾讀取。
-        /// fileName 省略時用型別名，與 Load&lt;T&gt; 的預設一致。
-        /// 欄位取自 typeof(T).GetProperties()，與 Load&lt;T&gt; / InitClassBySets 使用同一份 property 清單。
-        /// 不能改用 ReflectionHelper.GetMemberNames，因為它還會列出 field 與 static member，導致寫出後無法按原欄位讀回。
+        /// 將 Set/Parameter 寫至 FolderDir.Input/{fileName}.csv，預設檔名為型別名，表頭為大寫 property 名。
+        /// 僅使用 GetProperties，與 Load&lt;T&gt; 一致；不可加入 field 或 static member。
         /// </summary>
         public static void WriteRows<T>(IReadOnlyList<T> rows, string fileName = null)
             where T : ModelElementBase
@@ -182,7 +178,6 @@ namespace OptimFoundation.Core.IO
 
                 using (var sw = new StreamWriter(path, append: false, _csvWrite))
                 {
-                    // 表頭欄名大寫；Load<T> 按名對位時大小寫不敏感
                     sw.WriteLine(string.Join(",", props.Select(p => p.Name.ToUpperInvariant())));
 
                     foreach (var row in rows)
@@ -199,8 +194,7 @@ namespace OptimFoundation.Core.IO
             }
         }
 
-        // 值 → CSV 欄位字串。數值一律 InvariantCulture（double 用 "R" round-trip 格式，與 WriteSolution 同）；
-        // CSV 資料層 DateTime 純日期寫 yyyy-MM-dd、帶時間寫 yyyy-MM-dd HH:mm:ss；模型名稱層另由 ModelNaming 走 yyyy_MM_dd[_HH_mm_ss]。
+        // 數值用 InvariantCulture，double 用 R；日期用 yyyy-MM-dd[ HH:mm:ss]，與模型命名格式不同。
         private static string FormatValue(object value)
         {
             switch (value)
@@ -208,7 +202,7 @@ namespace OptimFoundation.Core.IO
                 case null:
                     return "";
                 case DateTime d when d.Ticks % TimeSpan.TicksPerSecond != 0:
-                    // 模型名稱的日期只接受到秒；不能捨去秒以下的值，否則 CSV 讀回後會與原資料不同。
+                    // 捨去秒以下精度會使 CSV 讀回值失真。
                     throw Logging.ErrorOnce(
                         new NotSupportedException($"[CsvCtrl] 不支援秒以下精度的 DateTime：{d:O}——index 粒度只到秒。"),
                         "CSV_DATETIME_INVALID", "CSV 日期輸出失敗", nameof(FormatValue), d.ToString("O", CultureInfo.InvariantCulture),

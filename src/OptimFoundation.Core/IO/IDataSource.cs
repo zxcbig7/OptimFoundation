@@ -5,8 +5,7 @@ using System.Data;
 namespace OptimFoundation.Core.IO
 {
     /// <summary>
-    /// Dataload 透過此介面讀取資料，讓 CSV、記憶體與資料庫使用相同的載入方式。
-    /// Load&lt;T&gt; 依欄名建立 Set 或 Parameter 資料列；LoadData 直接回傳含欄名的 DataTable。
+    /// CSV、記憶體及資料庫共用的表格與 model row 載入介面。
     /// </summary>
     public interface IDataSource
     {
@@ -20,10 +19,8 @@ namespace OptimFoundation.Core.IO
         /// <summary>依欄名與 public property 名稱對應，載入具型別的 Set 或 Parameter model row。</summary>
         /// <typeparam name="T">要建立的 Set 或 Parameter row 型別。</typeparam>
         /// <param name="sourceName">
-        /// 使用 <see cref="CsvDataSource"/> 時，sourceName 是 FolderDir.Input 下的檔名，
-        /// 可傳入有或沒有 <c>.csv</c> 的檔名，而且檔名不必等於 <typeparamref name="T"/> 的類別名稱；
-        /// 使用 <see cref="DbDataSource"/> 時是完整 SQL；使用 <see cref="InMemoryDataSource"/> 時是已註冊的表格名稱。
-        /// 省略時使用 <c>typeof(T).Name</c> 作為來源名稱。
+        /// CSV 為 FolderDir.Input 下的檔名（副檔名可省略）；DB 為完整 SQL；記憶體為已註冊表名。
+        /// 省略時使用 typeof(T).Name。
         /// </param>
         /// <returns>依來源資料列順序建立的 model row 清單。</returns>
         List<T> Load<T>(string sourceName = null) where T : ModelElementBase, new()
@@ -34,8 +31,7 @@ namespace OptimFoundation.Core.IO
     }
 
     /// <summary>
-    /// 求解結果的輸出介面，用來把某變數型別的解值寫成 CSV 或存入資料庫。
-    /// 實作：CsvSolutionSink / OracleSolutionSink。
+    /// 將指定變數型別的解值寫入 CSV 或資料庫。
     /// </summary>
     public interface ISolutionSink
     {

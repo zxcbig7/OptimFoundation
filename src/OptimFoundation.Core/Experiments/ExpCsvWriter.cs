@@ -8,16 +8,8 @@ using System.Text;
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 把每筆 Trial 寫成一列 CSV，方便用 Excel 比較設定差異與求解結果。
-    ///
-    /// 設定差異集中寫在 ConfigChanges 欄，避免新增參數時因缺少專用欄位而漏掉變更。
-    /// 只留調參會拿來判讀的欄位；同一批每列都一樣的東西（基準是誰、各類變數 / 限制式數量）寫在 -meta.csv，不每列重抄。
-    /// ModelType 取自求解器模型（CPLEX），留在主表是因為它決定這一列怎麼讀（LP 沒有 gap、沒有軌跡）。
-    /// 每列只列出與基準不同的參數；基準完整設定寫入同一專案的 -meta.csv（同一個 Experiment + RunId）。
-    /// VsBaseline 欄寫這一列跟同一個 seed 的基準比大小的結果（win / lose / tie），比法見 <see cref="ConfigSummary"/>。
-    /// 收斂軌跡另外寫 -trajectory.csv。
-    /// 每一格都有值：沒有數字可填時寫下方四個標記之一，空白格分不出「沒這個值」和「漏寫」。
-    /// 四個檔都是累積檔：每次寫入接在檔尾，每列最前面是 RecordedAt、Experiment、RunId（寫法見 <see cref="CumulativeCsv"/>）。
+    /// 每筆 Trial 一列；ConfigChanges 只列相對基準的差異，VsBaseline 記逐 seed 比較結果。
+    /// 完整基準與模型資訊寫入 -meta.csv，軌跡寫入 -trajectory.csv；缺值使用下列標記。
     /// </summary>
     public sealed class CsvExperimentWriter
     {
@@ -29,8 +21,7 @@ namespace OptimFoundation.Core
         /// <summary>有收集但事件沒發生：沒找到可行解、界從未變動、與基準無差異、求解前就失敗。</summary>
         public const string None = "none";
 
-        /// <summary>求解器不提供這項資料（NodeCount / IterationCount / Seed / ModelType / -meta.csv 的模型結構；軌跡開了但 CPLEX 沒呼叫 callback 時的 FirstSolutionMs / LastBoundChangeMs / BoundChange），
-        /// 框架沒量到（自己呼叫 Trial.Capture 時的 BuildAndSolveTimeMs），或無法跟基準比較（VsBaseline）。</summary>
+        /// <summary>資料未提供、未量測或無法比較；包含啟用軌跡卻沒有 callback 取樣的情況。</summary>
         public const string NotAvailable = "n/a";
 
         /// <summary>基準列的 ConfigChanges 與 VsBaseline：這一列就是基準。</summary>
@@ -53,22 +44,18 @@ namespace OptimFoundation.Core
 
         #region 寫出主表
 
-        /// <summary>四個檔共用的前三欄：寫入時間、實驗名、批次。不同實驗、不同次執行的列放在同一個檔，靠這三欄分辨。</summary>
-        internal static readonly string[] LeadingHeader = { "RecordedAt", "Experiment", "RunId" };
-
-        private static readonly string[] Header = LeadingHeader.Concat(new[]
+        private static readonly string[] Header =
         {
             "TrialId", "Model", "ModelType", "TrialLabel", "ConfigChanges", "Seed", "VsBaseline",
             "Status", "ObjectiveValue", "BestBound", "Gap", "BuildAndSolveTimeMs", "SolveTimeMs",
             "FirstSolutionMs", "LastBoundChangeMs", "BoundChange",
             "NodeCount", "IterationCount"
-        }).ToArray();
+        };
 
-        /// <summary>把實驗的每個 trial 各寫成一列，接在 path 的檔尾（檔案不存在就建新檔）。</summary>
+        /// <summary>把實驗的每個 trial 各寫成一列，整檔寫到 path（同名舊檔覆寫）。</summary>
         /// <param name="experiment">要寫出的實驗。</param>
-        /// <param name="path">累積檔路徑。</param>
-        /// <param name="recordedAt">寫入時間，填在每一列的 RecordedAt 欄；同一次 Save 的四個檔用同一個值。</param>
-        public void Write(Experiment experiment, string path, DateTime recordedAt)
+        /// <param name="path">輸出檔路徑。</param>
+        public void Write(Experiment experiment, string path)
         {
             var rows = new List<string>();
 
@@ -84,8 +71,7 @@ namespace OptimFoundation.Core
                 var baseline = baselineOfRun[t.ExperimentId ?? ""];
                 bool isBaseline = ReferenceEquals(t, baseline);
 
-                var cells = LeadingCells(recordedAt, experiment, t.ExperimentId);
-                cells.AddRange(new[]
+                var cells = new List<string>
                 {
                     t.TrialId > 0 ? t.TrialId.ToString(CultureInfo.InvariantCulture) : None,
                     OrNone(t.Model),
@@ -94,7 +80,7 @@ namespace OptimFoundation.Core
                     isBaseline ? Baseline : OrNone(ConfigChanges(baseline, t)),
                     SeedOf(t),
                     ComparisonText(comparisons[t])
-                });
+                };
 
                 if (m != null)
                 {
@@ -119,20 +105,15 @@ namespace OptimFoundation.Core
                 rows.Add(string.Join(",", cells));
             }
 
-            CumulativeCsv.Append(path, Header, rows);
+            ExperimentCsv.Write(path, Header, rows);
         }
-
-        /// <summary>每一列最前面的三格：寫入時間、實驗名、批次（RunId）。</summary>
-        internal static List<string> LeadingCells(DateTime recordedAt, Experiment experiment, string runId) =>
-            new List<string> { Cell(recordedAt.ToString("yyyy-MM-dd HH:mm:ss")), OrNone(experiment?.Name), OrNone(runId) };
 
         #endregion
 
         #region 基準與設定差異
 
         /// <summary>
-        /// 找出當作比較基準的那一筆：暖機（label 含 "warmup"）以外、標籤含 "baseline" 的第一筆；都沒有的話用暖機以外的第一筆。
-        /// 一輪實驗裡只會有一組基準，所以這個規則夠用，也不必額外設定。
+        /// 取第一筆非暖機且 label 含 baseline 的 trial；沒有時取第一筆非暖機 trial。
         /// </summary>
         internal static Trial FindBaselineIn(IList<Trial> trials)
         {
@@ -145,8 +126,7 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 這一列相對基準改了哪些設定，寫成 "參數=值"，多個參數以分號分隔。
-        /// Seed 不算改動——它是同一組設定重跑幾次用的，本身另有一欄。
+        /// 以分號分隔「參數=值」列出相對基準的差異；Seed 另有欄位，不列入。
         /// </summary>
         internal static string ConfigChanges(Trial baseline, Trial trial)
         {
@@ -198,8 +178,7 @@ namespace OptimFoundation.Core
         // 空字串一律寫 none，不留空白格
         private static string OrNone(string s) => string.IsNullOrEmpty(s) ? None : Cell(s);
 
-        // 軌跡衍生欄：沒開軌跡 → off；開了但 CPLEX 一次都沒呼叫 callback（presolve 或 root 就解完）→ n/a；
-        // 有取樣點但事件沒發生（沒找到可行解、界從未變動）→ none
+        // 未開軌跡為 off；無 callback 取樣為 n/a；有取樣但事件未發生為 none。
         private static string TrajectoryValue(SolveMetrics m, double? v)
         {
             if (!m.TrajectoryEnabled && m.TrajectoryPoints == 0) return Off;
@@ -238,65 +217,32 @@ namespace OptimFoundation.Core
     }
 
     /// <summary>
-    /// 每批（RunId）寫一份說明：開始時間、模型名稱與大小、求解環境及基準完整設定，讓主表只需記錄設定差異。
-    /// 欄位為 RecordedAt / Experiment / RunId / Section / Key / Value，新增項目不需改欄位。
-    /// 以 Experiment + RunId 篩選，可取得該批完整說明（含 schema 與 legend）。
+    /// 以 Section / Key / Value 記錄實驗、模型、環境與完整基準設定。
     /// </summary>
     public sealed class MetaCsvWriter
     {
-        #region 格式版本
-
-        /// <summary>
-        /// 格式版本；欄位變更時遞增，供讀取端辨識。
-        /// v2：新增 modelStats 區段。v3：主表與說明檔不留空白格，缺值改寫標記（見 legend 區段）；主表 Seed 改寫實際使用的種子。
-        /// v4：主表 DiffKnobs 改名 ConfigChanges；新增 ModelType 與各類變數 / 限制式數量欄，模型結構一律取自求解器模型；model 區段同步列出。
-        /// v5：新增 -summary.csv（每組設定的 sgm / PAR10 / θ / gap 平均 / 找到可行解數與相對基準的改善量）；暖機 trial（label 含 warmup）不當基準。
-        /// v6：拿掉 sgm / PAR10 / θ / 改善量，改成逐 seed 跟基準比大小：主表新增 VsBaseline 欄，-summary.csv 改寫 Wins / Losses / Ties / NotCompared。
-        /// v7：時間一律取 CPLEX 的時鐘（GetCplexTime），不再自己補軌跡終點；軌跡開了但 CPLEX 沒呼叫 callback 時，TFeasMs / TStallMs / DeltaBound 寫 n/a。
-        /// v8：檔案依功能分、不依實驗分：每個專案只有 {專案}-trial.csv（原主表）、-meta.csv、-summary.csv、-trajectory.csv 四個累積檔，每次執行接在檔尾；
-        /// 四個檔最前面都加 RecordedAt、Experiment、RunId 三欄（軌跡另加 TrialId）；說明檔每批寫一份，run 區段的 key 不再帶 RunId，拿掉 experiment.name / trialCount / writtenAt。
-        /// v9：主表與軌跡只留調參會判讀的欄位。主表拿掉 BasedOn（同批每列一樣，基準是誰看本檔 baseline.label）、RunAt（批次時間看 RunId、順序看 TrialId）、
-        /// TrajectoryPoints（有沒有軌跡已由 TFeasMs / TStallMs / DeltaBound 的 off / n/a 表示）、12 個模型結構欄（同一模型每列一樣，看本檔 model 區段）、Note；軌跡拿掉 RunAt。
-        /// v10：欄名改成白話全字，對應的屬性同名：MipGap → Gap、RunTimeMs → SolveTimeMs、TFeasMs → FirstSolutionMs、TStallMs → LastBoundChangeMs、DeltaBound → BoundChange；
-        /// 主表新增 BuildAndSolveTimeMs（建模 + 求解）；彙總 NoIncumbent → NoSolution、FoundIncumbent → FoundSolution、OtherStatus → Failed；
-        /// 軌跡 Label → TrialLabel、TimeMs → ElapsedMs、Objective → ObjectiveValue、Bound → BestBound。
-        /// v11：拿掉 modelStats 區段（框架自己記的數量與 CPLEX 重複）；目標式方向改列在 model 區段的 objectiveSense（取自 CPLEX）。
-        /// </summary>
-        public const int SchemaVersion = 11;
-
-        private static readonly string[] Header = CsvExperimentWriter.LeadingHeader.Concat(new[] { "Section", "Key", "Value" }).ToArray();
-
-        #endregion
-
         #region 寫出說明檔
 
-        /// <summary>每一批（RunId）寫一份完整說明，接在 path 的檔尾（檔案不存在就建新檔）。</summary>
+        private static readonly string[] Header = { "Section", "Key", "Value" };
+
+        /// <summary>把實驗的完整說明整檔寫到 path（同名舊檔覆寫）。</summary>
         /// <param name="experiment">要寫出的實驗。</param>
-        /// <param name="path">累積檔路徑。</param>
-        /// <param name="recordedAt">寫入時間，填在每一列的 RecordedAt 欄；同一次 Save 的四個檔用同一個值。</param>
-        public void Write(Experiment experiment, string path, DateTime recordedAt)
+        /// <param name="path">輸出檔路徑。</param>
+        public void Write(Experiment experiment, string path)
         {
             var lines = new List<string>();
-            var trials = (experiment?.Trials ?? new List<Trial>()).Where(t => t != null);
-            foreach (var run in trials.GroupBy(t => t.ExperimentId ?? ""))
-                foreach (var (section, key, value) in RowsOf(experiment, run.ToList()))
-                {
-                    var cells = CsvExperimentWriter.LeadingCells(recordedAt, experiment, run.Key);
-                    cells.Add(Cell(section));
-                    cells.Add(Cell(key));
-                    cells.Add(Cell(string.IsNullOrEmpty(value) ? CsvExperimentWriter.None : value));
-                    lines.Add(string.Join(",", cells));
-                }
+            var trials = (experiment?.Trials ?? new List<Trial>()).Where(t => t != null).ToList();
+            if (trials.Count > 0)
+                foreach (var (section, key, value) in RowsOf(experiment, trials))
+                    lines.Add(string.Join(",", Cell(section), Cell(key), Cell(string.IsNullOrEmpty(value) ? CsvExperimentWriter.None : value)));
 
-            CumulativeCsv.Append(path, Header, lines);
+            ExperimentCsv.Write(path, Header, lines);
         }
 
-        // 一批的說明：schema、legend、實驗描述、這批的開始時間與 trial 數、模型、環境、基準完整設定
         private static List<(string Section, string Key, string Value)> RowsOf(Experiment experiment, List<Trial> trials)
         {
             var rows = new List<(string Section, string Key, string Value)>
             {
-                ("schema", "version", SchemaVersion.ToString(CultureInfo.InvariantCulture)),
                 ("legend", CsvExperimentWriter.Off, "沒有收集：這次求解沒開收斂軌跡"),
                 ("legend", CsvExperimentWriter.None, "有收集但沒發生：沒找到可行解、界從未變動、與基準無差異、求解前就失敗"),
                 ("legend", CsvExperimentWriter.NotAvailable, "求解器不提供（例：軌跡開了但 CPLEX 沒呼叫 callback，presolve 或 root 就解完）、框架沒量到（自己呼叫 Trial.Capture 時的 BuildAndSolveTimeMs），或無法跟基準比較（暖機、同一個 seed 沒有基準 trial、基準本身求解失敗）"),
@@ -306,12 +252,10 @@ namespace OptimFoundation.Core
                 ("legend", CsvExperimentWriter.Tie, "VsBaseline：同一個 seed 跟基準一樣（例：兩邊都沒找到解）"),
                 ("legend", "#N/A", "-trajectory.csv：該時刻還沒有值（例：尚無可行解時的 ObjectiveValue / Gap）"),
                 ("experiment", "description", experiment?.Description),
-                // 這批第一個 trial 的記錄時間與 trial 數（OptExperiment 一次 Run 只有一批；手動組的 Experiment 可能多批，每批各一份）
                 ("run", "startedAt", trials[0].RunTime.ToString("yyyy-MM-dd HH:mm:ss")),
                 ("run", "trialCount", trials.Count.ToString(CultureInfo.InvariantCulture)),
             };
 
-            // 模型：跑了哪些、類型與各類變數 / 限制式數量（取自求解器模型）；主表只留 ModelType，數量只寫在這裡
             foreach (var model in trials.Select(t => t.Model).Where(m => !string.IsNullOrEmpty(m)).Distinct().OrderBy(m => m))
             {
                 var sample = trials.FirstOrDefault(t => t.Model == model && t.Metrics != null);
@@ -340,7 +284,6 @@ namespace OptimFoundation.Core
                 rows.Add(("environment", "machine", Environment.MachineName));
 
                 rows.Add(("baseline", "label", baseline.Label));
-                // 列出基準中非 null 的設定；未列出的參數使用求解器預設值。
                 foreach (var kv in baseline.Config.SolverSpecific.OrderBy(k => k.Key))
                     rows.Add(("baseline", kv.Key, Convert.ToString(kv.Value, CultureInfo.InvariantCulture)));
             }
@@ -367,31 +310,28 @@ namespace OptimFoundation.Core
     }
 
     /// <summary>
-    /// 彙總表：每組設定（同一批、同一模型、同一設定、不同 seed）一列，計數取自 <see cref="Experiment.Summaries"/>，比法見 <see cref="ConfigSummary"/>。
-    /// 每一格都有值：基準列的 Wins / Losses / Ties / NotCompared 寫 baseline。
+    /// 每批、模型、設定一列彙總，計數取自 Experiment.Summaries；基準列勝負欄填 baseline。
     /// </summary>
     public sealed class SummaryCsvWriter
     {
         #region 寫出彙總
 
-        private static readonly string[] Header = CsvExperimentWriter.LeadingHeader.Concat(new[]
+        private static readonly string[] Header =
         {
             "Model", "Config", "IsBaseline", "Trials", "Seeds",
             "Optimal", "Feasible", "NoSolution", "Failed", "FoundSolution",
             "Wins", "Losses", "Ties", "NotCompared"
-        }).ToArray();
+        };
 
-        /// <summary>把實驗的彙總（每組設定一列）接在 path 的檔尾（檔案不存在就建新檔）。</summary>
+        /// <summary>把實驗的彙總（每組設定一列）整檔寫到 path（同名舊檔覆寫）。</summary>
         /// <param name="experiment">要寫出的實驗。</param>
-        /// <param name="path">累積檔路徑。</param>
-        /// <param name="recordedAt">寫入時間，填在每一列的 RecordedAt 欄；同一次 Save 的四個檔用同一個值。</param>
-        public void Write(Experiment experiment, string path, DateTime recordedAt)
+        /// <param name="path">輸出檔路徑。</param>
+        public void Write(Experiment experiment, string path)
         {
             var rows = new List<string>();
             foreach (var s in experiment.Summaries)
             {
-                var cells = CsvExperimentWriter.LeadingCells(recordedAt, experiment, s.RunId);
-                cells.AddRange(new[]
+                var cells = new[]
                 {
                     Text(s.Model),
                     Text(s.Config),
@@ -407,11 +347,11 @@ namespace OptimFoundation.Core
                     Versus(s.Losses),
                     Versus(s.Ties),
                     Versus(s.NotCompared),
-                });
+                };
                 rows.Add(string.Join(",", cells));
             }
 
-            CumulativeCsv.Append(path, Header, rows);
+            ExperimentCsv.Write(path, Header, rows);
         }
 
         #endregion
@@ -428,28 +368,24 @@ namespace OptimFoundation.Core
     }
 
     /// <summary>
-    /// 把每筆 Trial 的每個取樣點各寫成一列 CSV，用來畫出
-    /// 最佳可行解目標值、最佳界與 gap 隨時間的變化。搭配 <see cref="CsvExperimentWriter"/>
-    /// 輸出的每次求解摘要，可同時查看最終結果與中途進展。
+    /// 每個 Trial 軌跡點一列，記錄目標值、最佳界與 gap 隨時間的變化。
     /// </summary>
     public sealed class TrajectoryCsvWriter
     {
         #region 寫出軌跡
 
-        private static readonly string[] Header = CsvExperimentWriter.LeadingHeader.Concat(new[]
+        private static readonly string[] Header =
         {
             "TrialId", "TrialLabel", "PointIndex", "ElapsedMs", "ObjectiveValue", "BestBound", "Gap"
-        }).ToArray();
+        };
 
         /// <summary>
-        /// 每個取樣點寫一列，接在 path 的檔尾；Experiment + RunId + TrialId 對回 -trial.csv 的那一列。
-        /// 沒有軌跡的 Trial 直接跳過，整批都沒有軌跡點就不動檔案；NaN / Infinity（例：還沒有可行解時的 ObjectiveValue / Gap）寫成 #N/A：
-        /// Excel 讀成 #N/A 錯誤值、畫圖時自動略過該點，pandas 預設也讀成 NaN，不會像文字標記那樣被當成 0 畫出去。
+        /// 每個軌跡點一列，TrialId 對應 -trial.csv；無軌跡 trial 略過，全無軌跡則刪除同名舊檔。
+        /// NaN / Infinity 寫為 #N/A，避免圖表將缺值畫成 0。
         /// </summary>
         /// <param name="experiment">要寫出的實驗。</param>
-        /// <param name="path">累積檔路徑。</param>
-        /// <param name="recordedAt">寫入時間，填在每一列的 RecordedAt 欄；同一次 Save 的四個檔用同一個值。</param>
-        public void Write(Experiment experiment, string path, DateTime recordedAt)
+        /// <param name="path">輸出檔路徑。</param>
+        public void Write(Experiment experiment, string path)
         {
             var rows = new List<string>();
             foreach (var t in experiment.Trials)
@@ -460,8 +396,7 @@ namespace OptimFoundation.Core
                 int i = 0;
                 foreach (var p in pts)
                 {
-                    var cells = CsvExperimentWriter.LeadingCells(recordedAt, experiment, t.ExperimentId);
-                    cells.AddRange(new[]
+                    var cells = new[]
                     {
                         t.TrialId > 0 ? t.TrialId.ToString(CultureInfo.InvariantCulture) : CsvExperimentWriter.None,
                         Cell(t.Label),
@@ -470,13 +405,13 @@ namespace OptimFoundation.Core
                         Num(p.ObjectiveValue),
                         Num(p.BestBound),
                         Num(p.Gap)
-                    });
+                    };
                     rows.Add(string.Join(",", cells));
                     i++;
                 }
             }
 
-            CumulativeCsv.Append(path, Header, rows);
+            ExperimentCsv.Write(path, Header, rows);
         }
 
         #endregion
@@ -496,72 +431,52 @@ namespace OptimFoundation.Core
     }
 
     /// <summary>
-    /// 實驗累積檔的寫法：每次寫入接在檔尾，舊列不改不刪。
+    /// 實驗 CSV 的寫法：一個實驗一組檔，每次整檔重寫，檔案裡只有這一次的紀錄。
     /// <list type="bullet">
-    /// <item>檔案不存在（或是空檔）→ 建新檔：UTF-8 BOM + 表頭 + 這次的列（BOM 讓 zh-TW Excel 正確辨識中文，避免被當成 Big5 讀成亂碼）</item>
-    /// <item>表頭跟這一版相同 → 接在檔尾，不再寫 BOM</item>
-    /// <item>表頭不同（欄位改版）→ 舊檔改名成 {檔名}-old-{時間}.csv 保留，另開新檔，留 WARN</item>
+    /// <item>有資料 → UTF-8 BOM + 表頭 + 這次的列，同名舊檔直接覆寫（BOM 讓 zh-TW Excel 正確辨識中文，避免被當成 Big5 讀成亂碼）</item>
+    /// <item>這次沒有任何列 → 不建只有表頭的空殼；同名舊檔刪掉，免得留下上一次的紀錄</item>
     /// <item>寫不進去（例：檔案被 Excel 開著）→ 這次改寫到 {檔名}-locked-{時間}.csv，留 WARN，紀錄不會丟</item>
     /// </list>
-    /// 這次沒有任何列就不動檔案，不建只有表頭的空殼。
     /// </summary>
-    internal static class CumulativeCsv
+    internal static class ExperimentCsv
     {
-        private static readonly Encoding NewFileEncoding = new UTF8Encoding(true);
-        private static readonly Encoding AppendEncoding = new UTF8Encoding(false);
+        private static readonly Encoding FileEncoding = new UTF8Encoding(true);
 
-        internal static void Append(string path, IReadOnlyList<string> header, IReadOnlyList<string> rows)
+        internal static void Write(string path, IReadOnlyList<string> header, IReadOnlyList<string> rows)
         {
-            if (rows.Count == 0) return;
-            string headerLine = string.Join(",", header);
+            if (rows.Count == 0)
+            {
+                Delete(path);
+                return;
+            }
+
+            var body = new StringBuilder();
+            body.AppendLine(string.Join(",", header));
+            foreach (string row in rows) body.AppendLine(row);
             try
             {
-                AppendCore(path, headerLine, rows);
+                File.WriteAllText(path, body.ToString(), FileEncoding);
             }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
                 string fallback = StampedPath(path, "locked");
-                Logging.Warn($"[EXPERIMENT_FILE_LOCKED] 累積檔寫不進去，這次改寫到另一個檔 | value={path} fallback={fallback} reason={ex.GetBaseException().Message} result=written_to_fallback");
-                AppendCore(fallback, headerLine, rows);
+                Logging.Warn($"[EXPERIMENT_FILE_LOCKED] 實驗檔寫不進去，這次改寫到另一個檔 | value={path} fallback={fallback} reason={ex.GetBaseException().Message} result=written_to_fallback");
+                File.WriteAllText(fallback, body.ToString(), FileEncoding);
             }
         }
 
-        private static void AppendCore(string path, string headerLine, IReadOnlyList<string> rows)
+        /// <summary>刪掉這次沒有資料的同名舊檔；刪不掉（例：被 Excel 開著）就留著並留 WARN。</summary>
+        internal static void Delete(string path)
         {
-            var body = new StringBuilder();
-            foreach (string row in rows) body.AppendLine(row);
-
-            if (File.Exists(path) && new FileInfo(path).Length > 0)
+            if (!File.Exists(path)) return;
+            try
             {
-                if (FirstLineOf(path) == headerLine)
-                {
-                    // 檔尾沒有換行（例：手動編輯過）時先補一個，免得這次的第一列黏在舊的最後一列後面
-                    string separator = EndsWithNewLine(path) ? "" : Environment.NewLine;
-                    File.AppendAllText(path, separator + body, AppendEncoding);
-                    return;
-                }
-
-                string renamed = StampedPath(path, "old");
-                File.Move(path, renamed);
-                Logging.Warn($"[EXPERIMENT_HEADER_CHANGED] 累積檔的欄位跟這一版不同，舊檔改名保留、另開新檔 | value={path} renamed={renamed} result=new_file_started");
+                File.Delete(path);
             }
-
-            File.WriteAllText(path, headerLine + Environment.NewLine + body, NewFileEncoding);
-        }
-
-        // 讀的時候允許別人開著（例：Excel），真的寫不進去才交給 Append 改寫到 -locked 檔
-        private static string FirstLineOf(string path)
-        {
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-            return reader.ReadLine();
-        }
-
-        private static bool EndsWithNewLine(string path)
-        {
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            stream.Seek(-1, SeekOrigin.End);
-            return stream.ReadByte() == '\n';
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                Logging.Warn($"[EXPERIMENT_FILE_LOCKED] 上一次的實驗檔刪不掉，檔裡不是這次的紀錄 | value={path} reason={ex.GetBaseException().Message} result=stale_file_kept");
+            }
         }
 
         // {檔名}-{tag}-{yyyyMMdd-HHmmss}.csv；同一秒已有同名檔時再加 -2、-3

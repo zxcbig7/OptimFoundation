@@ -9,7 +9,6 @@
     <CplexDir Condition="'$(CplexDir)' == ''">C:\IBM\ILOG\CPLEX_Studio2211</CplexDir>
   </PropertyGroup>
 
-  <!-- xUnit -->
   <ItemGroup>
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
@@ -19,17 +18,14 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
   </ItemGroup>
 
-  <!-- OptimFoundation -->
   <ItemGroup>
     <ProjectReference Include="..\..\src\OptimFoundation.Core\OptimFoundation.Core.csproj" />
     <ProjectReference Include="..\..\src\OptimFoundation.Cplex\OptimFoundation.Cplex.csproj" />
-    <!-- 以 Analyzer 引用，讓測試中的 [OptSet]/[OptParam]/DataContext 經過 AutoSetsGenerator，
-         驗證產生的註冊碼涵蓋所有數值欄位，見 GeneratorNumericCoverageTests。 -->
+    <!-- 以 Analyzer 引用，驗證 generator 產生的註冊碼與數值檢查。 -->
     <ProjectReference Include="..\..\src\OptimFoundation.Generators\OptimFoundation.Generators.csproj"
                        OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
-  <!-- CPLEX DLL -->
   <ItemGroup>
     <Reference Include="ILOG.Concert">
       <HintPath>$(CplexDir)\cplex\bin\x64_win64\ILOG.Concert.dll</HintPath>

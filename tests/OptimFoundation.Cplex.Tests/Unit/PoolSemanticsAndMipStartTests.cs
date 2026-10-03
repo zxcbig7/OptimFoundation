@@ -32,7 +32,6 @@ namespace OptimFoundation.Cplex.Tests.Unit
             return reader.ReadToEnd();
         }
 
-        // ── 目標式常數項 ───────────────────────────────────────────────────
 
         [Fact(DisplayName = "目標式常數項：AddLHS(常數) 帶進 SetObjective")]
         public void CreateMinimize_PassesLhsConstantToSolver()
@@ -83,7 +82,6 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Contains("[POOL_RHS_IGNORED] 右側 pool 不被採用 | operation=CreateMinimize name=<objective> rhsTerms=1 rhsConst=3 reason=objective_uses_lhs_only result=rhs_discarded", ReadLog(tag));
         }
 
-        // ── CreateRange 與 RHS pool ────────────────────────────────────────
 
         [Fact(DisplayName = "CreateRange 遇到 RHS pool：warn、仍建立、pool 清空")]
         public void CreateRange_WithRhsPool_WarnsAndStillBuilds()
@@ -114,7 +112,6 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.DoesNotContain("[POOL_RHS_IGNORED]", ReadLog(tag));
         }
 
-        // ── 無上限統一 1E20 ────────────────────────────────────────────────
 
         [Fact(DisplayName = "無上限統一為 OptBounds.Infinity = 1E20（BuildVars 與 soft 彈性變數）")]
         public void UnboundedVariables_UseCplexInfinity()
@@ -129,7 +126,6 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.All(engine.BuiltVars, v => Assert.True(v.Ub == OptBounds.Infinity, $"{v.Name} ub={v.Ub}"));
         }
 
-        // ── AddMIPStart ────────────────────────────────────────────────────
 
         [Fact(DisplayName = "AddMIPStart：名稱對應到變數後交給 solver，未知名稱略過")]
         public void AddMIPStart_ResolvesNamesAndSkipsUnknown()

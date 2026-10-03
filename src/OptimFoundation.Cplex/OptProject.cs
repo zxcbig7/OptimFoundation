@@ -5,7 +5,7 @@ using OptimFoundation.Core;
 namespace OptimFoundation.Cplex
 {
     /// <summary>
-    /// 管理專案名稱、FolderDir 資料夾、log 與檔案保留天數，並提供正式求解（<see cref="Solve"/>）與實驗（<see cref="Experiment"/>）入口。
+    /// 管理求解、實驗及其輸出資源。
     /// 建立專案時會設定 log 檔、建立所需資料夾，並刪除超過保留天數的輸出檔；實驗紀錄不會刪除。
     /// 可多次 Solve；Engine / IsSuccess / Trial 保留最近一次結果，下次 Solve 時釋放前一次引擎。
     /// 多個專案需依序執行，因為 Logging 與 FolderDir 由整個 process 共用。
@@ -85,7 +85,7 @@ namespace OptimFoundation.Cplex
 
         /// <summary>
         /// 使用指定的模型與求解器設定，建立新引擎並求解一次。
-        /// 結果以 Trial 追加到 Experiment/{專案名}-trial.csv 與 -meta.csv，Experiment 欄為 solve；不寫 -summary.csv。
+        /// 結果以 Trial 寫成 Experiment/{專案名}-solve-trial.csv 與 -meta.csv，每次 Solve 覆寫；不寫 -summary.csv。
         /// 找到可用解後才執行 onSolved。
         /// </summary>
         /// <param name="model">要求解的模型。</param>
@@ -121,12 +121,12 @@ namespace OptimFoundation.Cplex
         {
             IsSuccess = false;
             Trial = null;
-            // 若中途跑過實驗，這裡切回專案 log；已使用同一檔名時不做任何事。
+            // 實驗可能切換 log，求解前須切回專案 log。
             Logging.SetLogFileName(Name);
 
             string runId = NextRunId();
             Engine?.Dispose();
-            // 先保存 Engine 再建模，讓呼叫端在建模或求解失敗時仍能讀取引擎的診斷資訊。
+            // 先保存 Engine，失敗時仍可讀取診斷資訊。
             Engine = new OptEngine(config.Clone(), _projectConfig.Clone());
             Engine.SetModelName(Name);
             Trial = Engine.RunModel(model, "solve", captureTrajectory: false, beforeSolve, out bool solved);
@@ -134,8 +134,7 @@ namespace OptimFoundation.Cplex
             Trial.TrialId = 1;
             IsSuccess = solved;
 
-            // 先儲存紀錄再執行 onSolved，避免 callback 失敗時沒有求解紀錄。
-            // 正式求解只有一筆、沒有可比的設定，不寫 -summary.csv。
+            // 先存紀錄，避免 onSolved 失敗時遺失求解結果。
             var record = new Experiment(Name, SolveExperimentName, $"正式求解紀錄：{model.Name}") { WriteSummary = false };
             record.AddTrial(Trial);
             record.Save();
@@ -151,14 +150,14 @@ namespace OptimFoundation.Cplex
 
         #endregion
 
-        /// <summary>正式求解紀錄在累積檔 Experiment 欄的值。</summary>
+        /// <summary>正式求解紀錄的實驗名：檔名為 {專案名}-solve-trial.csv 等。</summary>
         public const string SolveExperimentName = "solve";
 
         /// <summary>
         /// 建立實驗，讓每個模型分別搭配每組求解器設定，並以 Trial 保存每次結果。
         /// 建立時就把 log 切到 {專案名}-{實驗名}_exp，之後的前置動作（例：warm-up）也收在同一檔。
         /// </summary>
-        /// <param name="name">實驗名，寫在累積檔每一列的 Experiment 欄（<see cref="SolveExperimentName"/> 留給正式求解）；同名實驗再跑一次會多一批 RunId，不覆寫舊列。</param>
+        /// <param name="name">實驗名，輸出檔為 {專案名}-{實驗名}-trial.csv 等（<see cref="SolveExperimentName"/> 留給正式求解）；同名實驗再跑一次整組覆寫。</param>
         /// <param name="description">實驗目的，寫進 -meta.csv。</param>
         public OptExperiment Experiment(string name, string description = null)
             => new OptExperiment(this, name, description);
@@ -170,8 +169,7 @@ namespace OptimFoundation.Cplex
         private static int _runStampRepeat;
 
         /// <summary>
-        /// 一次執行（一次 Solve 或一次實驗 Run）的批次識別：開始時間 yyyyMMdd-HHmmss。
-        /// 同一秒內再開一批時加 -2、-3，累積檔才能靠 Experiment + RunId 分辨每一次執行。
+        /// 批次識別使用 yyyyMMdd-HHmmss；同秒重複時加流水號。
         /// </summary>
         internal static string NextRunId()
         {

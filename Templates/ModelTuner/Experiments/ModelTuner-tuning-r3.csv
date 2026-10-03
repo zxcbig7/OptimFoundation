@@ -1,3 +1,0 @@
-﻿RunId,TrialId,Model,TrialLabel,BasedOn,DiffKnobs,Seed,RunAt,Status,ObjectiveValue,BestBound,MipGap,RunTimeMs,TFeasMs,TStallMs,DeltaBound,NodeCount,IterationCount,TrajectoryPoints,VarCount,ConstraintCount,Note
-20260928-011705,1,Consistent,base,,,,2026-09-28 01:17:05,Optimal,1,1,0,3.7304,,,,0,0,0,2,1,
-20260928-011705,2,Unreferenced,base,base,,,2026-09-28 01:17:05,Optimal,1,1,0,3.354,,,,0,0,0,3,1,

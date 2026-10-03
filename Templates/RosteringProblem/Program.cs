@@ -8,8 +8,7 @@ namespace RosteringProblem
     {
         private static int Main(string[] args)
         {
-            // 模式 1：import——本專案沒有不規則外部來源，import 改為以固定種子重新生成範例排班資料
-            // 並攤平成標準 CSV（見 Data/Dataload.cs 的 Dataload(string) 建構子）。
+            // import：以固定種子產生排班 CSV。
             if (args.Length >= 2 && args[0] == "import")
             {
                 OptData.Load(() => new Dataload(args[1])).Export();
@@ -17,7 +16,7 @@ namespace RosteringProblem
             }
 
             bool isExperiment = args.Any(arg => string.Equals(arg, "exp", StringComparison.OrdinalIgnoreCase));
-            // 由 OptProject 管理 log、資料夾與檔案保留天數；實驗和正式求解都透過它執行。
+            // OptProject 管理 log、資料夾與保留期。
             using var project = new OptProject("RosteringProblem");
 
             // ── 1. 材料 ────────────────────────────────────────────
@@ -46,9 +45,8 @@ namespace RosteringProblem
                 ExportLP = true,
                 ExportMPS = true,
             };
-            // 正式求解直接使用這組設定；實驗則先複製一份，再調整要比較的參數。
-            // 設定來源：沿用原始 Template_CPLEX 的手動設定（MipGap=0.03, TimeLimit=100, Threads=10），
-            // 尚未依 §8 調參流程重新驗證；日後採用新設定時，同步更新本註解與 TuningHistory.md。
+            // 正式求解設定；實驗先 Clone 再修改。
+            // 設定來源與調參證據見 TuningHistory.md。
             var productionBaseline = new CplexConfig
             {
                 MipGap = 0.03,
@@ -102,7 +100,7 @@ namespace RosteringProblem
             // 模式 2：exp，使用不同 solver 設定重複求解，記錄比較結果。
             if (isExperiment)
             {
-                // S2 R0 基準量測：固定 Threads=10、ParallelMode=1，用基準設定跑 5 個 seed 當對照組，並觀察耗時原因。
+                // 基準組用相同 seed 比較；固定執行環境以降低量測差異。
                 // seed 6、7、8 留到最後驗證已選設定，不參與調參比較。
                 var warmup = productionBaseline.Clone();
                 warmup.ParallelMode = 1;
@@ -115,7 +113,7 @@ namespace RosteringProblem
                     return config;
                 }
 
-                // S3 R3：針對最佳界改善較慢的情況，測試 Symmetry=3 能否減少同質員工的重複排班搜尋；只改這個參數，使用相同 seed 比較。
+                // 測試 Symmetry=3 能否減少同質員工的重複搜尋；其餘條件相同。
                 CplexConfig SymmetryBreaking(int seed)
                 {
                     var config = Seeded(seed);
@@ -147,9 +145,7 @@ namespace RosteringProblem
             }
 
             // 模式 3（預設）：正式求解
-            // 模型建完後存一份 .sav 供 Templates/ModelInspector 匯入檢視。
-            // 用 .sav 而非既有的 LP/MPS：後兩者是文字格式、係數經十進位截斷，讀回來無法精確重現本次求解。
-            // 在限制式建立完後、求解前就匯出，讓無可行解時也有模型檔可供檢查。
+            // 求解前匯出 .sav，保留精確係數，無解時也能匯入檢查。
             model.AddConstraints(engine =>
                 engine.ExportModel($"{engine.ModelName}_SAV_{engine.StartTime}.sav"));
 

@@ -1,10 +1,8 @@
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 設定是否在 Console 顯示求解器 log，以及是否匯出模型與解答；由 OptProject / OptExperiment 的 LoadConfig 載入。
-    /// 只控制輸出，不調整求解演算法，也不列入 ConfigSnapshot。比較求解設定時應固定這些選項。
-    /// 專案名與保留期由 OptProject 建構子指定，檔案位置由 FolderDir 決定。
-    /// 正式求解（Solve）使用屬性預設值；實驗（Experiment）預設用 <see cref="Quiet"/>。
+    /// 專案輸出設定，由 OptProject / OptExperiment.LoadConfig 載入，不列入 ConfigSnapshot。
+    /// Solve 使用屬性預設值，Experiment 預設使用 <see cref="Quiet"/>；比較求解設定時應固定輸出選項。
     /// </summary>
     public sealed class ProjectConfig
     {

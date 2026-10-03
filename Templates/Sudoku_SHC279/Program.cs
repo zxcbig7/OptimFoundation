@@ -16,7 +16,7 @@ namespace Sudoku_SHC279
 
             bool isExperiment = args.Any(
                 arg => string.Equals(arg, "exp", StringComparison.OrdinalIgnoreCase));
-            // 由 OptProject 管理 log、資料夾與檔案保留天數；實驗和正式求解都透過它執行。
+            // OptProject 管理 log、資料夾與保留期。
             using var project = new OptProject(Dataload.PuzzleName);
 
             // 1. 材料
@@ -28,10 +28,7 @@ namespace Sudoku_SHC279
                 EnableSolverLog = false,
                 ExportLP = true,
             };
-            // 正式求解使用這組設定；調參結果確認較好後，統一更新在這裡。
-            // 設定來源：最初的基準設定；r2 比較後仍保留原設定，詳見 TuningHistory.md。
-            // 每次採用新的正式設定時，都要同步更新這份來源紀錄與 TuningHistory.md。
-            // 實驗先複製這組設定，再調整要比較的參數；正式求解直接使用這組設定。
+            // 正式設定；實驗先 Clone 再修改。調參證據見 TuningHistory.md。
             var productionBaseline = new CplexConfig
             {
                 TimeLimit = 30,

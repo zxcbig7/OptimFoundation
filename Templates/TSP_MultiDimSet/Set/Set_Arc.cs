@@ -4,7 +4,7 @@ namespace TSP_MultiDimSet
 {
     /// <summary>
     /// 實際可用的有向弧；對應 Model.md 的 ARC。
-    /// 每列以起點與終點表示一條可走的路徑；模型只為這些路徑建立變數，不建立所有 NODE × NODE 組合。
+    /// 僅為資料列中的 (From, To) 建變數，不展開 NODE × NODE。
     /// </summary>
     [OptSet]
     [OptDim<string>("From")]

@@ -9,8 +9,7 @@ using Xunit;
 namespace OptimFoundation.Cplex.Tests.Integration
 {
     /// <summary>
-    /// OptProject 專案範圍（specs/2026-09-28-project-scope-and-unified-run.md）：
-    /// 資料夾、保留期、log 命名、Solve 紀錄、BeforeSolve 順序、實驗軌跡開關。
+    /// 驗證專案資料夾、保留期、log 命名、Solve 紀錄、BeforeSolve 順序與軌跡開關。
     /// </summary>
     [Collection("Logging")]
     public class ProjectScopeIntegrationTests
@@ -152,7 +151,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
         // ── AC5 / AC6：Solve 也留紀錄 ─────────────────────────────────────
 
-        [Fact(DisplayName = "AC5/AC6：Solve 記一筆不開軌跡的 Trial，接在 {專案名}-trial.csv（Experiment = solve），不寫 -summary.csv")]
+        [Fact(DisplayName = "AC5/AC6：Solve 記一筆不開軌跡的 Trial，寫成 {專案名}-solve-trial.csv（每次 Solve 覆寫），不寫 -summary.csv")]
         public void Solve_RecordsTrialWithoutTrajectory()
         {
             if (!CplexAvailable) return;
@@ -177,19 +176,19 @@ namespace OptimFoundation.Cplex.Tests.Integration
                 Assert.Equal(SolveStatus.Optimal, trial.Metrics.Status);
                 Assert.Equal(0, trial.Metrics.TrajectoryPoints);
 
-                // 兩次 Solve 接在同一個檔，各自一個 RunId；正式求解沒有可比的設定，不寫彙總
-                string csv = FolderDir.Experiment.GetPathFile(tag + "-trial.csv");
-                Assert.True(File.Exists(FolderDir.Experiment.GetPathFile(tag + "-meta.csv")));
-                Assert.False(File.Exists(FolderDir.Experiment.GetPathFile(tag + "-summary.csv")));
+                // 第二次 Solve 覆寫第一次的紀錄；正式求解沒有可比的設定，不寫彙總
+                string prefix = $"{tag}-{OptProject.SolveExperimentName}";
+                string csv = FolderDir.Experiment.GetPathFile(prefix + "-trial.csv");
+                Assert.True(File.Exists(FolderDir.Experiment.GetPathFile(prefix + "-meta.csv")));
+                Assert.False(File.Exists(FolderDir.Experiment.GetPathFile(prefix + "-summary.csv")));
                 string[] lines = File.ReadAllLines(csv);
-                Assert.Equal(3, lines.Length);
-                Assert.Contains($",{OptProject.SolveExperimentName},{firstRunId},1,Knapsack,BP,solve,", lines[1]);
-                Assert.Contains($",{OptProject.SolveExperimentName},{trial.ExperimentId},1,Knapsack,BP,solve,", lines[2]);
+                Assert.Equal(2, lines.Length);
+                Assert.StartsWith("1,Knapsack,BP,solve,", lines[1]);
             }
             finally
             {
                 foreach (string kind in new[] { "trial", "meta", "summary", "trajectory" })
-                    DeleteIfExists(FolderDir.Experiment.GetPathFile($"{tag}-{kind}.csv"));
+                    DeleteIfExists(FolderDir.Experiment.GetPathFile($"{tag}-{OptProject.SolveExperimentName}-{kind}.csv"));
             }
         }
 
@@ -241,8 +240,9 @@ namespace OptimFoundation.Cplex.Tests.Integration
             }
             finally
             {
-                foreach (string kind in new[] { "trial", "meta", "summary", "trajectory" })
-                    DeleteIfExists(FolderDir.Experiment.GetPathFile($"{tag}-{kind}.csv"));
+                foreach (string experimentName in new[] { "on", "off" })
+                    foreach (string kind in new[] { "trial", "meta", "summary", "trajectory" })
+                        DeleteIfExists(FolderDir.Experiment.GetPathFile($"{tag}-{experimentName}-{kind}.csv"));
             }
         }
     }

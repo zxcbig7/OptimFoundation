@@ -13,21 +13,11 @@ namespace OptimFoundation.Cplex.Tests.Integration
     /// 連續數值使用範圍內的代表值，各求解一次，確認 CPLEX 接受這些設定。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <see cref="SolverParamCoverageTests"/> 檢查參數能套用並寫入實驗 CSV；
-    /// 本測試進一步逐值檢查 CPLEX 是否接受，也記錄本平台或模型不支援的值。
-    /// </para>
-    /// <para>
-    /// 值的來源：本機官方文件 <c>CPLEX\Parameters\topics\&lt;ParamName&gt;.html</c> 的 Values 表格
-    /// 離散選項逐值測試；連續數值則從文件允許的範圍中選取代表值。
-    /// </para>
-    /// <para>
-    /// <b>只要 CPLEX 接受參數且未丟出例外，就視為通過</b>。例如 NodeLimit=0、IntegerSolutionLimit=1、
-    /// UpperCutoff 等停止條件可能讓求解提早結束，未達 Optimal 也不算測試失敗；
-    /// 只有 SetParam 或 Solve 丟例外才算這個值不能用。
-    /// </para>
+    /// 值域取自官方 CPLEX Parameters/topics/&lt;ParamName&gt;.html 的 Values 表。
+    /// 只要求 SetParam/Solve 不丟例外；停止條件可能使狀態未達 Optimal。
+    /// 已知平台或模型限制另列清單；CSV 輸出由 <see cref="SolverParamCoverageTests"/> 驗證。
     /// </remarks>
-    // Solve() 會寫入共用的 Logging；加入同一個 collection 讓相關測試依序執行，避免彼此的訊息影響 log 內容檢查。
+    // 共用 Logging 的測試依序執行，避免 log 互相干擾。
     [Collection("Logging")]
     public class SolverParamValueMatrixTests
     {

@@ -13,14 +13,12 @@ namespace OptimFoundation.Cplex
 {
     /// <summary>
     /// 將框架的建模、求解與取解操作轉成 CPLEX 呼叫。
-    /// 通常由 OptProject 或 OptExperiment 建立引擎並呼叫 Build()，再套用 OptModel 的建模步驟。
-    /// 直接使用引擎時，先呼叫 Build() 初始化模型，再加入變數、目標式與限制式。
-    /// 批次建立變數可用 BuildVars；需要指定型別時可用 BuildCVs / BuildIVs / BuildBVs，並透過 ReadVar 存取。
+    /// 直接使用時須先 Build()；一般由 OptProject 或 OptExperiment 管理生命週期。
     /// </summary>
     public partial class OptEngine : EngineBase<ILOG.CPLEX.Cplex, INumVar, ILinearNumExpr, IRange>
     {
         /// <summary>
-        /// 模型名稱
+        /// 模型名稱。
         /// </summary>
         private string _modelName { get; set; }
 
@@ -46,8 +44,7 @@ namespace OptimFoundation.Cplex
 
         // 基底類別檢查一般限制式是否重複；這個集合另外記錄跨引擎建立的限制式，因為兩者清除的時機不同。
         private readonly HashSet<string> _threadVerifyConstraints = new HashSet<string>();
-        // CreateXxxThread 只建立限制式物件，尚未加入模型；使用的是 Le/Ge/Eq，不是 AddLe/AddGe/AddEq。
-        // 之後可用 MergeModel 加入另一個模型，或用 ResetThreadConstraint 從主模型移除。
+        // Thread 限制式尚未加入模型，由 MergeModel 加入、ResetThreadConstraint 移除。
         private int _threadRuleCount = 0;
         private readonly List<IRange> _threadConstraints = new List<IRange>();
         private List<string> _conflictConstraints = null;
@@ -85,7 +82,6 @@ namespace OptimFoundation.Cplex
         /// <summary>
         /// 依序初始化引擎、套用模型、執行 beforeSolve、求解，最後回傳含模型名稱的 <see cref="Trial"/> 紀錄。
         /// 呼叫端負責複製設定、建立與釋放引擎；正式求解會保留引擎供取解，實驗則在記錄結果後釋放。
-        /// 從程式建模或讀入模型檔後追加內容，都交由 <see cref="OptModel.ApplyTo"/> 執行。
         /// </summary>
         /// <param name="model">要套用的模型定義。</param>
         /// <param name="label">Trial 標籤（正式求解為 "solve"，實驗為設定名）。</param>
@@ -256,12 +252,8 @@ namespace OptimFoundation.Cplex
         /// 本方法只換模型內容，不動任何 solver 參數。
         /// </summary>
         /// <remarks>
-        /// CPLEX 的 ImportModel 會以檔案內容取代目前模型，因此框架也會清除舊的變數與限制式索引，
-        /// 並在讀完後重新建立查找索引（見 <see cref="ReindexFromModel"/>），讓 GetVariableValue / GetSolution /
-        /// GetCVSolution / LastMetrics / IIS 分析照常運作。
-        /// 型別化取解（GetSetVarValues&lt;T&gt; / GetSolution("TypeName")）是以型別名篩選變數池：
-        /// 檔案裡的變數名沿用 TypeName@… 時照常可用（框架匯出的模型皆是），名稱不符時回空；
-        /// 此時改用 GetVariableValue(name) / GetSolution() / GetCVSolution 等以名稱或 solver 型別為準的 API。
+        /// 取代目前模型並重建變數與限制式索引，保留取解、統計與 IIS 功能。
+        /// 型別化取解須符合 TypeName@… 命名；不符時回空，請改用 GetVariableValue(name) 或 GetSolution()。
         /// </remarks>
         /// <param name="fileName">
         /// 檔名或相對路徑，以 FolderDir.Model 為基準；絕對路徑原樣使用。
@@ -319,8 +311,7 @@ namespace OptimFoundation.Cplex
         private static readonly string[] ModelFileCompressions = { ".gz", ".bz2" };
 
         /// <summary>
-        /// 由副檔名判定模型檔格式（例：LP、SAV.GZ）；不支援就留 Error Log 後 throw ArgumentException。
-        /// CPLEX 遇到不認得的副檔名也會丟 1424 Invalid filetype，這裡提前擋下，讓錯誤帶上支援清單。
+        /// 檢查模型副檔名；提前拒絕不支援的格式，讓錯誤附上支援清單。
         /// </summary>
         private static string ResolveModelFileFormat(string fileName, string eventCode, string description, string context)
         {
@@ -340,13 +331,10 @@ namespace OptimFoundation.Cplex
         }
 
         /// <summary>
-        /// 從 CPLEX 模型讀取變數與限制式，建立框架的查找索引。
-        /// 用 AddVariable / AddConstraint 建模時會同步登記索引，但 CPLEX 的 ImportModel 不會，
-        /// 因此這裡走訪模型的 ILPMatrix，取出 INumVar 與 IRange 並逐一登記。
+        /// ImportModel 不會登記框架索引，須從 ILPMatrix 補登變數與限制式。
         /// </summary>
         private (int VarCount, int ConstraintCount) ReindexFromModel()
         {
-            // 清除舊的變數、限制式與衝突分析紀錄，準備登記匯入模型。
             Variables.Clear();
             _constraints.Clear();
             _conflictConstraints = null;
@@ -395,7 +383,6 @@ namespace OptimFoundation.Cplex
         /// <summary>
         /// 讀入解檔，供目前模型從既有的解開始搜尋；不會取代模型內容。
         /// .mst → CPLEX ReadMIPStarts（可含多組 start 與各自 effort）；其餘（.sol）→ CPLEX ReadSolution。
-        /// 例如先用 <see cref="ExportSolution"/> 寫出 .sol，下一次求解前再讀入作為起始解。
         /// </summary>
         /// <remarks>
         /// 必須在模型建好、Solve() 前呼叫；檔內的變數依名稱對應，CPLEX 會忽略模型裡不存在的名稱。
@@ -518,8 +505,8 @@ namespace OptimFoundation.Cplex
                 VarType.Binary => NumVarType.Bool,
                 _ => NumVarType.Float
             };
-            var var = Model.NumVar(lb, ub, cplexType, name); // 註冊進 CPLEX，取變數
-            Variables[name] = var; // 登記進框架的字典
+            var var = Model.NumVar(lb, ub, cplexType, name);
+            Variables[name] = var;
             return var;
         }
 
@@ -594,10 +581,7 @@ namespace OptimFoundation.Cplex
         private IObjective _objective;
 
         /// <summary>
-        /// 用新的目標式取代目前的目標式。
-        /// AddMinimize / AddMaximize 會新增目標式，不會替換舊目標式，
-        /// 因此先移除舊的再新增，讓基底類別每次加入軟性限制的懲罰項時都能正確更新目標式。
-        /// 傳入的常數會加到 expr.Constant，保留表達式原本已有的常數。
+        /// 先移除舊目標式再新增，以支援軟限制懲罰項更新；constant 累加至 expr.Constant。
         /// </summary>
         protected override void SetObjective(ILinearNumExpr expr, double constant, Core.ObjectiveSense sense)
         {
@@ -632,10 +616,8 @@ namespace OptimFoundation.Cplex
         }
 
         /// <summary>
-        /// 讀取 CPLEX 的二元與整數變數數量（NbinVars / NintVars），再從總數 Ncols 扣除這兩類，得到連續變數數量。
-        /// 用 IsMIP() 判斷是否有離散結構，也包含匯入模型中的半連續變數（semi-continuous）與特殊有序集合（SOS）。
-        /// CPLEX 只計算已加入模型的變數；若只宣告卻沒有被目標式或限制式引用，就不會算入，
-        /// 所以這裡的數字可能少於 <see cref="EngineBase{TModel, TVar, TExpr, TConstr}.VariableCount"/>。
+        /// 從 CPLEX 取得模型規模與 IsMIP（含半連續變數及 SOS）。
+        /// 未引用變數不計入，數量可能少於框架 VariableCount；連續變數數量以 Ncols 扣除二元及整數變數計算。
         /// </summary>
         protected override (int Continuous, int Integer, int Binary, bool HasDiscreteStructure) ReadModelComposition()
         {
@@ -654,14 +636,11 @@ namespace OptimFoundation.Cplex
 
         /// <summary>
         /// 初始化 CPLEX 模型並套用 Config 參數。
-        /// 由 EngineBase.Build() 呼叫；Build() 不是 virtual，使用端不能覆寫它。
         /// </summary>
         protected override void BuildCore() => LoadConfig(Config);
 
         /// <summary>
-        /// 執行 CPLEX 求解，將狀態與統計資料存入框架的結果屬性。執行順序如下：
-        /// 依設定匯出 LP / MPS → （選用）掛軌跡 callback → Model.Solve() → CPLEX 狀態轉成 <see cref="SolveStatus"/> →
-        /// 寫入 BestObjValue、MIPGap 與 LastMetrics；有解且設定要匯出時寫入 .sol；無可行解時自動執行 conflict (IIS) 分析。
+        /// 求解並保存狀態與統計；依設定匯出模型、解與軌跡，Infeasible 時自動分析 IIS。
         /// </summary>
         /// <returns>true = Optimal 或 Feasible。逾時但有可行解也算 true；逾時無解為 TimeLimit → false。</returns>
         /// <exception cref="System.Exception">CPLEX 求解丟出的例外會照原樣 rethrow（先寫 SOLVER_EXCEPTION log）。</exception>
@@ -682,7 +661,6 @@ namespace OptimFoundation.Cplex
                 Model.Use(trajCb); // 會改變搜尋路徑、通常變慢，所以只有明確開啟軌跡記錄時才掛
             }
 
-            // 求解耗時用 CPLEX 的時鐘量：Solve 前後各取一次 GetCplexTime（單位秒）
             double solveStart = Model.GetCplexTime();
             double solveSeconds = 0;
             try
@@ -810,7 +788,6 @@ namespace OptimFoundation.Cplex
                 _solverLogStream.GetBuffer(), 0, (int)_solverLogStream.Length);
             if (!string.IsNullOrWhiteSpace(log))
                 Logging.WriteToFile($"[CPLEX Log]{Environment.NewLine}{log}");
-            // 清空 stream 供下次 Solve() 使用（Benders 多輪迭代）
             _solverLogStream.SetLength(0);
             _solverLogStream.Position = 0;
         }
@@ -859,8 +836,7 @@ namespace OptimFoundation.Cplex
 
         #region 便捷方法（公開給子類別）
 
-        // 以下是給「繼承 OptEngine 自己寫建模流程」的子類別用的短名稱包裝；
-        // 一般專案可用 AddLHS / AddRHS 累積兩側項目，再用 Create* 建立限制式，不必使用這些包裝。
+        // 子類別的直接建模 API；不使用 AddLHS / AddRHS 暫存項目。
 
         /// <summary>建立單一變數的簡寫。預設為 [0, <see cref="OptBounds.Infinity"/>] 的連續變數。</summary>
         protected INumVar CreateVar(string name, double lb = 0, double ub = OptBounds.Infinity,
@@ -943,7 +919,6 @@ namespace OptimFoundation.Cplex
 
         #region 多線程限制式同步
 
-        // 三個公開方法共用的邏輯，差異只在最後建立限制式物件的方式（Le/Ge/Eq）
         private bool CreateThreadConstraint(
             double value, string ruleName, OptEngine targetEngine, OptEngine sourceEngine,
             Func<double, ILinearNumExpr, IRange> factory)
@@ -1018,7 +993,6 @@ namespace OptimFoundation.Cplex
 
             var cloneManager = new SimpleCloneManager(sourceEngine.Model);
 
-            // 複製目標式。
             var sourceObj = sourceEngine.Model.GetObjective();
             if (sourceObj != null)
             {
@@ -1026,8 +1000,7 @@ namespace OptimFoundation.Cplex
                 targetEngine.Model.Add(objective);
             }
 
-            // 從 Variables 字典取得變數，不從 LP 矩陣讀取。
-            // 沿用既有 CplexEngine.copyModel 的行為，只另外複製第一個變數。
+            // 僅複製 Variables 的第一個變數。
             if (sourceEngine.Variables.Count > 0)
             {
                 var firstVar = sourceEngine.Variables.Values.First();
@@ -1139,8 +1112,7 @@ namespace OptimFoundation.Cplex
         // 軟性限制式由 EngineBase 建立；更新懲罰項時，再透過本類別的 SetObjective 更新 CPLEX 目標式。
 
         /// <summary>
-        /// 將每次輸出同時寫入兩個 TextWriter。
-        /// 讓 CPLEX log 即時顯示在 Console，也保留在記憶體供求解後寫入 log 檔。
+        /// 同步輸出至 Console 與記憶體，供求解後寫入 log 檔。
         /// </summary>
         private sealed class TeeWriter : TextWriter
         {
@@ -1154,31 +1126,26 @@ namespace OptimFoundation.Cplex
                 _secondary = secondary;
             }
 
-            /// <summary>沿用 primary 的編碼（TextWriter 要求實作）。</summary>
             public override System.Text.Encoding Encoding => _primary.Encoding;
 
-            /// <summary>單字元同時寫到兩邊。</summary>
             public override void Write(char value)
             {
                 _primary.Write(value);
                 _secondary.Write(value);
             }
 
-            /// <summary>字串同時寫到兩邊。</summary>
             public override void Write(string value)
             {
                 _primary.Write(value);
                 _secondary.Write(value);
             }
 
-            /// <summary>整行同時寫到兩邊。</summary>
             public override void WriteLine(string value)
             {
                 _primary.WriteLine(value);
                 _secondary.WriteLine(value);
             }
 
-            /// <summary>將兩個輸出端的緩衝內容全部送出。</summary>
             public override void Flush()
             {
                 _primary.Flush();
@@ -1188,7 +1155,6 @@ namespace OptimFoundation.Cplex
             /// <summary>只釋放 secondary，避免關閉整個 process 共用的 Console.Out。</summary>
             protected override void Dispose(bool disposing)
             {
-                // _primary = Console.Out，不應 Dispose
                 if (disposing) _secondary?.Dispose();
                 base.Dispose(disposing);
             }

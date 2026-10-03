@@ -220,8 +220,8 @@ namespace OptimFoundation.Cplex.Tests.Integration
                 .AddConfig("base", Config())
                 .Run();
 
-            string meta = File.ReadAllText(FolderDir.Experiment.GetPathFile($"{name}-meta.csv"));
-            Assert.Contains("schema,version,11", meta);
+            string meta = File.ReadAllText(FolderDir.Experiment.GetPathFile($"{name}-exp-meta.csv"));
+            Assert.DoesNotContain("schema", meta);
             Assert.Contains("model,Consistent.objectiveSense,Maximize", meta);
             Assert.Contains("model,Unreferenced.varCount,2", meta);
             Assert.DoesNotContain("modelStats", meta);

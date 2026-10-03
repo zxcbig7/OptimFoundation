@@ -7,7 +7,7 @@ OptimFoundation 是 C# / .NET 8 的 solver-agnostic MILP framework。Core 不引
 <critical_notes>
 
 - 修改 framework 前先讀 `specs/developer-guide.md` 與相關 dated spec。
-- public API 變更後同步 developer guide、CodeMap、Templates、docs 與 sibling `AI-Modeling` 規範。
+- public API 變更後同步 developer guide、CodeMap、Templates 與 sibling `AI-Modeling` 規範。
 - solver DLL/license 不進 git。CPLEX 走 `CplexDir`。
 - framework 內部依賴使用 `ProjectReference`。
 - 資料讀寫一律以 `FolderDir`（`FolderDir.Input.GetPathFile(...)` 等）決定位置，NEVER 在 code 或文件裡 hardcode 資料夾字串；csproj 不做資料複製，輸入由使用者放進 `FolderDir.Input`。
@@ -29,7 +29,7 @@ OptimFoundation 是 C# / .NET 8 的 solver-agnostic MILP framework。Core 不引
 - `src/OptimFoundation.Cplex/`：CPLEX engine、model、project、experiment、config。
 - `Templates/`：現行 consumer examples。
 - `tests/OptimFoundation.Cplex.Tests/`：unit/integration tests。
-- `specs/developer-guide.md`：現行 API 權威。
+- `specs/developer-guide.md`：唯一說明文件（概念入門、逐步教學、範本導覽、API 權威）；教學內容一律寫進這份，不另開文件。
 - `CodeMap.md`：source map。
 
 </file_map>
@@ -45,7 +45,7 @@ OptimFoundation 是 C# / .NET 8 的 solver-agnostic MILP framework。Core 不引
 5. 一般變數入口 `BuildVars<T>`；型別專用 builders 僅在自訂 bounds 或維護需求使用。
 6. 限制式使用 `AddLHS` / `AddRHS` + `CreateXxx(this, dims...)`。
 7. `OptModel` 組裝；`new OptProject(name)` 是唯一入口：`.Solve(model, config, onSolved)` 正式求解（`onSolved` 接 `ISolutionSink` 輸出），`.Experiment(name)` 做 model × config 交叉比較。
-8. 範本 `Program.cs` 的 CLI 是兩軸自由組合：模型來源（預設從 CSV 建構；`read-model <file>` 讀既有模型檔、不讀 CSV）× 執行方式（預設正式求解；`exp` 實驗），例 `-- read-model <file> exp`。`-- import-data <raw>` 是獨立的資料前處理（只有不規則來源才需要）。結構：`0. 設定`（`ProjectConfig` + `productionBaseline`）→ `1. 模型來源`（`OptModel.ReadModel` 或 `BuildModel(data)`）→ `2. 環境`（exp / 正式求解只拿 `model`，不管來源；read-model 的實驗名加模型名，累積檔裡跟 canonical 分得開，正式求解不跑需要資料的解驗證）。
+8. 範本 `Program.cs` 的 CLI 是兩軸自由組合：模型來源（預設從 CSV 建構；`read-model <file>` 讀既有模型檔、不讀 CSV）× 執行方式（預設正式求解；`exp` 實驗），例 `-- read-model <file> exp`。`-- import-data <raw>` 是獨立的資料前處理（只有不規則來源才需要）。結構：`0. 設定`（`ProjectConfig` + `productionBaseline`）→ `1. 模型來源`（`OptModel.ReadModel` 或 `BuildModel(data)`）→ `2. 環境`（exp / 正式求解只拿 `model`，不管來源；read-model 的實驗名加模型名，紀錄檔名跟 canonical 分得開，正式求解不跑需要資料的解驗證）。
 
 ## Framework change
 

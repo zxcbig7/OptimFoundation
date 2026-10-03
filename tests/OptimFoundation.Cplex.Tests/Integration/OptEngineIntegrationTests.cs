@@ -5,7 +5,7 @@ using Xunit;
 namespace OptimFoundation.Cplex.Tests.Integration
 {
     /// <summary>
-    /// 需要 CPLEX DLL 才能執行；找不到 DLL 時，測試方法直接返回，不執行後續檢查。
+    /// 缺少 CPLEX DLL 時直接返回，不執行檢查。
     /// 執行：dotnet test --filter Category=Integration
     /// </summary>
     [Collection("Logging")]
@@ -56,7 +56,6 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.Contains("[Project Setting] CPLEX Log → framework log file only", log);
         }
 
-        // ── 基本求解 ────────────────────────────────────────────────────────
 
         [Fact(DisplayName = "簡單 LP：min x s.t. x >= 3，解 = 3")]
         public void SimpleLP_MinX_GreaterEqual3_SolvesOptimal()
@@ -142,7 +141,6 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.Equal(ModelType.BP, engine.ModelType);
         }
 
-        // ── SupportsSoftConstraints ────────────────────────────────────────
 
         [Fact(DisplayName = "OptEngine 支援 SoftConstraints")]
         public void OptEngine_SupportsSoftConstraints_IsTrue()
@@ -161,7 +159,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             engine.BuildCVs<VarS>(0, 1, new List<string> { "x" });   // x ∈ [0,1]
 
             engine.AddLHS(1.0, new VarS { S = "x" });
-            engine.CreateMinimize();                                 // 先建目標式 min x
+            engine.CreateMinimize();
 
             engine.AddLHS(1.0, new VarS { S = "x" });
             engine.CreateGreaterEqualSoft(5.0, 10.0);                          // 軟性 x >= 5，penalty 10
@@ -175,7 +173,6 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.Equal(1.0, engine.GetVariableValue("VarS@x"), precision: 4);
         }
 
-        // ── 變數建立 ───────────────────────────────────────────────────────
 
         [Fact(DisplayName = "BuildBVs 建立正確數量的變數")]
         public void BuildBVs_Creates_CorrectVarCount()
@@ -188,7 +185,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
             engine.BuildBVs<VarDG>(dates, emps);
 
-            Assert.Equal(50, engine.VariableCount);  // 10 × 5
+            Assert.Equal(50, engine.VariableCount);
         }
 
         [Fact(DisplayName = "GetSetVarNames 回傳正確格式")]
@@ -204,7 +201,6 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.Contains("VarS@B", names);
         }
 
-        // ── Infeasible + IIS ───────────────────────────────────────────────
 
         [Fact(DisplayName = "Infeasible 模型 → Status = Infeasible")]
         public void Infeasible_Model_ReturnsInfeasibleStatus()
@@ -230,7 +226,6 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.Equal(SolveStatus.Infeasible, engine.Status);
         }
 
-        // ── TimeLimit ──────────────────────────────────────────────────────
 
         [Fact(DisplayName = "TimeLimit 命中 → Status 不是 Error")]
         public void TimeLimit_Hit_StatusIsNotError()
@@ -247,7 +242,6 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.NotEqual(SolveStatus.Error, engine.Status);
         }
 
-        // ── GetSetVarValues ────────────────────────────────────────────────
 
         [Fact(DisplayName = "GetSetVarValues 在 Optimal 後回傳解值")]
         public void GetSetVarValues_AfterSolve_ReturnsValues()
@@ -270,7 +264,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
             var values = engine.GetSetVarValues<VarS>();
             Assert.Equal(2, values.Count);
-            Assert.Equal(1.0, values.Values.Sum(), precision: 5);  // 最優解總和 = 1
+            Assert.Equal(1.0, values.Values.Sum(), precision: 5);
         }
 
         [Fact]

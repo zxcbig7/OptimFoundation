@@ -124,7 +124,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             string path = Path.Combine(Path.GetTempPath(), $"vs-baseline-{Guid.NewGuid():N}.csv");
             try
             {
-                new CsvExperimentWriter().Write(experiment, path, DateTime.Now);
+                new CsvExperimentWriter().Write(experiment, path);
                 var rows = File.ReadAllLines(path).Select(line => line.Split(',')).ToList();
                 int label = Array.IndexOf(rows[0], "TrialLabel");
                 int vs = Array.IndexOf(rows[0], "VsBaseline");

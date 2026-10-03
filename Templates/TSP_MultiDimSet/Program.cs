@@ -10,7 +10,7 @@ namespace TSP_MultiDimSet
         {
             bool isExperiment = args.Any(
                 arg => string.Equals(arg, "exp", StringComparison.OrdinalIgnoreCase));
-            // 由 OptProject 管理 log、資料夾與檔案保留天數；實驗和正式求解都透過它執行。
+            // OptProject 管理 log、資料夾與保留期。
             using var project = new OptProject(Dataload.InstanceName);
 
             // 1. 材料
@@ -21,9 +21,7 @@ namespace TSP_MultiDimSet
                 EnableSolverLog = false,
                 ExportLP = true,
             };
-            // 正式求解使用這組設定；調參結果確認較好後，統一更新在這裡。
-            // 設定來源：最初的基準設定，尚未執行 Phase 3 調參流程。
-            // 實驗先複製這組設定，再調整要比較的參數；正式求解直接使用這組設定。
+            // 正式設定；實驗先 Clone 再修改。
             var productionBaseline = new CplexConfig
             {
                 TimeLimit = 30,
@@ -62,7 +60,7 @@ namespace TSP_MultiDimSet
             // 3. 環境
             if (isExperiment)
             {
-                // S2 R0 基準量測：固定 Threads=1，用基準設定跑 5 個 seed 當對照組，並觀察耗時原因。
+                // 使用相同 seed 比較各設定。
                 // seed 6、7、8 留到最後驗證已選設定，不參與調參比較。
                 var warmup = productionBaseline.Clone();
 

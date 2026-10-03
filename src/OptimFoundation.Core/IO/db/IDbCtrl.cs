@@ -6,9 +6,7 @@ namespace OptimFoundation.Core.IO
 {
 
     /// <summary>
-    /// 框架共用的資料庫操作介面，提供查詢、寫入與交易方法。
-    /// 呼叫端使用相同介面，由各實作（如 OracleDbCtrl）處理資料庫連線與驅動細節。
-    /// 查詢值以 (名稱, 值) tuple 傳給 SQL 參數，避免把輸入值直接拼入 SQL。
+    /// 資料庫查詢、寫入與交易介面；輸入值須透過具名 tuple 參數傳入。
     /// </summary>
     public interface IDbCtrl : IDisposable
     {
@@ -39,9 +37,7 @@ namespace OptimFoundation.Core.IO
         void ExecuteInTransaction(Action<IDbCtrl> work);
 
         /// <summary>
-        /// 同一句 SQL 套用多列參數，一次送出（批次寫入）。實作應優先使用底層 driver 的批次能力
-        /// （如 Oracle array-bind），減少逐列傳送的成本。若在
-        /// ExecuteInTransaction 內呼叫，須沿用該連線與交易。
+        /// 同一 SQL 批次套用多列參數；優先使用 driver 批次功能，交易內須沿用共用連線與交易。
         /// </summary>
         /// <param name="sql">SQL 語句，bind variable 用 :name 佔位</param>
         /// <param name="rows">每列一組 (name, value) 參數，各列的 name 集合須一致</param>

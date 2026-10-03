@@ -3,8 +3,7 @@ using System.Collections.Generic;
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 一次求解的狀態、目標值、耗時，以及節點數等統計。
-    /// 各 engine 執行 Solve() 後，會把這些資料寫入 EngineBase.LastMetrics。
+    /// 一次求解的狀態與統計；Solve 後寫入 EngineBase.LastMetrics。
     /// </summary>
     public sealed class SolveMetrics
     {
@@ -14,18 +13,18 @@ namespace OptimFoundation.Core
         /// <summary>目標式值；有軟性限制式時已含 penalty。無解時為 NaN。</summary>
         public double ObjectiveValue { get; set; }
 
-        /// <summary>求解器目前證明的目標值界限（MIP best bound），用來估計離最佳解還有多遠；無可用值時為 NaN。</summary>
+        /// <summary>MIP best bound；無可用值時為 NaN。</summary>
         public double BestBound { get; set; }
 
-        /// <summary>求解結束時實際達到的相對 MIP gap（不是 CplexConfig.MipGap 那個停止門檻）。無解時為 NaN。</summary>
+        /// <summary>求解結束時的相對 MIP gap；無解時為 NaN。</summary>
         public double Gap { get; set; }
 
-        /// <summary>純求解耗時（毫秒），只計 Solve() 本身、不含建模；用 CPLEX 的時鐘（GetCplexTime）在 Solve 前後各取一次相減。</summary>
+        /// <summary>純求解耗時（毫秒），以 CPLEX 時鐘測量，不含建模。</summary>
         public double SolveTimeMs { get; set; }
 
         /// <summary>
-        /// 建模 + 求解耗時（毫秒）= 把 OptModel 套進 CPLEX 的時間（讀模型檔時含讀檔與建立查找索引）+ <see cref="SolveTimeMs"/>；兩段都用 CPLEX 的時鐘量。
-        /// 不含 beforeSolve、匯出模型 / 解檔與 IIS 分析。只有經由 OptProject.Solve / OptExperiment 執行才有值，自己呼叫 Trial.Capture 時為 null。
+        /// 建模與求解耗時（毫秒，CPLEX 時鐘）；建模含讀檔與索引，不含 beforeSolve、匯出及 IIS。
+        /// 僅 OptProject.Solve / OptExperiment 填入；直接 Trial.Capture 為 null。
         /// </summary>
         public double? BuildAndSolveTimeMs { get; set; }
 
@@ -41,7 +40,7 @@ namespace OptimFoundation.Core
         /// <summary>這次求解有沒有開收斂軌跡。用來分辨「沒開」與「開了但 CPLEX 沒呼叫 callback」。</summary>
         public bool TrajectoryEnabled { get; set; }
 
-        // ── 模型結構：一律取自求解器模型本身（CPLEX Ncols / Nrows / NbinVars …），不用框架建模時的統計 ──
+        // 模型結構取自求解器，非框架建立計數。
 
         /// <summary>問題類型（LP / MILP / IP / BP），由求解器模型的變數組成判定；null 表示求解器未提供。</summary>
         public ModelType? ModelType { get; set; }
@@ -88,14 +87,13 @@ namespace OptimFoundation.Core
         /// <summary>求解過程中各取樣時刻的目標值、最佳界與 gap；未啟用 captureTrajectory 時為空清單。</summary>
         public List<ConvergencePoint> Convergence { get; set; } = new List<ConvergencePoint>();
 
-        // 以下四項由 Convergence 計算；純 LP、未開啟軌跡等情況下沒有軌跡，回傳 null 或 0。
 
         /// <summary>軌跡點數。0 代表這次求解沒有收集到軌跡（純 LP 沒有分支定界過程，或求解太快）。</summary>
         public int TrajectoryPoints => Convergence?.Count ?? 0;
 
         /// <summary>
-        /// 紀錄中第一次出現可行解的時間（毫秒，從求解開始起算）；未記錄到可行解時為 null，不是 0。
-        /// 軌跡只含 CPLEX 實際呼叫 callback 時觀察到的點；presolve 或 root 就解完時 callback 不會被呼叫，軌跡為空，這裡也是 null。
+        /// 首次記錄可行解的時間（求解起算毫秒）；未觀察到為 null。
+        /// 僅計 callback 取樣；presolve 或 root 解完可能沒有取樣。
         /// </summary>
         public double? FirstSolutionMs
         {
@@ -119,8 +117,7 @@ namespace OptimFoundation.Core
             }
         }
 
-        /// <summary>紀錄中最佳界最後一次變動的時間（毫秒，從求解開始起算）；用來查看何時開始不再改善。
-        /// 只比較相鄰取樣值是否不同，因此最小化與最大化都適用；沒有軌跡或未曾變動時為 null。</summary>
+        /// <summary>最佳界最後一次取樣變動的時間（求解起算毫秒）；無軌跡或未變動時為 null，適用兩種目標方向。</summary>
         public double? LastBoundChangeMs
         {
             get

@@ -7,8 +7,7 @@ using System.Text;
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 提供框架共用的記錄方法，訊息同時寫到 Console 與 log 檔，格式為「時間 | 等級 | 訊息」。
-    /// 檔案延遲建立（首次寫入才開檔），寫入以 lock 保護，可多執行緒呼叫。
+    /// 將「時間 | 等級 | 訊息」寫入 Console 與 log；檔案首次寫入才建立，支援多執行緒。
     /// </summary>
     public static class Logging
     {
@@ -67,8 +66,7 @@ namespace OptimFoundation.Core
         public static void Error(string message) => Write("ERROR", message);
 
         /// <summary>
-        /// 記錄框架即將中止的例外。同一個例外物件只會記錄一次，外層公開 API
-        /// 可安全地再次呼叫後用 <c>throw;</c> 原樣拋出。
+        /// 同一例外只記錄一次並原樣回傳，供外層 API 記錄後 rethrow。
         /// </summary>
         public static TException ErrorOnce<TException>(
             TException exception,
@@ -118,9 +116,7 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 印訊息並附上 Stopwatch 的經過時間。
-        /// 印完會 <b>Restart</b> 這個 Stopwatch，讓下一段從零開始計時。
-        /// 若要保留累計時間，請自行讀取 Elapsed 並呼叫只有 message 的 overload。
+        /// 記錄訊息與經過時間後 Restart 計時器；需累計時請自行讀 Elapsed。
         /// </summary>
         public static void Info(string message, Stopwatch sw)
         {
@@ -130,10 +126,7 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 改用新的 log 檔名（實際檔名為 {name}_{時間戳}.txt，非法字元會被換成 '-'）。
-        /// 會關掉目前的 log 檔並在下次寫入時開新檔；已寫入舊檔的內容留在原檔。
-        /// 若 name 與目前相同，直接返回，繼續使用同一檔案。
-        /// 框架會自動設定：OptProject 與正式求解使用 {專案名}，實驗使用 {專案名}-{實驗名}_exp；一般使用者不必自行呼叫。
+        /// 改用 {name}_{時間戳}.txt，非法字元替換為 -；同名沿用原檔，異名關閉舊檔並於下次寫入開新檔。
         /// </summary>
         public static void SetLogFileName(string name)
         {
@@ -141,8 +134,6 @@ namespace OptimFoundation.Core
                 name = name.Replace(c, '-');
             lock (_lock)
             {
-                // 同名時保留原檔案，避免每次呼叫產生新時間戳，把同一輪執行的紀錄拆成多個檔案。
-                // 例如 Program.cs 可能先設定檔名來記錄資料載入，框架之後再用相同名稱設定一次。
                 if (string.Equals(_logFileName, name, StringComparison.Ordinal)) return;
 
                 _logFileName = name;

@@ -291,7 +291,6 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.Equal(26.0, project.Engine.GetObjectiveValue(), 6);
         }
 
-        // ── 錯誤處理 ──────────────────────────────────────────────────────
 
         [Fact(DisplayName = "檔案不存在丟 FileNotFoundException")]
         public void ReadModel_MissingFile_Throws()

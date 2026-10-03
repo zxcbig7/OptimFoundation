@@ -8,7 +8,7 @@ using System.Globalization;
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 把維度值轉成可用於求解器名稱的文字（token），檢查非法字元，再用 @ 組成完整名稱；Set 資料列會展開各維度。
+    /// 驗證維度值並以 @ 組成求解器名稱；多維 Set 會展開。
     /// </summary>
     internal static class ModelNaming
     {
@@ -19,7 +19,6 @@ namespace OptimFoundation.Core
         /// <summary>解析日期 token 時可接受的格式：帶時分秒與純日期兩種。</summary>
         internal static readonly string[] DateFormats = [DateTimeFormat, DateFormat];
 
-        // 非法字元
         private static readonly char[] InvalidTokenCharacters =
         [
             '+', '-', '*', '/', '^', '<', '>', '=', ':', ',', '\\', Separator
@@ -89,7 +88,7 @@ namespace OptimFoundation.Core
         // 不接受的日期會以保留完整精度的 "O" 格式回傳，供錯誤訊息顯示。
         private static bool TryFormatDate(DateTime value, out string token)
         {
-            // 不能直接捨去秒以下的值，否則不同時刻可能產生相同名稱。
+            // 捨去秒以下精度會讓不同時刻撞名。
             if (value.Ticks % TimeSpan.TicksPerSecond != 0)
             {
                 token = value.ToString("O", CultureInfo.InvariantCulture);

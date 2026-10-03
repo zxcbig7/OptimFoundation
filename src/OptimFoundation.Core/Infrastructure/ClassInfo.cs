@@ -16,25 +16,20 @@ namespace OptimFoundation.Core
         /// </summary>
         private static readonly Dictionary<Type, string> OracleTypeMap = new Dictionary<Type, string>
         {
-            // 文字 — Set 成員、標籤
             [typeof(string)] = "VARCHAR2(255)",
             [typeof(char)] = "CHAR(1)",
 
-            // 布林值與旗標使用 NUMBER(1) 儲存。
             [typeof(bool)] = "NUMBER(1)",
 
-            // 整數 — index、計數、整數變數
             [typeof(byte)] = "NUMBER(3)",
             [typeof(short)] = "NUMBER(5)",
             [typeof(int)] = "NUMBER(10)",
             [typeof(long)] = "NUMBER(19)",
 
-            // 浮點數與連續量（係數、QTY、目標值）使用 NUMBER，不額外限制小數位數。
             [typeof(float)] = "NUMBER",
             [typeof(double)] = "NUMBER",
             [typeof(decimal)] = "NUMBER",
 
-            // 時間
             [typeof(DateTime)] = "DATE",
         };
         /// <summary>
@@ -71,26 +66,19 @@ namespace OptimFoundation.Core
             string cols = "";
             for (int i = 0; i < types.Length; i++)
             {
-                // 解開 Nullable<T>（int? / double? ...）取底層型別，否則對應會落空
                 Type t = Nullable.GetUnderlyingType(types[i]) ?? types[i];
 
-                // enum 以底層整數型存
                 if (t.IsEnum) t = Enum.GetUnderlyingType(t);
 
                 if (OracleTypeMap.TryGetValue(t, out string sqlType))
                     cols += $", {names[i]} {sqlType}";
-                // 沒有 Oracle 型別對應時略過，不產生欄位。
             }
             return cols.ToUpper();
         }
     }
     /// <summary>
-    /// 依變數或參數類別的公開欄位與屬性產生 Oracle 建表與 INSERT 語句，讓兩者的欄位保持一致。
-    ///
-    /// 慣例（建表與 INSERT 都照這套，兩邊必須一致）：
-    /// - 參數表：DATA_ID + 各公開欄位/屬性 + USER_ID + TIME
-    /// - 結果表：DATA_ID + VAR_TYPE + 各公開欄位/屬性 + QTY + USER_ID + TIME
-    /// - 欄位依 reflection 回傳順序排列；建表語句會轉成大寫
+    /// 依公開欄位與屬性產生 Oracle 建表及 INSERT SQL，兩者沿用 reflection 順序。
+    /// 參數表含 DATA_ID、成員欄、USER_ID、TIME；結果表另含 VAR_TYPE 與 QTY。
     /// </summary>
     public class ClassInfo
     {

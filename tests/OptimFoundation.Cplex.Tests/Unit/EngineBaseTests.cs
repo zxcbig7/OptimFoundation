@@ -13,7 +13,6 @@ namespace OptimFoundation.Cplex.Tests.Unit
             return e;
         }
 
-        // ── 變數建立 ───────────────────────────────────────────────────────
 
         [Fact]
         public void BuildBVs_1D_CreatesCorrectCount()
@@ -93,7 +92,6 @@ namespace OptimFoundation.Cplex.Tests.Unit
         {
             var engine = NewEngine();
             var ex = Assert.Throws<ArgumentException>(() => engine.BuildVars<VarS>(new List<string> { "A" }));
-            // 錯誤訊息須列出三種合法前綴。
             Assert.Contains("VariableB_", ex.Message);
             Assert.Contains("VariableC_", ex.Message);
             Assert.Contains("VariableI_", ex.Message);
@@ -136,7 +134,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             engine.BuildBVs<VarDG>(
                 new[] { new DateTime(2026, 1, 1), new DateTime(2026, 1, 2) },
                 new[] { "D", "N" });
-            Assert.Equal(4, engine.VariableCount);  // 2 × 2
+            Assert.Equal(4, engine.VariableCount);
         }
 
         [Fact]
@@ -146,7 +144,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             engine.BuildBVs<VarDG>(
                 new List<DateTime> { new(2026, 1, 1), new(2026, 1, 2) },
                 new List<string>   { "D", "N" });
-            Assert.Equal(4, engine.VariableCount);  // 2 × 2
+            Assert.Equal(4, engine.VariableCount);
         }
 
         [Fact]
@@ -269,7 +267,6 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Equal(ModelType.MILP, engine.ModelType);
         }
 
-        // ── AddLHS / AddRHS 錯誤處理 ──────────────────────────────────────
 
         [Fact]
         public void AddLHS_NullVarSpec_ReturnsFalse()
@@ -337,7 +334,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             engine.AddRHS(5.0);
             engine.CreateEqual("Con@X");
             Assert.Contains("Con@X", engine.BuiltConstraints);
-            Assert.False(engine.HasPool);  // pool 已清空
+            Assert.False(engine.HasPool);
         }
 
         [Fact]
@@ -355,7 +352,6 @@ namespace OptimFoundation.Cplex.Tests.Unit
             var engine = NewEngine();
             engine.BuildBVs<VarS>(new List<string> { "X" });
 
-            // 第一條
             engine.AddLHS(1.0, new VarS { S = "X" });
             engine.CreateEqual("DupCon");
 
@@ -363,7 +359,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             engine.AddLHS(1.0, new VarS { S = "X" });
             engine.CreateEqual("DupCon");
 
-            Assert.Single(engine.BuiltConstraints);  // 只建了一條
+            Assert.Single(engine.BuiltConstraints);
         }
 
         [Fact]
@@ -403,7 +399,6 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Equal("Constraint_Test@X", Assert.Single(engine.BuiltConstraints));
         }
 
-        // ── 目標式 ─────────────────────────────────────────────────────────
 
         [Fact]
         public void CreateMinimize_SetsObjectiveSense()
@@ -425,7 +420,6 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Equal(ObjectiveSense.Maximize, engine.ObjectiveSenseResult);
         }
 
-        // ── Soft Constraints ──────────────────────────────────────────────
 
         [Fact]
         public void SupportsSoftConstraints_MockEngine_IsTrue()

@@ -10,8 +10,7 @@ using OptimFoundation.Core.IO;
 namespace OptimFoundation.Db.Oracle
 {
     /// <summary>
-    /// ExecuteInTransaction 執行期間，同一實例的各操作會共用目前的連線與交易，
-    /// 因此不能讓多個執行緒同時使用此實例執行交易。
+    /// Oracle 資料存取；交易期間共用連線，同一實例不可並行執行交易。
     /// </summary>
     public sealed class OracleDbCtrl : DbCtrlBase
     {
@@ -20,7 +19,6 @@ namespace OptimFoundation.Db.Oracle
 
         #region IDbCtrl 基本操作
 
-        // Open/Close 留空：每次操作自建 connection（Oracle Connection Pool）
 
         /// <summary>不做任何事；每次操作會自行取得連線，不需預先開啟。</summary>
         public override void Open() { }
@@ -109,8 +107,6 @@ namespace OptimFoundation.Db.Oracle
                 return true;
             });
 
-        // 共用連線、處理巢狀交易與 Commit/Rollback 的流程由基底類別負責，
-        // 見 DbCtrlBase.ExecuteInTransaction；這裡只提供 Oracle 的連線建立方式。
         /// <summary>建立並開啟 Oracle 連線，供基底類別的 ExecuteInTransaction 在整個交易期間共用。</summary>
         protected override IDbConnection CreateRawConnection() => CreateConnection();
 
@@ -126,8 +122,7 @@ namespace OptimFoundation.Db.Oracle
         }
 
         /// <summary>
-        /// 取得本次操作的連線。若正在交易中，回傳共用連線，並設 owned=false，
-        /// 由 ExecuteInTransaction 負責釋放；否則新開連線並設 owned=true，由本次操作結束時釋放。
+        /// 交易內借用共用連線（owned=false）；否則新建連線（owned=true），由本次操作釋放。
         /// </summary>
         private OracleConnection AcquireConnection(out bool owned)
         {
@@ -140,8 +135,7 @@ namespace OptimFoundation.Db.Oracle
             return CreateConnection();
         }
 
-        // DbCtrlBase 以 IDbTransaction 保存目前的交易，OracleCommand.Transaction 與
-        // array-bind 操作需要 OracleTransaction，因此在此統一轉型。
+        // OracleCommand 與 array-bind 需要 OracleTransaction。
         private OracleTransaction AmbientTransactionOracle => (OracleTransaction)AmbientTransaction;
 
         private static OracleCommand BuildCommand(string sql, OracleConnection conn, OracleTransaction transaction,
@@ -318,9 +312,7 @@ namespace OptimFoundation.Db.Oracle
         }
 
         /// <summary>
-        /// 用 array-bind 一次送出多列 SQL 參數，供 OracleSolutionSink 批次寫入。
-        /// 與 SaveToDB 共用 ExecuteArrayBind；SaveToDB 從 ClassInfo 取得型別，
-        /// 這裡則以每欄首個非 null 值推斷 OracleDbType。
+        /// 以 array-bind 批次送出 SQL 參數；OracleDbType 取各欄首個非 null 值的型別。
         /// </summary>
         public override void ExecuteBatch(string sql, IReadOnlyList<(string name, object value)[]> rows)
         {
@@ -340,8 +332,6 @@ namespace OptimFoundation.Db.Oracle
             });
         }
 
-        // SaveToDB 與 ExecuteBatch 共用的 array-bind 送出邏輯：建 command、設 ArrayBindCount、
-        // 掛 ambient transaction（若有）、逐欄加參數、送出。避免兩套 array-bind 各自維護一份。
         private void ExecuteArrayBind(string sql, int rowCount,
             IEnumerable<(string name, OracleDbType type, object[] values)> columns)
         {
@@ -378,7 +368,6 @@ namespace OptimFoundation.Db.Oracle
             };
         }
 
-        // internal：OracleSolutionSink 的批次寫入路徑（走 IDbCtrl.ExecuteBatch）共用同一套型別轉換規則。
         internal static object ConvertToDbType(Type t, string raw)
         {
             if (t == typeof(string)) return raw.ToUpper();
@@ -404,10 +393,7 @@ namespace OptimFoundation.Db.Oracle
     }
 
     /// <summary>
-    /// 透過 IDbCtrl 將解值寫入 Oracle 結果表；測試時可換成假物件，檢查批次寫入與交易行為。
-    /// 每個變數型別的解值以 ExecuteBatch 一次送出，Oracle 使用 array-bind 減少連線往返。
-    /// BeginBatch 可把多個型別的寫入放進同一交易，全部成功才提交，失敗時整批回滾。
-    /// 與 CsvSolutionSink 同介面，換輸出目的地不動求解端 code。
+    /// 透過 IDbCtrl 批次寫入各變數型別的解；BeginBatch 可將多型別寫入合併為同一交易。
     /// </summary>
     public sealed class OracleSolutionSink : ISolutionSink
     {
@@ -427,8 +413,7 @@ namespace OptimFoundation.Db.Oracle
         }
 
         /// <summary>
-        /// 立即呼叫 ExecuteBatch 寫出單一變數型別的解；此方法本身不另開交易。
-        /// 若多個型別必須全部成功才保留，請使用 <see cref="BeginBatch"/>。
+        /// 立即寫入單一型別，不另開交易；多型別需共同提交時使用 <see cref="BeginBatch"/>。
         /// </summary>
         public void WriteSolution<TVariableClass>(ISolverEngine engine, string dataId = null, string userId = null)
         {
@@ -448,8 +433,6 @@ namespace OptimFoundation.Db.Oracle
         public ISolutionBatch BeginBatch(string dataId = null, string userId = null)
             => new OracleSolutionBatch(this, dataId ?? "", userId ?? "");
 
-        // 單一變數型別的實際寫入：把所有列組好參數後一次呼叫 ctrl.ExecuteBatch（array-bind），
-        // INSERT 欄位與 SaveToDB 一致，所有列用一次批次呼叫送出。
         private void WriteRows<TVariableClass>(IDbCtrl ctrl, ISolverEngine engine, string dataId, string userId)
         {
             var classInfo = new ClassInfo(typeof(TVariableClass));

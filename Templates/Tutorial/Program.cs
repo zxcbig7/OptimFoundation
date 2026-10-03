@@ -6,13 +6,13 @@ namespace Tutorial
 {
     // 命令列模式：
     //   dotnet run              -- 正式求解（預設）：讀 FolderDir.Input 的 CSV → solve → ValidateRules → 解寫到 FolderDir.Output
-    //   dotnet run -- exp       -- 實驗模式：同一模型 × 三組 MIP emphasis 對照，紀錄接在 Experiment/Tutorial-trial.csv 等累積檔
+    //   dotnet run -- exp       -- 實驗模式：同一模型 × 三組 MIP emphasis 對照，紀錄寫成 Experiment/Tutorial-tuning-r1-trial.csv 等四個檔
     internal static class Program
     {
         private static int Main(string[] args)
         {
             bool isExperiment = args.Any(arg => string.Equals(arg, "exp", StringComparison.OrdinalIgnoreCase));
-            // 由 OptProject 管理 log、資料夾與檔案保留天數；實驗和正式求解都透過它執行。
+            // OptProject 管理 log、資料夾與保留期。
             using var project = new OptProject("Tutorial");
 
             // ── 1. 材料 ────────────────────────────────────────────
@@ -24,7 +24,7 @@ namespace Tutorial
                 ExportLP = true,
                 ExportSol = true,
             };
-            // 正式求解直接使用這組設定；實驗則先複製一份，再調整要比較的參數。
+            // 正式求解設定；實驗先 Clone 再修改。
             var productionBaseline = new CplexConfig
             {
                 MipGap = 1e-6,

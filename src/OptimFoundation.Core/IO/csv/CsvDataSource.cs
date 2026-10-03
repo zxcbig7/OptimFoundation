@@ -7,13 +7,12 @@ using System.Text;
 namespace OptimFoundation.Core.IO
 {
     /// <summary>
-    /// 從 FolderDir.Input 讀取 CSV 檔案，並使用 CsvCtrl 解析內容。
-    /// 檔名省略時使用型別名；Set 與 Parameter 都依 CSV 表頭對應資料列的 public property，缺欄即丟例外。
+    /// 從 FolderDir.Input 載入 CSV；預設檔名為型別名，依表頭對應 property，缺欄拋例外。
     /// </summary>
     public sealed class CsvDataSource : IDataSource
     {
         /// <summary>
-        /// 建立 FolderDir.Input，供使用者放入 CSV；讀取缺檔會拋出含檔名的 FileNotFoundException。輸出端也會先建立資料夾。
+        /// 建立 FolderDir.Input；讀取缺檔時拋 FileNotFoundException。
         /// </summary>
         public CsvDataSource() => FolderDir.Input.CreateFolder();
 
@@ -65,8 +64,7 @@ namespace OptimFoundation.Core.IO
             => CsvCtrl.WriteSolution<TVariableClass>(engine, dataId ?? "", userId ?? "");
 
         /// <summary>
-        /// 取得批次輸出物件。每次 Write 都立即寫檔，Commit 不做任何事，也不提供交易回滾。
-        /// 這個物件提供與資料庫輸出相同的呼叫方式，方便切換輸出目的地。
+        /// 每次 Write 立即寫檔；Commit 無動作，不支援回滾。
         /// </summary>
         public ISolutionBatch BeginBatch(string dataId = null, string userId = null)
             => new CsvSolutionBatch(this, dataId, userId);

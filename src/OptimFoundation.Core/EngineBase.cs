@@ -7,8 +7,7 @@ namespace OptimFoundation.Core
 {
     #region Interfaces and Enums
     /// <summary>
-    /// 各求解器共用的設定，例如時間上限、執行緒數與演算法選項。各求解器的 config 實作此介面，
-    /// 將這些設定轉成該求解器使用的參數。null 表示使用求解器預設值。
+    /// 求解器共用設定，由各 adapter 轉為原生參數；null 使用求解器預設值。
     /// </summary>
     public interface ISolverConfig
     {
@@ -194,10 +193,8 @@ namespace OptimFoundation.Core
     }
 
     /// <summary>
-    /// 各求解器引擎共用的基底類別，負責整理變數、限制式與目標式。
-    /// TModel/TVar/TExpr/TConstr 分別是求解器的模型、變數、運算式與限制式型別；子類別實作下方的 abstract 方法來呼叫求解器。
-    /// 可批次建立變數並存入 Variables；用 AddLHS/AddRHS 暫存兩側的項，再由 Create* 移項並建立限制式。
-    /// 也支援軟性限制式，將違反量的罰分（penalty）加入目標式。
+    /// 管理變數、雙側 expression pool 與軟性罰分；子類別實作求解器操作。
+    /// TModel/TVar/TExpr/TConstr 分別為原生模型、變數、運算式與限制式型別。
     /// </summary>
     public abstract class EngineBase<TModel, TVar, TExpr, TConstr> : ISolverEngine, ITrajectorySource
     {
@@ -205,8 +202,7 @@ namespace OptimFoundation.Core
         protected TModel Model;
 
         /// <summary>
-        /// 變數池：key = 變數名，value = solver 原生變數。框架唯一的變數索引，含軟性限制式自動加的彈性變數。
-        /// 依型別查詢（GetSetVarNames / GetSetVarValues / GetSolution(type)）直接以型別名篩選這個池。
+        /// 以變數全名索引原生變數，包含軟性限制式的彈性變數。
         /// </summary>
         protected readonly Dictionary<string, TVar> Variables = new Dictionary<string, TVar>();
 
@@ -216,8 +212,7 @@ namespace OptimFoundation.Core
         /// <summary>
         /// 目前模型的問題類型：無 Integer / Binary → LP；連續與 Integer / Binary 並存 → MILP；
         /// 全為 Binary → BP；無連續且含 Integer → IP。
-        /// 判定資料直接取自求解器模型（見 <see cref="ReadModelComposition"/>），不使用框架建立時累計的數量，
-        /// 因此自行建立或用 ReadModel 匯入的模型都適用；每次讀取會重新判定，求解前即可讀取。
+        /// 每次從求解器模型重新判定，適用於自建與匯入模型，求解前即可讀取。
         /// 軟性限制式的彈性變數是連續變數，因此 IP / BP 模型加了軟性限制式會判定為 MILP。
         /// </summary>
         public ModelType ModelType => ResolveModelType(ReadModelComposition());
@@ -240,7 +235,7 @@ namespace OptimFoundation.Core
         /// <summary>已建立的限制式數量；預設為 0，由需要提供此數量的引擎覆寫。</summary>
         public virtual int ConstraintCount => 0;
 
-        // 建立統計的計數單位：Expected = 應該建幾個，Actual = 實際成功建了幾個（兩者不等即代表有被略過或失敗）
+        // Expected 為預期建立數，Actual 為成功建立數。
         private sealed class BuildCount
         {
             /// <summary>預期建立數：各維度所有組合的變數數量，或嘗試建立的限制式條數。</summary>
@@ -254,7 +249,7 @@ namespace OptimFoundation.Core
         private readonly Dictionary<string, BuildCount> _constraintBuildCounts = new Dictionary<string, BuildCount>();
         private bool _buildSummaryDirty = true;
 
-        // 記錄限制式或目標式用過的變數。CPLEX 不收沒被引用的變數，也不會說是哪幾個；只有這份紀錄列得出名單。
+        // 追蹤引用以列出 CPLEX 未收進模型的變數名稱。
         private readonly HashSet<TVar> _referencedVariables = new HashSet<TVar>();
 
         /// <summary>
@@ -269,8 +264,7 @@ namespace OptimFoundation.Core
             => _constraintBuildCounts.ToDictionary(kv => kv.Key, kv => (kv.Value.Expected, kv.Value.Actual));
 
         /// <summary>
-        /// 讀取求解器提供的整數統計值，例如節點數或迭代數。因為各求解器的方法名稱不同，
-        /// 會依序尋找傳入的無參數方法；找到就呼叫。都不存在或呼叫失敗時回傳 null。
+        /// 依序嘗試無參數統計方法；皆不存在或呼叫失敗時回傳 null。
         /// </summary>
         protected static long? TryInvokeLong(object target, params string[] methodNames)
         {
@@ -306,18 +300,16 @@ namespace OptimFoundation.Core
         private double _lhsConst = 0;
         private double _rhsConst = 0;
 
-        // 以 constraint name 為 key，而非 variable set：名稱含迴圈索引（如 "Cap@TruckA"），不同條件不會誤判重複
+        // 用完整限制式名稱去重，避免把不同維度的限制式當成重複。
         private readonly HashSet<string> _verifyConstraints = new HashSet<string>();
 
-        // 目標式追蹤：供軟性限制式把 penalty 併入目標式。
-        // 各求解器新增或取代目標式的方式不同，由 AddObjectiveTerm 統一重新設定。
+        // 保留目標項，供新增軟性罰分時重設完整目標式。
         private readonly List<(double coef, TVar var)> _objectiveTerms = new List<(double, TVar)>();
         private readonly List<(double coef, TVar var)> _softPenaltyTerms = new List<(double, TVar)>();
         private double _objectiveConstant = 0;
         private ObjectiveSense _objectiveSense = ObjectiveSense.Minimize;
         private int _softCount = 0;
 
-        // 建模進度與暫存內容（唯讀）。
 
         /// <summary>目前暫存的式子：左側與右側各有幾個變數項、常數合計多少。<see cref="CreateEqual(string)"/> 等方法建立限制式後會清空。</summary>
         public (int LhsTerms, double LhsConst, int RhsTerms, double RhsConst) PoolState
@@ -348,26 +340,6 @@ namespace OptimFoundation.Core
         }
 
         #region Solver Contract
-        // ════════════════════════════════════════════════════════════════
-        // 接入新求解器時，子類別必須實作下列 abstract 方法：
-        // LoadConfig：建立 Model 物件並套用 Config 參數
-        // AddVariable：向求解器新增單一變數，並存入 Variables 字典
-        // LinearExpr：把 (係數, 變數) 清單轉成求解器的線性運算式
-        // AddConstraint：新增一般限制式（<=、=、>=）
-        // AddRangeConstraint：新增範圍限制式（lb <= expr <= ub）
-        // SetObjective：設定目標式（含常數項）與方向（Minimize / Maximize）
-        // SetVariableBounds：修改已建立變數的上下界
-        // AddMIPStartCore：把已找到的 (變數, 值) 交給求解器作為 MIP start
-        // ReadModelComposition：讀取求解器中的變數型別數量，供 ModelType 判定問題類型
-        // BuildCore：由 Build() 呼叫，負責透過 LoadConfig(Config) 初始化模型
-        // SolveCore：由 Solve() 完成規模檢查後呼叫；找到 Optimal 或 Feasible 解時回傳 true
-        // GetObjectiveValue / GetVariableValue / Dispose：讀取解值與釋放資源
-        //
-        // 下列 virtual 方法已有預設實作，子類別可視需要覆寫：
-        // AddVariables：批次建立變數；可改用求解器的批次 API 加速
-        // BuildCVs / BuildIVs / BuildBVs：批次建立變數並存入 Variables
-        // CreateLessEqualSoft / CreateGreaterEqualSoft / CreateEqualSoft：建立軟性限制式並加入違反罰分
-        // ════════════════════════════════════════════════════════════════
 
         /// <summary>建立 solver 原生模型物件並把 config 的每一項參數套用上去。由 BuildCore() 呼叫。</summary>
         public abstract void LoadConfig(ISolverConfig config);
@@ -390,8 +362,7 @@ namespace OptimFoundation.Core
         protected abstract TConstr AddRangeConstraint(string name, TExpr expr, double lb, double ub);
 
         /// <summary>
-        /// 設定目標式 expr + constant。重複呼叫時必須取代舊目標式，
-        /// 因為每加入一項軟性限制式罰分，都會重新設定完整目標式；保留舊目標式會造成重複。
+        /// 設定 expr + constant；必須取代舊目標式，避免累加軟性罰分時重複建目標。
         /// </summary>
         /// <param name="expr">目標式的變數項。</param>
         /// <param name="constant">目標式常數項（offset）；必須傳給求解器，否則回傳目標值會與 Model.md 相差此常數。</param>
@@ -407,13 +378,10 @@ namespace OptimFoundation.Core
         protected abstract void SetVariableBounds(TVar variable, double? lb, double? ub);
 
         /// <summary>
-        /// 向 solver 模型讀出模型組成；<see cref="ModelType"/> 與求解前的模型類型 log 由此判定。
-        /// 必須讀取求解器模型（CPLEX 的 Ncols / NbinVars / NintVars / IsMIP），不能只計算 Variables 字典，
-        /// 才能同時正確處理自行建立與匯入的模型。模型尚未建立時回傳零值。
+        /// 從求解器模型讀取組成供 ModelType 判定；不可只計 Variables，以支援匯入模型。尚未建模時回傳零值。
         /// </summary>
         /// <returns>
-        /// 三個型別的變數數，加上模型是否含離散結構。後者涵蓋 Integer / Binary 以外的離散元素
-        /// （semi-continuous、SOS），有它才能在沒有任何 Integer / Binary 變數時仍判定為 MILP。
+        /// 各型別變數數與離散結構旗標；旗標須涵蓋 semi-continuous、SOS。
         /// </returns>
         protected abstract (int Continuous, int Integer, int Binary, bool HasDiscreteStructure) ReadModelComposition();
 
@@ -435,8 +403,7 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 開始求解：先記錄建模摘要，再點名沒被引用的變數，接著檢查變數數量門檻，最後呼叫各引擎的 SolveCore()。
-        /// 有沒被引用的變數時只記錄 <c>[UNREFERENCED_VARIABLES]</c> 警告，仍會繼續求解。
+        /// 記錄建模摘要與警告後呼叫 SolveCore；未引用變數與規模超標不阻擋求解。
         /// </summary>
         public bool Solve()
         {
@@ -471,8 +438,7 @@ namespace OptimFoundation.Core
         /// <summary>各 engine 的求解實作；由 <see cref="Solve"/> 呼叫。回傳 true 代表取得 Optimal 或 Feasible 解。</summary>
         protected abstract bool SolveCore();
 
-        // VariableCount > Config.ScaleWarnThreshold → Logging.Warn（只警告不阻擋，大但合法的模型不該被擋）。
-        // 量的是整個 Variables 池，含軟性限制式的彈性變數與匯入的變數。Config 為 null 時直接略過檢查。
+        // 檢查整個 Variables 池（含彈性與匯入變數）；超標只警告，未設定 Config 則略過。
         private void PreSolveGuard()
         {
             if (Config == null) return;
@@ -494,10 +460,7 @@ namespace OptimFoundation.Core
         #region VariableManager — 批次建立變數
 
         /// <summary>
-        /// 批次建立變數並存入 Variables 字典。
-        /// 預設逐筆呼叫 AddVariable。
-        /// 子類別可覆寫成求解器的陣列 API（如 CPLEX NumVarArray），
-        /// 減少 C# 與求解器原生程式之間的呼叫次數。
+        /// 批次建立並登記變數；預設逐筆呼叫 AddVariable，可覆寫為 solver 批次 API。
         /// </summary>
         protected virtual void AddVariables(IReadOnlyList<string> names, double lb, double ub, VarType type)
         {
@@ -507,11 +470,9 @@ namespace OptimFoundation.Core
             }
         }
 
-        // 批次建立某型別的所有變數：組出全部變數名 → 建到 solver 並登記進 Variables；之後依型別名篩選即可查回
         private void BatchBuild<TVariable>(double lb, double ub, VarType type, object[] sets)
             => BatchBuild(typeof(TVariable).Name, () => VariableManager.ComposeNames<TVariable>(sets), lb, ub, type);
 
-        // string 版以 setName 作為變數名稱的開頭，其餘流程與泛型版相同。
         private void BatchBuild(string setName, double lb, double ub, VarType type, object[] sets)
             => BatchBuild(setName, () => VariableManager.ComposeNames(setName, sets), lb, ub, type);
 
@@ -522,13 +483,11 @@ namespace OptimFoundation.Core
             string stage = "key_generation";
             try
             {
-                // 1) 由 sets 笛卡兒積組出所有變數名（TypeName@s1@s2@…）
                 names = nameFactory().ToList();
 
-                // 2) 同名的不送進 solver：批內重複或池裡已有都沿用既有變數，否則 solver 會多一個同名變數、池只指得到最後一個
+                // 同名變數沿用既有項目，避免 solver 多建但字典只留下最後一個。
                 var newNames = SkipDuplicateVariableNames(setName, names);
 
-                // 3) 實際在 solver 建立這些變數並登記進 Variables（子類別可用原生 batch API 加速）
                 stage = "solver_creation";
                 if (newNames.Count > 0)
                     AddVariables(newNames, lb, ub, type);
@@ -678,7 +637,6 @@ namespace OptimFoundation.Core
                     $"type={name}");
             }
 
-            // BuildVars 是統一入口；實際建構委派給型別專用方法，三者再共用 BatchBuild。
             switch (type)
             {
                 case VarType.Binary:
@@ -693,9 +651,7 @@ namespace OptimFoundation.Core
             }
         }
 
-        // 以下是上面每個 Build*Vs 的 string 版：功能完全相同，只是用 setName 取代 TVariable。
-        // 沒有類別資訊，因此不檢查維度數量，也不檢查類別名前綴與型別是否一致。
-        // setName 仍會經 ModelNaming 驗證（不可空白、不可含保留字元、不可數字開頭），確保產出的名稱送得進 solver。
+        // string overload 只驗證 setName，不檢查類別前綴與維度數。
 
         /// <summary>批次建立連續變數的 string 版，界限 [0, <see cref="OptBounds.Infinity"/>]。</summary>
         /// <param name="setName">變數名稱的開頭，取代泛型版的類別名；依型別查詢時也以它篩選變數池。</param>
@@ -744,7 +700,7 @@ namespace OptimFoundation.Core
         #region VariableManager — 查詢
 
         /// <summary>
-        /// 依變數實例查出 solver 原生變數：實例的 ToString() 就是變數全名（TypeName@…），直接查 Variables。
+        /// 以實例 ToString() 產生的全名查詢原生變數。
         /// </summary>
         /// <param name="searchData">填好各維度值的變數類別實例，例：new VariableB_Assign { EMP = "E1", DATE = "D1" }。</param>
         /// <exception cref="KeyNotFoundException">該型別未建立，或這組索引值不在建立範圍內。</exception>
@@ -752,8 +708,7 @@ namespace OptimFoundation.Core
             => ReadVar(searchData.ToString());
 
         /// <summary>
-        /// 依變數全名查詢 Variables 字典並回傳求解器變數。相較於 <see cref="ReadVar(object)"/>，
-        /// 不需要建立變數類別實例。
+        /// 以變數全名查詢原生變數，不需建立變數實例。
         /// </summary>
         /// <param name="varName">變數全名，例：VariableB_Assign@E1@D1。import 進來、不符框架命名慣例的名稱同樣可查。</param>
         /// <exception cref="KeyNotFoundException">這個名稱的變數不存在。</exception>
@@ -831,9 +786,7 @@ namespace OptimFoundation.Core
         #region MIP Start
 
         /// <summary>
-        /// 以「變數全名 → 值」提供一組 MIP start；名稱格式同 <see cref="GetSolution"/>，
-        /// 所以上一段的解可直接接過來：<c>next.AddMIPStart(prev.GetSolution())</c>。
-        /// 不必給全部變數，給部分值由 solver 自行補齊（依 solver 的 effort 設定）。
+        /// 以「變數全名 → 值」提供 MIP start，名稱同 GetSolution；可只給部分值，由 solver 依 effort 設定補齊。
         /// </summary>
         /// <remarks>
         /// 必須在模型建完、Solve() 之前呼叫。LP 模型不使用 MIP start，會記錄警告後略過；
@@ -953,13 +906,11 @@ namespace OptimFoundation.Core
         #region 建模記帳 — 給 engine 子類別的入口
 
         /// <summary>
-        /// 匯入模型並建立查詢索引後呼叫：清掉舊模型的建立統計，並以檔案裡的目標式方向同步 <see cref="ObjectiveSense"/>，
-        /// 否則匯入 maximize 模型會被當成 minimize，軟性 penalty 也會反號。
+        /// 匯入並建立索引後清除舊統計、同步目標方向，避免軟性罰分符號錯誤。
         /// </summary>
         /// <param name="objective">檔案裡的目標式方向；null = 沒有目標式。</param>
         protected void RecordImportedModel(ObjectiveSense? objective)
         {
-            // 匯入會取代求解器模型，因此先清除舊模型的變數建立統計與引用紀錄。
             _variableBuildCounts.Clear();
             _referencedVariables.Clear();
             if (objective.HasValue) _objectiveSense = objective.Value;
@@ -1039,11 +990,7 @@ namespace OptimFoundation.Core
         {
             if (!_buildSummaryDirty) return;
 
-            // 同時列出建立時累計的數量與目前模型數量，方便查看差異：
-            // 已建立=實際/預期：由 RecordVariableBuild / RecordConstraintBuild 累計。
-            // 模型內合計：Variables 字典數量；solver 實際持有：ConstraintCount 提供的限制式數量。
-            // 數量不同時，可能有建立操作未更新統計，或模型在中途被重設。
-            // （例：再次呼叫 LoadConfig() 會清空 solver 的限制式，但不會清 Core 的計數器）。
+            // 分別列出建立計數與目前模型數量，揭露未登記或重設造成的差異。
             int expectedVariables = _variableBuildCounts.Values.Sum(x => x.Expected);
             int actualVariables = _variableBuildCounts.Values.Sum(x => x.Actual);
             Logging.Info($"[變數建立摘要] 已建立={actualVariables}/{expectedVariables}（實際/預期） 變數類別={_variableBuildCounts.Count} 種 模型內合計={VariableCount}");
@@ -1071,8 +1018,7 @@ namespace OptimFoundation.Core
 
         #region 未引用變數
 
-        // CPLEX 不收沒被限制式或目標式引用的變數：Ncols 看得出少了幾個，看不出是哪幾個，名單只有框架列得出。
-        // 只在 CPLEX 收的比框架宣告的少時才列：OptEngine.AddLE 等直接建模入口不經 pool，用到的變數不在引用紀錄裡。
+        // CPLEX 收進的變數較少時才列未引用名單；直接呼叫 AddLE 等入口不會更新 pool 引用紀錄。
         private void WarnUnreferencedVariables()
         {
             var composition = ReadModelComposition();
@@ -1083,7 +1029,6 @@ namespace OptimFoundation.Core
             Logging.Warn($"[UNREFERENCED_VARIABLES] {unreferenced.Count} 個變數已宣告但沒被任何限制式或目標式引用，CPLEX 不會收進模型 | groups={GroupSummary(unreferenced)} sample={string.Join(",", unreferenced.Take(5))} result=continued");
         }
 
-        // 把未使用的變數依名稱中第一個 @ 之前的部分分組（如 VariableB_Pick=2），最多列出 5 組。
         private static string GroupSummary(IEnumerable<string> names)
         {
             var groups = names.GroupBy(VariableGroup).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal).ToList();
@@ -1099,8 +1044,7 @@ namespace OptimFoundation.Core
         public bool HasPool => _lhsTerms.Count > 0 || _rhsTerms.Count > 0;
 
         /// <summary>
-        /// 丟棄 pool 內累積的所有項與常數。
-        /// Create* 正常建立後會清空；要放棄尚未建完的式子，或丟棄提早返回、例外後留下的內容時，可自行呼叫。
+        /// 清空 pool 的項與常數；Create* 成功後自動清空，放棄建式或發生例外後須自行呼叫。
         /// </summary>
         public void ClearPool()
         {
@@ -1177,8 +1121,7 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 往限制式右側累加一項 coeff·變數。
-        /// Model.md 右側的變數項可直接加在這裡；框架建立限制式時會移項，讓建模程式保留原式的左右位置。
+        /// 累加右側 coeff·變數；建立限制式時由框架移項。
         /// </summary>
         /// <returns>true = 已加入；false = varSpec 為 null（略過該項）。</returns>
         /// <exception cref="KeyNotFoundException">變數名查不到（同 <see cref="AddLHS(double, object)"/>）。</exception>
@@ -1236,8 +1179,7 @@ namespace OptimFoundation.Core
             => ModelNaming.ValidateComposedName(operation, name);
 
         /// <summary>
-        /// 送出 pool 為「LHS ≥ RHS」限制式，對應 Model.md 的 <c>≥</c>。
-        /// 實際送進 solver 的形式是 (LHS項 − RHS項) ≥ (RHS常數 − LHS常數)，由框架自動整理，呼叫端不需要也不應該自己移項。
+        /// 建立 LHS ≥ RHS；框架自動移項為 (LHS項 − RHS項) ≥ (RHS常數 − LHS常數)。
         /// </summary>
         /// <param name="name">限制式名稱；同名只建立第一條，之後略過並記錄警告。迴圈建立時須在名稱包含維度值，例如 "Cap@TruckA"。</param>
         /// <returns>true = pool 有內容（含被判定重複而略過的情況）；false = pool 是空的，什麼都沒建。</returns>
@@ -1268,8 +1210,7 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 送出 pool 為「LHS ≤ RHS」限制式，對應 Model.md 的 <c>≤</c>。
-        /// 送出形式與清空 pool 的行為同 <see cref="CreateGreaterEqual(string)"/>，只有比較方向不同。
+        /// 建立 LHS ≤ RHS；移項與清空 pool 同 <see cref="CreateGreaterEqual(string)"/>。
         /// </summary>
         /// <param name="name">限制式名稱；同名第二次起會被略過（warn log）。</param>
         /// <returns>true = pool 有內容；false = pool 是空的。</returns>
@@ -1296,8 +1237,7 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 送出 pool 為「LHS = RHS」限制式，對應 Model.md 的 <c>=</c>。
-        /// 送出形式與清空 pool 的行為同 <see cref="CreateGreaterEqual(string)"/>。
+        /// 建立 LHS = RHS；移項與清空 pool 同 <see cref="CreateGreaterEqual(string)"/>。
         /// </summary>
         /// <param name="name">限制式名稱；同名第二次起會被略過（warn log）。</param>
         /// <returns>true = pool 有內容；false = pool 是空的。</returns>
@@ -1478,8 +1418,7 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 清掉框架這一側追蹤的目標式（變數項、常數項、soft penalty 項）。
-        /// 求解器端移除目標式時（如 OptEngine.ResetConstraint）必須一併呼叫，否則新增軟性限制式時會把舊目標項加回去。
+        /// 清除追蹤的目標項、常數與罰分；solver 移除目標式時須同步呼叫，避免後續加回舊項。
         /// </summary>
         protected void ResetObjectiveTracking()
         {
@@ -1499,8 +1438,7 @@ namespace OptimFoundation.Core
         protected double PoolLhsConst => _lhsConst;
 
         /// <summary>
-        /// 是否支援軟性限制式。EngineBase 會用額外變數表示違反量，並將罰分加入目標式，
-        /// 只需引擎實作 AddVariable / AddConstraint / SetObjective 即可使用，預設為 true。
+        /// 是否支援軟性限制式，預設 true；引擎須實作 AddVariable、AddConstraint、SetObjective。
         /// </summary>
         public virtual bool SupportsSoftConstraints => true;
 
@@ -1553,7 +1491,7 @@ namespace OptimFoundation.Core
             if (name == null)
                 name = ModelNaming.ValidateComposedName("automatic soft constraint", $"Soft_{sense}_{++_softCount}");
 
-            // 與一般限制式共用已用名稱：同名第二次起略過，否則彈性變數 Surplus_/Deficit_/Delta_ 也會撞名
+            // 與一般限制式共用名稱去重，避免彈性變數撞名。
             if (_verifyConstraints.Contains(name))
             {
                 LogDuplicateConstraint(name);
@@ -1626,8 +1564,7 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 往目前目標式追加一個 penalty 項（coef·var）：累積後以 SetObjective 重設整個目標式。
-        /// 各引擎的 SetObjective 必須取代舊目標式；CPLEX 會先移除舊目標式，再設定新的。
+        /// 累積 coef·var 罰分後以 SetObjective 取代完整目標式。
         /// </summary>
         protected virtual void AddObjectiveTerm(double coef, TVar variable)
         {

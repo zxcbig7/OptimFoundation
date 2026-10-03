@@ -8,20 +8,11 @@ using OptimFoundation.Internal;
 
 namespace OptimFoundation.Generators
 {
-    /// <summary>
-    /// 編譯時讀取 OptSet、OptParam、OptVar 標記，自動補上資料類別所需的屬性與基底類別。
-    /// 在類別上標記 OptSet、OptParam 或 OptVar，再用一個 OptDim&lt;T&gt; 宣告每個維度。
-    ///
-    ///     [OptSet] + [OptDim&lt;string&gt;("Lot")] → 繼承 SetRowBase 並產生 Lot 屬性（至少一維，否則回報 OPTF008）
-    ///     [OptParam] + [OptDim&lt;string&gt;("Lot")] + [OptDim&lt;int&gt;("Op")] → 繼承 ParameterBase，產生維度屬性、QTY 與建構子（不宣告維度時只有一個參數值）
-    ///     [OptVar] + [OptDim&lt;DateTime&gt;("Date")] → 繼承 VariableBase 並產生 Date 屬性（也可不宣告維度）
-    ///
-    /// OptDim 的 T 是該維度的資料型別（string / DateTime / int / long / double / decimal），不能使用 Set 類別作為 T。
-    /// 變數型別由類別名前綴決定（VariableB_=Binary / VariableC_=Continuous /
-    /// VariableI_=Integer，OPTF001）；
-    /// 參數一律含 QTY 值欄位且為最後一個資料屬性；Set 類名須 Set_ 前綴（OPTF003）、Parameter 類名須 Parameter_ 前綴（OPTF002）。
-    /// 編譯時會自動產生 OptimFoundation.Modeling 裡的 attribute 定義，使用端加入 using 即可使用。
-    /// </summary>
+    /// <summary>依 OptSet / OptParam / OptVar 與 OptDim 產生資料成員，並註冊 DataContext 資料表。</summary>
+    /// <remarks>
+    /// Set 至少一維；Parameter 補上最後一欄 QTY。維度僅接受支援的 primitive 型別。
+    /// Set_、Parameter_ 與 VariableB_ / VariableC_ / VariableI_ 前綴分別決定資料類別與變數型別。
+    /// </remarks>
     [Generator]
     public sealed class AutoSetsGenerator : IIncrementalGenerator
     {
@@ -130,8 +121,7 @@ namespace OptimFoundation.Modeling
 ";
 
         /// <summary>
-        /// 先用 PostInitialization 產生 attribute 定義，讓使用端可直接引用，
-        /// 再分別處理標有 OptSet / OptParam / OptVar 的類別，並為 DataContext 子類別產生資料表註冊程式。
+        /// 先產生 attribute 定義，再註冊資料類別與 DataContext 的產碼流程。
         /// </summary>
         public void Initialize(IncrementalGeneratorInitializationContext context)
         {
@@ -164,7 +154,6 @@ namespace OptimFoundation.Modeling
             context.RegisterSourceOutput(provider, static (spc, m) => Emit(spc, m!));
         }
 
-        // ── 讀取類別與 attribute，整理要產生的成員 ──
 
         private static EmitModel? ExtractVar(GeneratorAttributeSyntaxContext ctx)
         {
@@ -212,8 +201,6 @@ namespace OptimFoundation.Modeling
                 Props: props, DiagArg: badDimType ?? symbol.Name);
         }
 
-        // ── 找出 DataContext 需要註冊的資料表 ──
-        // 檢查類別是否繼承 DataContext，再產生它的 RegisterAll override。
 
         private static DataContextEmitModel? ExtractDataContext(GeneratorSyntaxContext ctx)
         {
@@ -221,7 +208,7 @@ namespace OptimFoundation.Modeling
             if (ctx.SemanticModel.GetDeclaredSymbol(cds) is not INamedTypeSymbol symbol) return null;
             if (!DerivesFrom(symbol, "OptimFoundation.Core.DataContext")) return null;
 
-            // 同一類別有多份 partial 宣告時只處理第一份，避免重複產生 RegisterAll；GetMembers() 已包含各份宣告的成員。
+            // GetMembers 已包含所有 partial 成員，只處理第一份宣告以免重複產碼。
             var syntaxRefs = symbol.DeclaringSyntaxReferences;
             if (syntaxRefs.Length > 1)
             {
@@ -263,8 +250,7 @@ namespace OptimFoundation.Modeling
                     continue;
                 }
 
-                // 型別名稱以 Set_ / Parameter_ 開頭卻漏標 attribute 時，前面的 HasOptSetAttribute /
-                // TryGetParamElementType 會略過它；這裡回報 OPTF006，避免資料未註冊卻仍通過編譯。
+                // 漏標 attribute 的資料表不會註冊，須報錯以免跳過資料驗證。
                 if (namedType.Name.StartsWith("Set_", System.StringComparison.Ordinal))
                 {
                     diagnostics.Add(Diagnostic.Create(UnregisteredDataMemberRule, member.Locations.FirstOrDefault(),
@@ -327,18 +313,12 @@ namespace OptimFoundation.Modeling
             return false;
         }
 
-        // 索引欄位直接取自 OptDim 宣告，與產生 Parameter 屬性時使用相同規則，不依名稱猜測。
-        // 這份規則同時用於註冊索引欄位名稱，以及找出需要數值檢查的欄位。
+        // 索引與數值驗證共用 OptDim 的維度定義。
         private static string[] ResolveIndexNames(INamedTypeSymbol paramType)
             => ResolveDims(paramType).props.Select(p => p.Name).ToArray();
 
-        // 找出 Parameter 所有需要數值檢查的 double 屬性名稱，依下列順序加入並排除重複：
-        // 1) OptDim 宣告為 double 的維度；屬性尚未產生，所以從 attribute 讀取。
-        // 2) 一定會產生的 QTY；目前同樣還無法從型別成員中讀到。
-        // 3) 使用者在 partial 類別手寫的 public double 屬性；用 GetMembers() 取得。
-        // 不能只檢查 QTY，否則會漏掉使用者自行宣告的數值欄位。
-        // 例如 Profit、Required、Stock 等 double 欄位也要檢查；模型係數仍統一存放在 QTY。
-        // int、decimal 等非 double 欄位不列入這項數值檢查。
+        // 依序驗證 double 維度、QTY、手寫 public double 屬性並去重。
+        // 生成的成員尚不存在，維度須讀 attribute；非 double 欄位不在此檢查。
         private static string[] ResolveNumberPropNames(INamedTypeSymbol paramType)
         {
             var names = new System.Collections.Generic.List<string>();

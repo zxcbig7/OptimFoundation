@@ -4,8 +4,7 @@ using System.Reflection;
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 保存一次求解使用的非 null 設定。未列出的參數使用求解器預設值，
-    /// 只保留有設定的項目，方便比較並縮小實驗檔案。
+    /// 保存求解時的非 null 設定；未列出的參數使用求解器預設值。
     /// </summary>
     public sealed class ConfigSnapshot
     {
@@ -26,12 +25,10 @@ namespace OptimFoundation.Core
             var snapshot = new ConfigSnapshot();
             if (config == null) return snapshot;
 
-            // 求解器名稱取設定類別 namespace 的最後一段，例如 OptimFoundation.Cplex 取 "Cplex"。
             string ns = config.GetType().Namespace ?? "";
             int dot = ns.LastIndexOf('.');
             snapshot.Solver = dot >= 0 ? ns.Substring(dot + 1) : ns;
 
-            // 保存共用參數；null 表示未設定，不寫入紀錄。
             Put(snapshot.Tunable, "TimeLimit", config.TimeLimit);
             Put(snapshot.Tunable, "MipGap", config.MipGap);
             Put(snapshot.Tunable, "Threads", config.Threads);
@@ -44,7 +41,6 @@ namespace OptimFoundation.Core
             Put(snapshot.Tunable, "HeuristicEffort", config.HeuristicEffort);
             Put(snapshot.Tunable, "MemoryLimitMb", config.MemoryLimitMb);
 
-            // 讀取設定類別的公開欄位與可讀屬性，補上 ISolverConfig 未列出的求解器參數。
             var type = config.GetType();
             foreach (var f in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
                 Put(snapshot.SolverSpecific, f.Name, f.GetValue(config));

@@ -6,7 +6,6 @@ namespace OptimFoundation.Cplex.Tests.Unit
 {
     public class VariableManagerTests
     {
-        // ── ComposeNames ───────────────────────────────────────────────────
 
         [Fact]
         public void ComposeNames_1D_String_GeneratesCorrectKeys()
@@ -50,7 +49,6 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Equal("VarInt@2", names[1]);
         }
 
-        // ── ConvertSetsToTokens ────────────────────────────────────────────
 
         [Fact]
         public void ConvertSets_DateTime_FormatsAsYYYYMMDD()

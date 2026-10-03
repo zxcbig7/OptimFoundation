@@ -6,7 +6,6 @@ namespace OptimFoundation.Cplex.Tests.Unit
 {
     public class ModelElementBaseTests
     {
-        // ── ToString ───────────────────────────────────────────────────────
 
         [Fact]
         public void ToString_String_ReturnsTypeNameAtValue()
@@ -36,7 +35,6 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Throws<ArgumentException>(() => v.ToString());
         }
 
-        // ── InitClassBySets ────────────────────────────────────────────────
 
         [Fact]
         public void InitClassBySets_CorrectCount_SetsProperties()
@@ -65,7 +63,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             var v = new VarDG();
             var ex = Assert.Throws<ArgumentException>(() => v.InitClassBySets("only_one_arg"));
             Assert.Contains("VarDG", ex.Message);
-            Assert.Contains("2", ex.Message); // 期望 2 個
+            Assert.Contains("2", ex.Message);
         }
 
         [Fact]
@@ -80,7 +78,6 @@ namespace OptimFoundation.Cplex.Tests.Unit
         public void InitClassBySets_TypeMismatch_ThrowsInvalidCastException()
         {
             var v = new VarDG();
-            // 傳入無法轉換為 DateTime 的字串
             Assert.Throws<InvalidCastException>(() =>
                 v.InitClassBySets("not_a_date", "G"));
         }

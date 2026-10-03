@@ -3,7 +3,7 @@ using OptimFoundation.Modeling;
 
 namespace Tutorial
 {
-    /// <summary>每日需求下限（件）。數學：Demand_{p,d}，值在 QTY。2D 參數（Product × Date，含 DateTime 維度）。</summary>
+    /// <summary>Demand_{p,d}（件，QTY）：每日需求下限。</summary>
     [OptParam]
     [OptDim<string>("Product")]
     [OptDim<DateTime>("Date")]

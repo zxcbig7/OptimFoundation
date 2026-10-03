@@ -16,8 +16,7 @@ namespace OptimFoundation.Core.IO
             => MapRows<TRow>(TabularData.ToRecords(table), sourceDescription);
 
         /// <summary>
-        /// 把字串資料列轉成 Set 或 Parameter 物件。第一列須包含該類別所有 public property 的名稱，
-        /// 後續列依欄名填入對應 property，欄名比對不分大小寫。
+        /// 依表頭轉為 Set/Parameter 物件；須含所有 public property，欄名比對不分大小寫。
         /// </summary>
         internal static List<TRow> MapRows<TRow>(IEnumerable<string[]> rows, string sourceDescription)
             where TRow : ModelElementBase, new()

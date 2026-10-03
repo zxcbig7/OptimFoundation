@@ -40,9 +40,9 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Equal(1, fake.ExecuteInTransactionCallCount);
             Assert.True(fake.Committed);
             Assert.False(fake.RolledBack);
-            Assert.Empty(fake.ExecutedCommands); // 不再逐列呼叫 Execute
+            Assert.Empty(fake.ExecutedCommands);
             Assert.Equal(3, fake.ExecutedBatches.Count); // VarS / VarInt / VarDG 各一次 ExecuteBatch
-            Assert.Equal(2 + 1 + 1, fake.ExecutedBatches.Sum(b => b.rows.Length)); // 列數加總不變
+            Assert.Equal(2 + 1 + 1, fake.ExecutedBatches.Sum(b => b.rows.Length));
         }
 
         // (2) 失敗回滾：第 2 個變數型別的批次寫入丟例外 → Commit 例外傳出、假物件記錄 rollback、未 commit
@@ -111,9 +111,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Throws<InvalidOperationException>(() => batch.Commit());
         }
 
-        // 確認一次 Commit 即使包含多個 Write，也只呼叫一次 ExecuteInTransaction。
-        // FakeDbCtrl 在這裡只記錄呼叫次數，不模擬資料庫處理巢狀交易的行為；
-        // 巢狀交易是否共用連線與只提交一次，由 DbCtrlBaseTransactionTests 另外驗證。
+        // 此處只驗證一次 Commit 共用一個交易；巢狀交易另由 DbCtrlBaseTransactionTests 驗證。
         [Fact]
         public void Commit_OnlyInvokesExecuteInTransactionOnce_NotPerWrite()
         {

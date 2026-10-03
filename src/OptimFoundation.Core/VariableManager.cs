@@ -7,9 +7,7 @@ using System.Runtime.CompilerServices;
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 變數名稱工具：
-    /// 把多個 Set 做笛卡兒積，組出變數 key（TypeName@v1@v2@…），與 ModelElementBase.ToString() 格式一致。
-    /// ComposeNames 直接組合字串，不為每個名稱建立物件、也不反射取值。
+    /// 以 Set 笛卡兒積組成 TypeName@維度值名稱，格式同 ModelElementBase.ToString()。
     /// </summary>
     public static class VariableManager
     {
@@ -134,10 +132,8 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 將多個 Set 轉換為字串列表。
-        /// 支援 List&lt;T&gt;、T[] 及任何 IEnumerable&lt;T&gt;，T 可為 DateTime、int、long、double、decimal、string 或 enum。
-        /// 整數型用 ToString()；浮點型（double/decimal）用 InvariantCulture，確保與 ModelElementBase.ToString() 的格式一致；
-        /// enum 以成員名稱（ToString()）作為 Set 成員字串。
+        /// 將 DateTime、int、long、double、decimal、string 或 enum 的 IEnumerable&lt;T&gt; 轉成字串列表。
+        /// 浮點值使用 InvariantCulture，enum 使用成員名稱。
         /// </summary>
         public static List<string>[] ConvertSetsToTokens(params object[] sets)
         {
@@ -147,8 +143,7 @@ namespace OptimFoundation.Core
                     "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToTokens), null,
                     "sets_array_is_null");
 
-            // 只傳一個 string[] 時，C# 可能把整個陣列當成 params object[]，而不是其中一個參數，
-            // 此時 sets 的每項都會是 string。把它們重新包成一個集合，才能按一個維度處理。
+            // 單一 string[] 可能被展開成 params object[]；重新包裝以維持單一維度。
             if (sets.Length > 0 && sets.All(x => x is string))
                 sets = [sets.Cast<string>().ToList()];
 
@@ -198,22 +193,19 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 產生所有變數名稱（格式：TypeName@val1@val2@...）。
-        /// 直接組合字串，不建立 TVariable 的實例，避免每個名稱都做 InitClassBySets + ToString 的反射。
+        /// 直接組成 TypeName@維度值名稱，不建立實例或逐筆反射。
         /// </summary>
         public static IEnumerable<string> ComposeNames<TVariable>(object[] sets)
         {
             string typeName = typeof(TVariable).Name;
             var setRows = ConvertSetsToRows(sets);
             ValidateVariableArity<TVariable>(setRows);
-            // 0 維（scalar）→ 純 TypeName（與 ModelElementBase.ToString 一致）；≥1 維 → TypeName@v1@v2...
             foreach (var parts in CombineRows(setRows))
                 yield return ModelNaming.Compose(typeName, parts);
         }
 
         /// <summary>
-        /// 以傳入的 typeName 取代類別名，產生所有變數名稱（格式：typeName@val1@val2@…）。
-        /// 這個版本沒有 TVariable 可對照，所以不檢查集合的維度總數是否等於變數類別的 property 數。
+        /// 以指定 typeName 組成名稱；無變數類別可對照，不檢查維度數。
         /// </summary>
         public static IEnumerable<string> ComposeNames(string typeName, object[] sets)
         {

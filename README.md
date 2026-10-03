@@ -1,72 +1,12 @@
 # OptimFoundation
 
-OptimFoundation 是以 .NET 8 建立 MILP 模型的 solver-agnostic framework，目前提供 IBM CPLEX adapter。
+.NET 8 的 solver-agnostic MILP framework，目前提供 IBM CPLEX adapter。
 
-## Packages
-
-| Package | Responsibility |
-| --- | --- |
-| `OptimFoundation.Core` | 資料列、IO、命名、變數/限制式通用邏輯、logging、experiments |
-| `OptimFoundation.Generators` | Set / Parameter / Variable source generator |
-| `OptimFoundation.Cplex` | IBM CPLEX adapter |
-
-## Quick example
-
-```csharp
-using OptimFoundation.Core;
-using OptimFoundation.Core.IO;
-using OptimFoundation.Modeling;
-using OptimFoundation.Cplex;
-
-[OptSet]
-[OptDim<string>("Employee")]
-public sealed partial class Set_Employee { }
-
-[OptSet]
-[OptDim<DateTime>("Date")]
-public sealed partial class Set_Date { }
-
-[OptVar]
-[OptDim<DateTime>("Date")]
-[OptDim<string>("Employee")]
-public sealed partial class VariableB_Assign { }
-
-var data = OptData.Load(() => new Dataload());
-
-var model = new OptModel("Canonical")
-    .AddVariables(engine =>
-        engine.BuildVars<VariableB_Assign>(data.set_Date, data.set_Employee))
-    .AddObjective(engine => new ObjectiveFunction(/* dependencies */).Build(engine))
-    .AddConstraints(engine => new Constraint_Assign(/* dependencies */).Build(engine));
-
-using var project = new OptProject("Example")
-    .LoadConfig(new ProjectConfig { ExportLP = true });
-
-bool solved = project.Solve(model, new CplexConfig());
-```
-
-資料載入對 Set 與 Parameter 使用同一個入口：
-
-```csharp
-set_Employee = source.Load<Set_Employee>("employees.csv");
-parameter_Demand = source.Load<Parameter_Demand>("demand-2026.csv");
-```
-
-所有輸入 CSV 都必須有與 generated properties 對應的表頭。
-
-## Build and test
+所有說明（概念入門、逐步教學、範本導覽、public API reference）都在同一份文件：[開發指南](specs/developer-guide.md)。
 
 ```powershell
 dotnet build OptimFoundation.sln
 dotnet test tests/OptimFoundation.Cplex.Tests/OptimFoundation.Cplex.Tests.csproj
 ```
 
-Solver managed/native libraries 與 license 不在 repository 內。CPLEX 使用 `CplexDir`；不得 commit solver DLL 或 license。
-
-## Documentation
-
-- [開發者指南](specs/developer-guide.md)
-- [架構盤查](specs/2026-08-09-api-architecture-audit.md)
-- [多維 Set 規格](specs/2026-08-08-multidim-set.md)
-- [IO 規格](specs/2026-08-08-io-read-surface.md)
-- [Tutorial template](Templates/Tutorial/README.md)
+CPLEX 的 DLL 與 license 不在 repo 內，build 時由 `CplexDir` 指定；不得 commit。

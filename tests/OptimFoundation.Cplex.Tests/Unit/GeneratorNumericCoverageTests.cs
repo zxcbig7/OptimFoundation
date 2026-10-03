@@ -9,16 +9,7 @@ using Xunit;
 
 namespace OptimFoundation.Cplex.Tests.Unit
 {
-    // ── 驗證 source generator 會把自行宣告的 double 欄位納入數值檢查（見框架資料防護規格追補）──
-    //
-    // 自行宣告的 double 欄位（Profit/Required/Stock…）也要檢查 NaN 等無效數值；Parameter 的
-    // 模型係數仍統一使用 generator 產生的 QTY 欄位。
-    //
-    // 本檔的 [OptSet]、[OptParam] 與 DataContext 類別會實際交給 AutoSetsGenerator 處理，
-    // 因為 csproj 將 Generators.csproj 設為 Analyzer。測試不自行建立
-    // ParamRegistration/ParamRow，才能同時確認 generator 的
-    // ResolveNumberPropNames 有找到所有需要檢查的欄位。若改回只收集
-    // 索引屬性與 QTY 的舊行為，Profit 就不會進入 numbersOf，NaN 無法被發現，本檔測試應失敗。
+    // 使用真實 generator 產碼，驗證自訂 double 欄位也接受數值檢查；模型係數仍使用 QTY。
 
     // Set 的元素型別一律由同類別上的 OptDim<T> 宣告。
     [OptSet]
@@ -31,7 +22,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
     [OptDim<string>("GncItem")]
     public partial class Parameter_GncProfit
     {
-        // 模擬使用者在 partial 類別自行加入的 double 欄位；它不是 QTY 或索引屬性，例如實際專案中的 Profit、Required、Stock。
+        // 自訂 double 欄位，不屬於 QTY 或索引。
         public double Profit { get; set; }
     }
 
@@ -149,7 +140,6 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Contains(result.DataIssues, i => i.Kind == DataIssueKind.Numeric && i.Detail.Contains("Profit"));
         }
 
-        // 確認自行宣告的 double 欄位若有正常數值，就不會被誤報為資料問題。
         [Fact]
         public void HandwrittenNonQtyDoubleField_NormalValue_NoIssue()
         {

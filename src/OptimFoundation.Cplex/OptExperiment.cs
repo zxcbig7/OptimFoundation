@@ -8,7 +8,7 @@ namespace OptimFoundation.Cplex
     /// <summary>
     /// 把每個模型分別配上每組求解器設定，各求解一次；也可用 <see cref="AddTrial"/> 指定單一模型與設定組合。
     /// 每次求解都建立新的引擎，透過 <see cref="OptEngine.RunModel"/> 執行並留下 <see cref="Trial"/> 紀錄；求解後釋放引擎。
-    /// 由 <see cref="OptProject.Experiment"/> 建立；紀錄接在 Experiment/{專案名}-trial.csv 等累積檔的檔尾，Experiment 欄寫實驗名、RunId 欄寫這次執行的批次。
+    /// 由 <see cref="OptProject.Experiment"/> 建立；紀錄寫成 Experiment/{FullName}-trial.csv 等四個檔，同名實驗再跑一次整組覆寫。
     /// </summary>
     public sealed class OptExperiment
     {
@@ -36,14 +36,14 @@ namespace OptimFoundation.Cplex
             Name = name;
             _description = description ?? string.Empty;
 
-            // 建立時就接上實驗 log，呼叫端在 Run() 之前做的前置動作（例：warm-up）也收在同一檔
+            // 建立時切換 log，讓 Run 前的準備作業也記在實驗檔。
             Logging.SetLogFileName(LogName);
         }
 
-        /// <summary>實驗名（建立時給的名稱，不含專案名），寫在累積檔每一列的 Experiment 欄。</summary>
+        /// <summary>實驗名（建立時給的名稱，不含專案名）。</summary>
         public string Name { get; }
 
-        /// <summary>{專案名}-{實驗名}：log 檔名前綴（{FullName}_exp）。實驗紀錄不另開檔，寫進專案的累積檔。</summary>
+        /// <summary>{專案名}-{實驗名}：log 檔名前綴（{FullName}_exp），也是實驗紀錄的檔名前綴（{FullName}-trial.csv 等）。</summary>
         public string FullName => $"{_project.Name}-{Name}";
 
         private string LogName => $"{FullName}_exp";
@@ -59,7 +59,7 @@ namespace OptimFoundation.Cplex
 
         /// <summary>
         /// 是否記錄目標值、最佳界限與 MIP gap 的變化，預設 true。
-        /// callback 會影響搜尋方式與耗時；評估是否採用新設定或用另一批資料驗證時，應關閉此選項，方便與正式求解比較。
+        /// callback 影響搜尋路徑與耗時；與正式求解比較時應關閉。
         /// </summary>
         public OptExperiment CaptureTrajectory(bool enabled)
         {
@@ -150,18 +150,17 @@ namespace OptimFoundation.Cplex
 
             var experiment = new Experiment(_project.Name, Name, _description);
 
-            // 若中途曾正式求解，這裡切回實驗 log；已使用同一檔名時不做任何事。
+            // 正式求解可能切換 log，執行前須切回實驗 log。
             Logging.SetLogFileName(LogName);
             string projectName = _project.Name;
 
-            // 單一模型時檔名就是「專案名-參數名」；多模型才插模型名，否則各模型的輸出檔會互相覆蓋。
+            // 多模型時加入模型名，避免輸出互相覆寫。
             bool multiModel = cells.Select(c => c.Model.Name).Distinct(StringComparer.Ordinal).Count() > 1;
 
             Logging.Info(
                 $"[Experiment] {FullName} | cells={cells.Count} multiModel={(multiModel ? "ON" : "OFF")} " +
                 $"trajectory={(_captureTrajectory ? "ON" : "OFF")}");
 
-            // 用開始時間識別這批實驗，區分同名實驗的歷次結果。
             string runId = OptProject.NextRunId();
             int trialId = 0;
             var runTrials = new List<Trial>();
@@ -174,7 +173,6 @@ namespace OptimFoundation.Cplex
                 using var engine = new OptEngine(cell.Config.Clone(), _projectConfig.Clone());
                 engine.SetModelName(runName);
 
-                // Label 保存設定名；RunModel 另將模型名存入 Trial.Model。
                 var trial = engine.RunModel(cell.Model, cell.Label, _captureTrajectory, beforeSolve: null, out _);
                 trial.ExperimentId = runId;
                 trial.TrialId = ++trialId;

@@ -9,17 +9,16 @@ namespace OptimFoundation.Cplex.Tests.Integration
 {
     /// <summary>
     /// 驗證完整實驗流程：使用 CPLEX 求解，由 Trial.Capture 記錄設定與結果，再以 Save 輸出 CSV。
-    /// 需要 CPLEX DLL；找不到 DLL 時，測試方法直接返回，不執行後續檢查。
+    /// 缺少 CPLEX DLL 時直接返回，不執行檢查。
     /// </summary>
-    // OptProject / OptExperiment 會呼叫 Logging.SetLogFileName，以專案名稱設定 log 檔名，
-    // 因此與其他共用 Logging 的測試放在同一個 collection 依序執行，避免彼此改掉檔名。
+    // 共用 Logging 的測試依序執行，避免互改 log 檔名。
     [Collection("Logging")]
     public class ExperimentIntegrationTests
     {
         private static readonly bool CplexAvailable =
             File.Exists(@"C:\IBM\ILOG\CPLEX_Studio2211\cplex\bin\x64_win64\ILOG.CPLEX.dll");
 
-        [Fact(DisplayName = "Trial.Capture 擷取設定快照 + 指標，Save 寫進專案的 -trial.csv + -meta.csv，不產 JSON")]
+        [Fact(DisplayName = "Trial.Capture 擷取設定快照 + 指標，Save 寫進這個實驗的 -trial.csv + -meta.csv，不產 JSON")]
         public void Experiment_CaptureAndSave_WritesCsvAndMeta()
         {
             if (!CplexAvailable) return;
@@ -43,7 +42,6 @@ namespace OptimFoundation.Cplex.Tests.Integration
             var trial = Trial.Capture(engine, "seed=7,emph=2", () => engine.Solve());
             exp.AddTrial(trial);
 
-            // 確認 Trial 已記錄求解狀態、目標值、耗時與變數數量
             Assert.Equal(SolveStatus.Optimal, trial.Metrics.Status);
             Assert.Equal(3.0, trial.Metrics.ObjectiveValue, precision: 4);
             Assert.True(trial.Metrics.SolveTimeMs >= 0);
@@ -51,22 +49,21 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.Null(trial.Metrics.BuildAndSolveTimeMs);
             Assert.Equal(1, trial.Metrics.VarCount);
 
-            // 確認 Trial 保留這次使用的參數值與 solver 名稱
             Assert.Equal("Cplex", trial.Config.Solver);
             Assert.Equal(7, Convert.ToInt32(trial.Config.Tunable["Seed"]));
             Assert.Equal(2, Convert.ToInt32(trial.Config.Tunable["Emphasis"]));
 
             exp.Save();
 
-            string csv = FolderDir.Experiment.GetPathFile(projectName + "-trial.csv");
-            string meta = FolderDir.Experiment.GetPathFile(projectName + "-meta.csv");
+            string csv = FolderDir.Experiment.GetPathFile(projectName + "-unit-trial.csv");
+            string meta = FolderDir.Experiment.GetPathFile(projectName + "-unit-meta.csv");
             try
             {
                 Assert.True(File.Exists(csv));
                 Assert.True(File.Exists(meta));
                 Assert.Empty(Directory.GetFiles(FolderDir.Experiment.GetPath(), projectName + "*.json"));
                 Assert.Contains("seed=7,emph=2", File.ReadAllText(csv));
-                Assert.Contains(",unit,none,environment,solver,Cplex", File.ReadAllText(meta));
+                Assert.Contains("environment,solver,Cplex", File.ReadAllText(meta));
             }
             finally
             {
@@ -97,7 +94,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
             var trial = Trial.Capture(engine, "knapsack", () => engine.Solve());
 
-            Assert.Equal(SolveStatus.Optimal, trial.Metrics.Status);   // 掛 callback 不破壞求解
+            Assert.Equal(SolveStatus.Optimal, trial.Metrics.Status);
             Assert.NotNull(trial.Metrics.Convergence);
             Assert.True(engine.SupportsTrajectory);
             // 每個取樣點的耗時都應為非負值
@@ -299,8 +296,8 @@ namespace OptimFoundation.Cplex.Tests.Integration
             }
         }
 
-        [Fact(DisplayName = "實驗紀錄寫進專案的累積檔 {專案名}-trial.csv 等，每列前三欄 = RecordedAt、Experiment（實驗名）、RunId")]
-        public void Experiment_OutputFiles_AreProjectCumulativeFiles()
+        [Fact(DisplayName = "實驗紀錄寫成 {FullName}-trial.csv 等四個檔，欄位固定、不帶 RecordedAt / Experiment / RunId")]
+        public void Experiment_OutputFiles_AreNamedByFullName()
         {
             if (!CplexAvailable) return;
 
@@ -309,7 +306,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
             try
             {
-                OptExperiment experiment = Project(projectName).Experiment("tuning-r1", "累積檔");
+                OptExperiment experiment = Project(projectName).Experiment("tuning-r1", "檔名");
                 Assert.Equal("tuning-r1", experiment.Name);
                 Assert.Equal(fullName, experiment.FullName);
 
@@ -320,17 +317,15 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
                 Assert.Equal(projectName, result.Project);
                 Assert.Equal("tuning-r1", result.Name);
-                string runId = result.Trials.Single().ExperimentId;
                 foreach (string kind in new[] { "trial", "meta", "summary" })
                 {
-                    List<string[]> rows = ReadProjectCsv(projectName, kind);
-                    Assert.Equal(new[] { "RecordedAt", "Experiment", "RunId" }, rows[0].Take(3));
-                    Assert.All(rows.Skip(1), r => Assert.Equal("tuning-r1", r[1]));
-                    Assert.All(rows.Skip(1), r => Assert.Equal(runId, r[2]));
-                    // 同一次 Save 的列寫入時間都一樣
-                    Assert.Single(rows.Skip(1).Select(r => r[0]).Distinct());
+                    List<string[]> rows = ReadExperimentCsv(fullName, kind);
+                    Assert.DoesNotContain("RecordedAt", rows[0]);
+                    Assert.DoesNotContain("Experiment", rows[0]);
+                    Assert.DoesNotContain("RunId", rows[0]);
+                    Assert.NotEmpty(rows.Skip(1));
                 }
-                Assert.False(File.Exists(FolderDir.Experiment.GetPathFile(fullName + ".csv")));
+                Assert.False(File.Exists(FolderDir.Experiment.GetPathFile(projectName + "-trial.csv")));
             }
             finally
             {
@@ -338,8 +333,8 @@ namespace OptimFoundation.Cplex.Tests.Integration
             }
         }
 
-        [Fact(DisplayName = "同名實驗再跑一次：接在檔尾、多一批 RunId，舊列一字不動")]
-        public void Experiment_RerunSameName_AppendsNewRun()
+        [Fact(DisplayName = "同名實驗再跑一次：整組覆寫，檔裡只有最後一次的紀錄")]
+        public void Experiment_RerunSameName_OverwritesFiles()
         {
             if (!CplexAvailable) return;
 
@@ -353,19 +348,15 @@ namespace OptimFoundation.Cplex.Tests.Integration
                     .AddConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
                     .Run();
 
-                string trialPath = FolderDir.Experiment.GetPathFile(projectName + "-trial.csv");
-                Experiment first = RunOnce();
-                string afterFirst = File.ReadAllText(trialPath);
+                string fullName = projectName + "-tuning-r1";
+                RunOnce();
                 Experiment second = RunOnce();
 
-                Assert.StartsWith(afterFirst, File.ReadAllText(trialPath));
-                string firstRun = first.Trials.Single().ExperimentId;
-                string secondRun = second.Trials.Single().ExperimentId;
-                Assert.NotEqual(firstRun, secondRun);
-                Assert.Equal(new[] { firstRun, secondRun }, ReadProjectCsv(projectName, "trial").Skip(1).Select(r => r[2]));
-                // 說明檔每批各一份
-                List<string[]> meta = ReadProjectCsv(projectName, "meta");
-                Assert.Equal(new[] { firstRun, secondRun }, meta.Where(r => r[3] == "schema").Select(r => r[2]));
+                Assert.Single(ReadExperimentCsv(fullName, "trial").Skip(1));
+                // 說明檔只有一份，是第二次的開始時間
+                List<string[]> meta = ReadExperimentCsv(fullName, "meta");
+                string startedAt = Assert.Single(meta, r => r[0] == "run" && r[1] == "startedAt")[2];
+                Assert.Equal(second.Trials.Single().RunTime.ToString("yyyy-MM-dd HH:mm:ss"), startedAt);
             }
             finally
             {
@@ -418,21 +409,22 @@ namespace OptimFoundation.Cplex.Tests.Integration
                     .AddConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
                     .Run();
 
-                // 兩個實驗寫進同一組累積檔，靠 Experiment 欄分開
-                List<string[]> trials = ReadProjectCsv(projectName, "trial");
-                string[] header = trials[0];
+                // 兩個實驗各一組檔
+                List<string[]> onRows = ReadExperimentCsv(projectName + "-traj-on", "trial");
+                string[] header = onRows[0];
                 string Col(string[] row, string column) => row[Array.IndexOf(header, column)];
                 string[] Row(List<string[]> rows, string label) => rows.Single(r => Col(r, "TrialLabel") == label);
-                var on = trials.Skip(1).Where(r => Col(r, "Experiment") == "traj-on").ToList();
-                var off = trials.Skip(1).Where(r => Col(r, "Experiment") == "traj-off").ToList();
+                var on = onRows.Skip(1).ToList();
+                var off = ReadExperimentCsv(projectName + "-traj-off", "trial").Skip(1).ToList();
                 Assert.Equal(3, on.Count);
                 Assert.Single(off);
 
-                foreach (string kind in new[] { "trial", "meta", "summary" })
-                    foreach (var row in ReadProjectCsv(projectName, kind).Skip(1))
-                        Assert.All(row, cell => Assert.False(string.IsNullOrEmpty(cell), $"{kind} 有空白格：{string.Join(",", row)}"));
+                foreach (string experimentName in new[] { "traj-on", "traj-off" })
+                    foreach (string kind in new[] { "trial", "meta", "summary" })
+                        foreach (var row in ReadExperimentCsv($"{projectName}-{experimentName}", kind).Skip(1))
+                            Assert.All(row, cell => Assert.False(string.IsNullOrEmpty(cell), $"{experimentName} {kind} 有空白格：{string.Join(",", row)}"));
                 // 這個小模型是 LP，CPLEX 不會呼叫 MIPInfoCallback：沒有軌跡點就不寫 -trajectory.csv，框架也不補點
-                Assert.False(File.Exists(FolderDir.Experiment.GetPathFile(projectName + "-trajectory.csv")));
+                Assert.False(File.Exists(FolderDir.Experiment.GetPathFile(projectName + "-traj-on-trajectory.csv")));
 
                 string[] baseline = Row(on, "r1-baseline");
                 Assert.Equal(CsvExperimentWriter.Baseline, Col(baseline, "ConfigChanges"));
@@ -501,15 +493,14 @@ namespace OptimFoundation.Cplex.Tests.Integration
                     .AddConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
                     .Run();
 
-                List<string[]> rows = ReadProjectCsv(projectName, "trial");
+                List<string[]> rows = ReadExperimentCsv(projectName + "-structure", "trial");
                 string Col(string column) => rows[1][Array.IndexOf(rows[0], column)];
-                Assert.Equal("structure", Col("Experiment"));
                 Assert.Equal("MILP", Col("ModelType"));
                 // 同一模型每列都一樣的數量不在主表重抄，只寫在 -meta.csv 的 model 區段
                 Assert.DoesNotContain("VarCount", rows[0]);
                 Assert.DoesNotContain("ConstraintCount", rows[0]);
 
-                string meta = File.ReadAllText(FolderDir.Experiment.GetPathFile(projectName + "-meta.csv"));
+                string meta = File.ReadAllText(FolderDir.Experiment.GetPathFile(projectName + "-structure-meta.csv"));
                 Assert.Contains("model,Mixed.modelType,MILP", meta);
                 Assert.Contains("model,Mixed.varCount,4", meta);
                 Assert.Contains("model,Mixed.binaryVarCount,2", meta);
@@ -525,10 +516,10 @@ namespace OptimFoundation.Cplex.Tests.Integration
             }
         }
 
-        // 同一專案的實驗與正式求解共用四個累積檔：{專案}-trial.csv / -meta.csv / -summary.csv / -trajectory.csv
-        private static List<string[]> ReadProjectCsv(string projectName, string kind)
+        // 每個實驗一組檔：{專案}-{實驗}-trial.csv / -meta.csv / -summary.csv / -trajectory.csv
+        private static List<string[]> ReadExperimentCsv(string fullName, string kind)
         {
-            using var reader = new StreamReader(FolderDir.Experiment.GetPathFile($"{projectName}-{kind}.csv"), System.Text.Encoding.UTF8);
+            using var reader = new StreamReader(FolderDir.Experiment.GetPathFile($"{fullName}-{kind}.csv"), System.Text.Encoding.UTF8);
             return CsvCtrl.ParseCsv(reader).ToList();
         }
 

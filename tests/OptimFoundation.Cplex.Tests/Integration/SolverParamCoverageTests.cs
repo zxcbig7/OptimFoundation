@@ -10,26 +10,16 @@ using Xunit;
 namespace OptimFoundation.Cplex.Tests.Integration
 {
     /// <summary>
-    /// 逐一設定 LoadConfig() 支援的 CplexConfig 參數，
-    /// 透過 Trial.Capture 執行 CPLEX 求解；若 CPLEX 拒絕該參數而丟出例外，測試就失敗，
-    /// 再 Save 成 Experiment CSV。每個參數一列，Label = "參數=值"。
-    /// 確認每個設定都有傳到 CPLEX 的 SetParam，求解可完成，而且設定值有寫進實驗 CSV。
+    /// 驗證各 CplexConfig 參數可套用、完成求解並寫入 CSV；每個參數一列，Label = "參數=值"。
     /// </summary>
-    // Solve() 會寫入共用的 Logging；加入同一個 collection 讓相關測試依序執行，避免彼此的訊息影響 log 內容檢查。
+    // 共用 Logging 的測試依序執行，避免 log 互相干擾。
     [Collection("Logging")]
     public class SolverParamCoverageTests
     {
         private static readonly bool CplexAvailable =
             File.Exists(@"C:\IBM\ILOG\CPLEX_Studio2211\cplex\bin\x64_win64\ILOG.CPLEX.dll");
 
-        // (label, 套用一個參數的動作)；逐一測試 OptEngine.LoadConfig() 內的 SetParam 呼叫。
-        //
-        // 演算法與搜尋策略這類選項參數，逐一列出合法整數值，每個值各測一次，
-        // 證明 CPLEX 對該參數的每個選項都接受並能終止求解。值域取自 CPLEX 22.1.1：
-        // 若設定超出範圍的值，例如 fraccuts/mircuts/flowcovers 設為 3，或 NodeAlg 設為 concurrent=6，
-        // CPLEX 會在 SetParam 時丟出例外，使測試失敗；下面保留的是已實測可接受的值。
-        //
-        // 連續 / 純量類（容差、時限、記憶體、執行緒、種子、倍數、計數）→ 維持單一代表值，不展開。
+        // 離散參數逐一測試 CPLEX 22.1.1 可接受值；連續參數選一個代表值。
         private static IReadOnlyList<(string Label, Action<CplexConfig> Apply)> Knobs => new (string, Action<CplexConfig>)[]
         {
             // ── 核心：連續 / 純量（單值） ──
@@ -94,7 +84,6 @@ namespace OptimFoundation.Cplex.Tests.Integration
             ("NodeAlgorithm=4", c => c.NodeAlgorithm = 4),
             ("NodeAlgorithm=5", c => c.NodeAlgorithm = 5),
 
-            // ── 決定論 / 計時 ──
             // 平行模式 Parallel：-1 機會式 / 0 自動 / 1 決定論
             ("ParallelMode=-1", c => c.ParallelMode = -1),
             ("ParallelMode=0", c => c.ParallelMode = 0),
@@ -181,7 +170,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
         {
             if (!CplexAvailable) return;
 
-            // 累積檔會保留舊結果；每次測試使用新專案名，結束後刪除，避免讀到上次資料。
+            // 每次測試使用新專案名，結束後刪除，避免讀到上次資料。
             string project = "solver-param-coverage-" + Guid.NewGuid().ToString("N").Substring(0, 8);
 
             var exp = new Experiment(project, "coverage", "逐一套用每個 CplexConfig solver 旋鈕並記錄一次求解");
@@ -213,7 +202,6 @@ namespace OptimFoundation.Cplex.Tests.Integration
             exp.Save();
             try
             {
-                // 每次參數試跑都應各留下一筆 Trial
                 Assert.Equal(Knobs.Count, exp.Trials.Count);
 
                 var expectedSymmetry = new Dictionary<string, int>
@@ -230,12 +218,10 @@ namespace OptimFoundation.Cplex.Tests.Integration
                     Assert.Equal(value, Assert.IsType<int>(trial.Config.SolverSpecific["Symmetry"]));
                 }
 
-                // 每個參數都實際求解成功
                 Assert.True(failures.Count == 0,
                     "以下參數求解未達終止狀態：" + Environment.NewLine + string.Join(Environment.NewLine, failures));
 
-                // 反映在 CSV：每個 label 都應出現在輸出的 CSV
-                string csvPath = FolderDir.Experiment.GetPathFile(project + "-trial.csv");
+                string csvPath = FolderDir.Experiment.GetPathFile(project + "-coverage-trial.csv");
                 Assert.True(File.Exists(csvPath), $"CSV 未產出：{csvPath}");
                 string csv = File.ReadAllText(csvPath);
                 foreach (var (label, _) in Knobs)
