@@ -2087,14 +2087,12 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 - `public InMemoryDataSource AddRows(string name, IEnumerable<string[]> rows)` | `OptimFoundation.Core/IO/InMemoryDataSource.cs:39` | 把 typed 或 named rows 登錄到 in-memory source 並回傳 this；供測試或程式內資料載入。
 - `public DataTable LoadData(string name)` | `OptimFoundation.Core/IO/InMemoryDataSource.cs:69` | 讀取指定 CSV、DB query 或 memory dataset 並回傳 DataTable；來源必須存在且 schema 可解析。
 
-### `OptimFoundation.Core/VariableBuilder.cs`
+### `OptimFoundation.Core/VariableManager.cs`
 
-- `public static class VariableBuilder` | `OptimFoundation.Core/VariableBuilder.cs:16`
-- `public static IEnumerable<string> GenVarCombinations(params List<string>[] lists)` | `OptimFoundation.Core/VariableBuilder.cs:190` | 計算字串 dimensions 的 Cartesian product，yield canonical @ suffix；零維 yield 空字串。
-- `public static List<string>[] ConvertSetsToStringLists(params object[] lists)` | `OptimFoundation.Core/VariableBuilder.cs:205` | 把 DateTime/int/long/double/decimal/string/enum enumerable 轉成 invariant tokens；null、裸 string 或不支援型別會拋例外。
-- `public static IEnumerable<string> GetVarNames<TVariable>(object[] sets)` | `OptimFoundation.Core/VariableBuilder.cs:267` | 將 sets 轉成 canonical names；typed overload 驗證 arity，string overload 以 setName 命名且不驗證 variable properties。
-- `public static IEnumerable<string> GetVarNames(string setName, object[] sets)` | `OptimFoundation.Core/VariableBuilder.cs:281` | 將 sets 轉成 canonical names；typed overload 驗證 arity，string overload 以 setName 命名且不驗證 variable properties。
-- `public static void BuildVars<TVariable>(Action<object> createVarMethod, object[] sets)` | `OptimFoundation.Core/VariableBuilder.cs:289` | 將 sets 轉成各維度 Cartesian product、驗證其總 arity 等於 `TVariable` writable properties，為每組值反射建立 instance 並交給 `createVarMethod`；callback 每個組合呼叫一次，轉型或 arity 不合會拋例外。
+- `public static class VariableManager` | `OptimFoundation.Core/VariableManager.cs:14`
+- `public static List<string>[] ConvertSetsToTokens(params object[] sets)` | `OptimFoundation.Core/VariableManager.cs:142` | 把 DateTime/int/long/double/decimal/string/enum enumerable 轉成 invariant tokens；null、裸 string 或不支援型別會拋例外。
+- `public static IEnumerable<string> ComposeNames<TVariable>(object[] sets)` | `OptimFoundation.Core/VariableManager.cs:204` | 將 sets 轉成 canonical names；typed overload 驗證 arity，string overload 以 typeName 命名且不驗證 variable properties。
+- `public static IEnumerable<string> ComposeNames(string typeName, object[] sets)` | `OptimFoundation.Core/VariableManager.cs:218` | 將 sets 轉成 canonical names；typed overload 驗證 arity，string overload 以 typeName 命名且不驗證 variable properties。
 
 ### `OptimFoundation.Cplex/CplexConfig.cs`
 

@@ -1,8 +1,6 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
@@ -11,68 +9,16 @@ namespace OptimFoundation.Core
     /// <summary>
     /// 變數名稱工具：
     /// 把多個 Set 做笛卡兒積，組出變數 key（TypeName@v1@v2@…），與 ModelElementBase.ToString() 格式一致。
-    /// GetVarNames 直接組合字串，避免為每個名稱建立物件並反射取值；需要建立實例時另用 BuildVars。
+    /// ComposeNames 直接組合字串，不為每個名稱建立物件、也不反射取值。
     /// </summary>
-    public static class VariableBuilder
+    public static class VariableManager
     {
-        // 快取各型別的建構函式，依序選用無參數、object[] 或 string[] 建構子，避免每次建立物件都反射查找。
-        private static readonly ConcurrentDictionary<Type, Func<string[], object>> _ctorCache
-            = new ConcurrentDictionary<Type, Func<string[], object>>();
-
-        // 保留供 BuildVars<TVariable> 使用
-        private static Func<string[], object> GetCtor(Type t) => _ctorCache.GetOrAdd(t, ty =>
-        {
-            var defaultCtor = ty.GetConstructor(Type.EmptyTypes);
-            if (defaultCtor != null)
-            {
-                var compiledNew = Expression.Lambda<Func<object>>(Expression.New(defaultCtor)).Compile();
-                return parts =>
-                {
-                    var obj = (ModelElementBase)compiledNew();
-                    obj.InitClassBySets(parts);
-                    return obj;
-                };
-            }
-
-            var objArrCtor = ty.GetConstructor([typeof(object[])]);
-            if (objArrCtor != null)
-            {
-                var p2 = Expression.Parameter(typeof(string[]), "parts");
-                return Expression.Lambda<Func<string[], object>>(
-                    Expression.New(objArrCtor, Expression.Convert(p2, typeof(object[]))),
-                    p2).Compile();
-            }
-
-            var stringArrCtor = ty.GetConstructor([typeof(string[])])
-                ?? throw Logging.ErrorOnce(
-                    new InvalidOperationException($"{ty.Name} 缺少可用的建構子（無參數、object[]、string[] 三者皆無）。"),
-                    "VARIABLE_CONSTRUCTOR_MISSING", "變數建構子不存在", nameof(GetCtor), ty.FullName,
-                    "supported_constructor_not_found");
-            var param = Expression.Parameter(typeof(string[]), "parts");
-            return Expression.Lambda<Func<string[], object>>(Expression.New(stringArrCtor, param), param).Compile();
-        });
-
-        // 沒有維度時產生一組空陣列；有維度時產生各集合的所有組合，供 GetVarNames/BuildVars 組成名稱。
-        private static IEnumerable<string[]> GenVarParts(List<string>[] lists)
-        {
-            IEnumerable<string[]> result = new[] { Array.Empty<string>() };
-            foreach (var list in lists)
-                result = result.SelectMany(_ => list, (prefix, item) =>
-                {
-                    var next = new string[prefix.Length + 1];
-                    prefix.CopyTo(next, 0);
-                    next[prefix.Length] = item;
-                    return next;
-                });
-            return result;
-        }
-
         /// <summary>組合各 Set 的資料列，回傳每組維度值的字串陣列；完整名稱由呼叫端組成。</summary>
-        private static IEnumerable<string[]> GenVarParts(List<string[]>[] domains)
+        private static IEnumerable<string[]> CombineRows(List<string[]>[] setRows)
         {
             IEnumerable<string[]> result = new[] { Array.Empty<string>() };
-            foreach (var domain in domains)
-                result = result.SelectMany(_ => domain, (prefix, row) =>
+            foreach (var rows in setRows)
+                result = result.SelectMany(_ => rows, (prefix, row) =>
                 {
                     var next = new string[prefix.Length + row.Length];
                     prefix.CopyTo(next, 0);
@@ -82,12 +28,12 @@ namespace OptimFoundation.Core
             return result;
         }
 
-        private static List<string[]>[] ConvertSetsToVarPartLists(object[] sets)
+        private static List<string[]>[] ConvertSetsToRows(object[] sets)
         {
             if (sets == null)
                 throw Logging.ErrorOnce(
                     new ArgumentNullException(nameof(sets)),
-                    "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToVarPartLists), null,
+                    "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToRows), null,
                     "sets_array_is_null");
 
             if (sets.Length > 0 && sets.All(x => x is string))
@@ -99,7 +45,7 @@ namespace OptimFoundation.Core
                 if (sets[i] == null)
                     throw Logging.ErrorOnce(
                         new ArgumentException($"Set #{i + 1} cannot be null.", nameof(sets)),
-                        "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToVarPartLists), null,
+                        "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToRows), null,
                         "set_is_null", $"index={i + 1}");
 
                 if (sets[i] is System.Collections.IEnumerable rowSequence)
@@ -122,7 +68,7 @@ namespace OptimFoundation.Core
                     if (sets[i] is not System.Collections.IEnumerable sequence)
                         throw Logging.ErrorOnce(
                             new ArgumentException($"Set #{i + 1} must be enumerable."),
-                            "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToVarPartLists), sets[i],
+                            "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToRows), sets[i],
                             "set_not_enumerable", $"index={i + 1}");
 
                     result[i] = sequence.Cast<object>().Select(item =>
@@ -130,7 +76,7 @@ namespace OptimFoundation.Core
                         if (item is not ITuple tuple)
                             throw Logging.ErrorOnce(
                                 new ArgumentException($"Set #{i + 1} contains a non-tuple member."),
-                                "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToVarPartLists), item,
+                                "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToRows), item,
                                 "non_tuple_member", $"index={i + 1}");
                         return Enumerable.Range(0, tuple.Length)
                             .Select(index => ModelNaming.Token($"Set #{i + 1} member #{index + 1}", tuple[index]))
@@ -139,7 +85,7 @@ namespace OptimFoundation.Core
                 }
                 else
                 {
-                    result[i] = ConvertSetsToStringLists(sets[i]).Single()
+                    result[i] = ConvertSetsToTokens(sets[i]).Single()
                         .Select(value => new[] { value }).ToList();
                 }
             }
@@ -161,15 +107,15 @@ namespace OptimFoundation.Core
         /// <summary>
         /// 檢查各集合提供的維度總數是否等於 TVariable 的可寫 property 數；有空集合時略過檢查。
         /// </summary>
-        /// <param name="domains">各集合的資料列，每列以字串陣列保存維度值。</param>
+        /// <param name="setRows">各集合的資料列，每列以字串陣列保存維度值。</param>
         /// <typeparam name="TVariable">要建立的變數類別。</typeparam>
-        private static void ValidateVariableArity<TVariable>(List<string[]>[] domains)
+        private static void ValidateVariableArity<TVariable>(List<string[]>[] setRows)
         {
-            if (domains.Any(domain => domain.Count == 0)) return;
-            int actual = domains.Sum(domain =>
+            if (setRows.Any(rows => rows.Count == 0)) return;
+            int actual = setRows.Sum(rows =>
             {
-                int width = domain[0].Length;
-                if (domain.Any(row => row.Length != width))
+                int width = rows[0].Length;
+                if (rows.Any(row => row.Length != width))
                     throw Logging.ErrorOnce(
                         new ArgumentException("Each row in a multidimensional set must have the same arity."),
                         "VARIABLE_ARITY_MISMATCH", "變數維度數量不一致", nameof(ValidateVariableArity), typeof(TVariable).Name,
@@ -187,45 +133,35 @@ namespace OptimFoundation.Core
                     "variable_property_count_mismatch", $"actual={actual} expected={expected}");
         }
 
-        /// <summary>回傳各維度值的笛卡兒積，每組組成 <c>@值1@值2…</c> 接在類別名後；沒有維度時回傳一個空字串。</summary>
-        public static IEnumerable<string> GenVarCombinations(params List<string>[] lists)
-        {
-            // 沒有維度的變數回傳空字串，讓呼叫端只保留類別名，不多加結尾的 @。
-            foreach (var parts in GenVarParts(lists))
-                yield return parts.Length == 0
-                    ? string.Empty
-                    : ModelNaming.Separator + string.Join(ModelNaming.Separator, parts);
-        }
-
         /// <summary>
         /// 將多個 Set 轉換為字串列表。
         /// 支援 List&lt;T&gt;、T[] 及任何 IEnumerable&lt;T&gt;，T 可為 DateTime、int、long、double、decimal、string 或 enum。
         /// 整數型用 ToString()；浮點型（double/decimal）用 InvariantCulture，確保與 ModelElementBase.ToString() 的格式一致；
         /// enum 以成員名稱（ToString()）作為 Set 成員字串。
         /// </summary>
-        public static List<string>[] ConvertSetsToStringLists(params object[] lists)
+        public static List<string>[] ConvertSetsToTokens(params object[] sets)
         {
-            if (lists == null)
+            if (sets == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(lists)),
-                    "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToStringLists), null,
+                    new ArgumentNullException(nameof(sets)),
+                    "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToTokens), null,
                     "sets_array_is_null");
 
             // 只傳一個 string[] 時，C# 可能把整個陣列當成 params object[]，而不是其中一個參數，
-            // 此時 lists 的每項都會是 string。把它們重新包成一個集合，才能按一個維度處理。
-            if (lists.Length > 0 && lists.All(x => x is string))
-                lists = [lists.Cast<string>().ToList()];
+            // 此時 sets 的每項都會是 string。把它們重新包成一個集合，才能按一個維度處理。
+            if (sets.Length > 0 && sets.All(x => x is string))
+                sets = [sets.Cast<string>().ToList()];
 
-            var result = new List<string>[lists.Length];
-            for (int i = 0; i < lists.Length; i++)
+            var result = new List<string>[sets.Length];
+            for (int i = 0; i < sets.Length; i++)
             {
-                if (lists[i] == null)
+                if (sets[i] == null)
                     throw Logging.ErrorOnce(
-                        new ArgumentException($"Set #{i + 1} cannot be null.", nameof(lists)),
-                        "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToStringLists), null,
+                        new ArgumentException($"Set #{i + 1} cannot be null.", nameof(sets)),
+                        "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToTokens), null,
                         "set_is_null", $"index={i + 1}");
 
-                result[i] = lists[i] switch
+                result[i] = sets[i] switch
                 {
                     IEnumerable<DateTime> seq => seq.Select(value => ModelNaming.Token($"Set #{i + 1}", value)).ToList(),
                     IEnumerable<int> seq => seq.Select(value => ModelNaming.Token($"Set #{i + 1}", value)).ToList(),
@@ -235,14 +171,14 @@ namespace OptimFoundation.Core
                     IEnumerable<string> seq => seq.Select(value => ModelNaming.Token($"Set #{i + 1}", value)).ToList(),
                     string s => throw Logging.ErrorOnce(
                         new ArgumentException($"Set 不可為單一 string '{s}'——集合與裸 string 混傳，請確認每個參數都是一個 Set（IEnumerable）。"),
-                        "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToStringLists), s,
+                        "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToTokens), s,
                         "bare_string_is_not_a_set", $"index={i + 1}"),
                     // enum 是值型別，不能用 IEnumerable<Enum> 判斷任意 enum 集合，因此另外檢查集合的元素型別。
-                    System.Collections.IEnumerable seq when GetEnumElementType(lists[i]) != null
+                    System.Collections.IEnumerable seq when GetEnumElementType(sets[i]) != null
                         => seq.Cast<object>().Select(value => ModelNaming.Token($"Set #{i + 1}", value)).ToList(),
                     _ => throw Logging.ErrorOnce(
-                        new ArgumentException($"不支援的 Set 型別：{lists[i].GetType().Name}。目前僅支援 IEnumerable<DateTime/int/long/double/decimal/string/enum>。"),
-                        "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToStringLists), lists[i].GetType().FullName,
+                        new ArgumentException($"不支援的 Set 型別：{sets[i].GetType().Name}。目前僅支援 IEnumerable<DateTime/int/long/double/decimal/string/enum>。"),
+                        "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToTokens), sets[i].GetType().FullName,
                         "unsupported_set_type", $"index={i + 1}")
                 };
             }
@@ -252,11 +188,11 @@ namespace OptimFoundation.Core
         /// <summary>若 obj 為元素型別是 enum 的 IEnumerable&lt;T&gt;，回傳該 enum 型別，否則回傳 null。</summary>
         private static Type GetEnumElementType(object obj)
         {
-            foreach (var it in obj.GetType().GetInterfaces())
-                if (it.IsGenericType && it.GetGenericTypeDefinition() == typeof(IEnumerable<>))
+            foreach (var type in obj.GetType().GetInterfaces())
+                if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IEnumerable<>))
                 {
-                    var elem = it.GetGenericArguments()[0];
-                    if (elem.IsEnum) return elem;
+                    var elementType = type.GetGenericArguments()[0];
+                    if (elementType.IsEnum) return elementType;
                 }
             return null;
         }
@@ -265,35 +201,25 @@ namespace OptimFoundation.Core
         /// 產生所有變數名稱（格式：TypeName@val1@val2@...）。
         /// 直接組合字串，不建立 TVariable 的實例，避免每個名稱都做 InitClassBySets + ToString 的反射。
         /// </summary>
-        public static IEnumerable<string> GetVarNames<TVariable>(object[] sets)
+        public static IEnumerable<string> ComposeNames<TVariable>(object[] sets)
         {
             string typeName = typeof(TVariable).Name;
-            var domains = ConvertSetsToVarPartLists(sets);
-            ValidateVariableArity<TVariable>(domains);
+            var setRows = ConvertSetsToRows(sets);
+            ValidateVariableArity<TVariable>(setRows);
             // 0 維（scalar）→ 純 TypeName（與 ModelElementBase.ToString 一致）；≥1 維 → TypeName@v1@v2...
-            foreach (var parts in GenVarParts(domains))
+            foreach (var parts in CombineRows(setRows))
                 yield return ModelNaming.Compose(typeName, parts);
         }
 
         /// <summary>
-        /// 以傳入的 setName 取代類別名，產生所有變數名稱（格式：setName@val1@val2@…）。
+        /// 以傳入的 typeName 取代類別名，產生所有變數名稱（格式：typeName@val1@val2@…）。
         /// 這個版本沒有 TVariable 可對照，所以不檢查集合的維度總數是否等於變數類別的 property 數。
         /// </summary>
-        public static IEnumerable<string> GetVarNames(string setName, object[] sets)
+        public static IEnumerable<string> ComposeNames(string typeName, object[] sets)
         {
-            var domains = ConvertSetsToVarPartLists(sets);
-            foreach (var parts in GenVarParts(domains))
-                yield return ModelNaming.Compose(setName, parts);
-        }
-
-        /// <summary>為各維度組合建立一個 TVariable 實例，逐筆傳給 createVarMethod 處理。</summary>
-        public static void BuildVars<TVariable>(Action<object> createVarMethod, object[] sets)
-        {
-            var create = GetCtor(typeof(TVariable));
-            var domains = ConvertSetsToVarPartLists(sets);
-            ValidateVariableArity<TVariable>(domains);
-            foreach (var parts in GenVarParts(domains))
-                createVarMethod(create(parts));
+            var setRows = ConvertSetsToRows(sets);
+            foreach (var parts in CombineRows(setRows))
+                yield return ModelNaming.Compose(typeName, parts);
         }
     }
 }

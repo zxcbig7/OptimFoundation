@@ -22,7 +22,7 @@
 | `ModelNaming.cs` | internal：`@` key 組成（`Token`/`TryToken`/`Compose`/`ValidateComposedName`）、`yyyy_MM_dd`（帶時間則 `yyyy_MM_dd_HH_mm_ss`）日期格式與保留字元/空白驗證 |
 | `VariablePrefixNaming.cs` | internal（`OptimFoundation.Internal` namespace）：B/C/I 前綴解析 `TryResolve`；以 linked source 同時編入 `OptimFoundation.Generators`，避免編譯期與執行期規則漂移 |
 | `EngineBase.cs` | `ISolverConfig`（含 tuning 共通旋鈕，原 `ITunableConfig` 已併入）、`ISolverEngine`（含 `AddMIPStart`）、`OptBounds.Infinity`（= 1E20，框架唯一的「無上限」）、`ISpecialConstraints<TVar,TExpr>` 介面；`SolveStatus`/`VarType`/`ConstraintSense`/`ObjectiveSense`/`ModelType` enum；`EngineBase<TModel,TVar,TExpr,TConstr>` 抽象泛型基底——單一變數池 `Variables`（無分組結構；GetSetVarNames/GetSetVarValues/GetSolution(type) 以型別名篩選，名稱為 `TypeName` 或 `TypeName@…`）、Build*Vs 批次建變數、AddLHS/AddRHS pool、CreateGreaterEqual/LessEqual/Equal/Range（Range 與目標式遇 RHS pool → `[POOL_RHS_IGNORED]` warn 後捨棄）、CreateMinimize/Maximize（含 LHS 常數項 → `ObjectiveConstant`）、`AddMIPStart`（名稱解析 + LP/未知名稱 warn 略過 → `AddMIPStartCore` primitive）、CreateLessEqualSoft/CreateGreaterEqualSoft/CreateEqualSoft 軟性限制式、GetSolution/GetSetVarValues 取解、VariableBuildCounts/ConstraintBuildCounts 建立統計、未引用變數檢查（Solve 前 CPLEX 收的變數比框架宣告的少時寫 `[UNREFERENCED_VARIABLES]` WARN 點名；`RecordImportedModel`/`RecordDirect*` 給子類別登記建立統計）、ModelType（LP/MILP/IP/BP，經 `ReadModelComposition` primitive 向 solver 模型取值並於 Solve 前印 `[模型類型]` log）、ErrorOnce 例外邊界（★ `ISolverEngine.cs` 與 `Enums.cs` 已併入本檔，原兩檔已從檔案系統刪除，重構進行中） |
-| `VariableBuilder.cs` | primitive / `SetRowBase` / ValueTuple domain 展開為 `TypeName@v1@v2…`、`GenVarCombinations` 笛卡兒積、`ValidateVariableArity` |
+| `VariableManager.cs` | primitive / `SetRowBase` / ValueTuple 的 Set 資料列展開為 `TypeName@v1@v2…`（`ComposeNames`：各 Set 笛卡兒積直接組字串，不建實例；`ConvertSetsToTokens`：Set 成員轉 token）、`ValidateVariableArity` |
 | `DataContext.cs` | `OptData.Load`（Initialize→Freeze）、`ParamRow`/`SetRegistration`/`ParamRegistration`、`DataContext`（`RegisterSet`/`RegisterParam`/`GuardMutation`；`DataIssues` 收集驗證問題（DuplicateKey / Numeric / InvalidKey），逐筆 `[DATA_VALIDATION_WARNING]` warn 後照常建模）、`ParameterLookupExtensions.FindParameterOrLog` |
 | `Experiments/Experiment.cs` | `Experiment`（`Trials`、`Summaries`、`Project` / `Name` / `WriteSummary`；`Save` 把紀錄接在專案的四個累積檔尾端：`{Project}-trial.csv` / `-meta.csv` / `-summary.csv`（`WriteSummary` 時）/ `-trajectory.csv`（有點才寫），每列前三欄 `RecordedAt` / `Experiment` / `RunId`；沒有 trial 就 WARN 不寫）、`ITrajectorySource` 介面、`Trial`（`Trial.Capture(engine, label, solveAction, captureTrajectory)` 擷取 `ConfigSnapshot` + `SolveMetrics`；`captureTrajectory=false` 不開收斂軌跡）、`ConfigSummary`（每組設定 = 同批同模型、label 去掉 `-s<seed>` 的彙總：各狀態數、找到可行解數、逐 seed 跟基準比大小的贏 / 輸 / 平手 / 無法比較數；label 含 `warmup` 不計入也不當基準）、`BaselineComparer`（internal，逐 seed 比大小：有沒有解 → 有沒有證明最佳 → `SolveTimeMs` / `Gap`；主表 VsBaseline 與 summary 共用） |
 | `Infrastructure/Logging.cs` | Console + log 檔雙寫（延遲開檔、lock 保護）、`ErrorOnce`（同一例外物件只記一次）、`SetLogFileName`（由 OptProject / OptExperiment 自動呼叫）、`WriteToFile`、`ClearLogs` |
@@ -113,7 +113,7 @@ dotnet test tests/OptimFoundation.Cplex.Tests/OptimFoundation.Cplex.Tests.csproj
 | `tests/OptimFoundation.Cplex.Tests/Unit/ConfigSummaryTests.cs` | 166 | 0 | .cs | 8 | `ConfigSummaryTests` |
 | `tests/OptimFoundation.Cplex.Tests/OptimFoundation.Cplex.Tests.csproj` | 0 | 0 | .csproj | 4 |  |
 | `tests/OptimFoundation.Cplex.Tests/Unit/ZzScratchProbe.cs` | 38 | 0 | .cs | 0 | `ZzScratchProbe` |
-| `tests/OptimFoundation.Cplex.Tests/Unit/VariableBuilderTests.cs` | 2 | 2 | .cs | 4 | `VariableBuilderTests` |
+| `tests/OptimFoundation.Cplex.Tests/Unit/VariableManagerTests.cs` | 2 | 2 | .cs | 4 | `VariableManagerTests` |
 | `tests/OptimFoundation.Cplex.Tests/Unit/StringOverloadParityTests.cs` | 0 | 0 | .cs | 11 | `StringOverloadParityTests` |
 | `tests/OptimFoundation.Cplex.Tests/Unit/ScaleGuardTests.cs` | 6 | 6 | .cs | 14 | `ScaleGuardTests` |
 | `tests/OptimFoundation.Cplex.Tests/Unit/RunnerSymmetryTests.cs` | 62 | 24 | .cs | 3 | `RunnerSymmetryTests` |
@@ -138,7 +138,7 @@ dotnet test tests/OptimFoundation.Cplex.Tests/OptimFoundation.Cplex.Tests.csproj
 | `src/OptimFoundation.Core/EngineBase.cs` | 144 | 144 | .cs | 446 | `ISolverConfig`, `ISolverEngine`, `ISpecialConstraints`, `SolveStatus`, `VarType`, `ConstraintSense`, `ObjectiveSense`, `ModelType`, `OptBounds`, `EngineBase` |
 | `src/OptimFoundation.Core/VariablePrefixNaming.cs` | 5 | 5 | .cs | 6 | `VariablePrefixNaming` |
 | `src/OptimFoundation.Core/ModelNaming.cs` | 7 | 7 | .cs | 19 | `ModelNaming` |
-| `src/OptimFoundation.Core/VariableBuilder.cs` | 14 | 14 | .cs | 35 | `VariableBuilder` |
+| `src/OptimFoundation.Core/VariableManager.cs` | 14 | 14 | .cs | 35 | `VariableManager` |
 | `src/OptimFoundation.Core/OptimFoundation.Core.csproj` | 0 | 0 | .csproj | 1 |  |
 | `src/OptimFoundation.Cplex/CplexConfig.cs` | 508 | 508 | .cs | 982 | `CplexConfig` |
 | `src/OptimFoundation.Cplex/OptEngine.Configuration.cs` | 28 | 28 | .cs | 111 | `OptEngine` |
@@ -357,7 +357,7 @@ dotnet test tests/OptimFoundation.Cplex.Tests/OptimFoundation.Cplex.Tests.csproj
 | --- | --- | --- | --- |
 | `tests/OptimFoundation.Cplex.Tests/Unit/ConfigSummaryTests.cs` | `ConfigSummaryTests` | class | 14 |
 | `tests/OptimFoundation.Cplex.Tests/Unit/ZzScratchProbe.cs` | `ZzScratchProbe` | class | 10 |
-| `tests/OptimFoundation.Cplex.Tests/Unit/VariableBuilderTests.cs` | `VariableBuilderTests` | class | 7 |
+| `tests/OptimFoundation.Cplex.Tests/Unit/VariableManagerTests.cs` | `VariableManagerTests` | class | 7 |
 | `tests/OptimFoundation.Cplex.Tests/Unit/StringOverloadParityTests.cs` | `StringOverloadParityTests` | class | 11 |
 | `tests/OptimFoundation.Cplex.Tests/Unit/ScaleGuardTests.cs` | `ScaleGuardTests` | class | 16 |
 | `tests/OptimFoundation.Cplex.Tests/Unit/RunnerSymmetryTests.cs` | `RunnerSymmetryTests` | class | 8 |
@@ -430,7 +430,7 @@ dotnet test tests/OptimFoundation.Cplex.Tests/OptimFoundation.Cplex.Tests.csproj
 | `src/OptimFoundation.Core/EngineBase.cs` | `EngineBase` | class | 202 |
 | `src/OptimFoundation.Core/VariablePrefixNaming.cs` | `VariablePrefixNaming` | class | 10 |
 | `src/OptimFoundation.Core/ModelNaming.cs` | `ModelNaming` | class | 13 |
-| `src/OptimFoundation.Core/VariableBuilder.cs` | `VariableBuilder` | class | 16 |
+| `src/OptimFoundation.Core/VariableManager.cs` | `VariableManager` | class | 14 |
 | `src/OptimFoundation.Cplex/CplexConfig.cs` | `CplexConfig` | class | 43 |
 | `src/OptimFoundation.Cplex/OptEngine.Configuration.cs` | `OptEngine` | class | 17 |
 | `src/OptimFoundation.Cplex/OptEngine.cs` | `OptEngine` | class | 20 |

@@ -2,7 +2,7 @@ using OptimFoundation.Core;
 
 namespace OptimFoundation.Cplex.Tests.Mocks
 {
-    // 用於 VariableBuilder / EngineBase 測試的最小 Variable 類別
+    // 用於 VariableManager / EngineBase 測試的最小 Variable 類別
     internal class VarS : VariableBase
     {
         public string S { get; set; } = "";

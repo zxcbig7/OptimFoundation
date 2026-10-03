@@ -124,6 +124,44 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         [Fact]
+        public void DuplicateVariable_SkipsAndLogsThatExistingVariableWasKept()
+        {
+            string tag = StartLog("DuplicateVariable");
+            var engine = new MockEngine();
+            engine.Build();
+
+            // 資料裡重複的 Set 成員，以及同一型別再建一次重疊的 sets
+            engine.BuildBVs<VarS>(new List<string> { "A", "B", "A" });
+            engine.BuildBVs<VarS>(new List<string> { "B", "C" });
+
+            Assert.Equal(new[] { "VarS@A", "VarS@B", "VarS@C" }, engine.BuiltVars.Select(v => v.Name));
+            Assert.Equal((5, 3), engine.VariableBuildCounts["VarS"]);
+            string log = ReadLog(tag);
+            Assert.Contains("[VARIABLE_DUPLICATE] 略過同名變數 | type=VarS duplicates=1 sample=VarS@A reason=name_exists result=kept_existing", log);
+            Assert.Contains("[VARIABLE_DUPLICATE] 略過同名變數 | type=VarS duplicates=1 sample=VarS@B reason=name_exists result=kept_existing", log);
+        }
+
+        [Fact]
+        public void DuplicateSoftConstraint_SkipsSecondAndKeepsElasticVariable()
+        {
+            string tag = StartLog("DuplicateSoftConstraint");
+            var engine = new MockEngine();
+            engine.Build();
+            engine.BuildCVs<VarS>(new[] { "X" });
+
+            engine.AddLHS(1.0, new VarS { S = "X" });
+            Assert.True(engine.CreateLessEqualSoft(5.0, 1.0, "Budget"));
+            engine.AddLHS(1.0, new VarS { S = "X" });
+            Assert.True(engine.CreateLessEqualSoft(7.0, 1.0, "Budget"));
+
+            Assert.Equal(1, engine.BuiltVars.Count(v => v.Name == "Surplus_Budget"));
+            Assert.Equal(1, engine.SoftPenaltyTermCount);
+            Assert.Equal(new[] { "Budget" }, engine.BuiltConstraints);
+            Assert.False(engine.HasPool);
+            Assert.Contains("[CONSTRAINT_DUPLICATE] 略過重複限制式 | name=Budget", ReadLog(tag));
+        }
+
+        [Fact]
         public void NamedSoftConstraint_LogsConfigurationAfterSuccessfulBuild()
         {
             string tag = StartLog("NamedSoftConstraint");

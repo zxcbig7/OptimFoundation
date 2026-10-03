@@ -509,11 +509,11 @@ namespace OptimFoundation.Core
 
         // 批次建立某型別的所有變數：組出全部變數名 → 建到 solver 並登記進 Variables；之後依型別名篩選即可查回
         private void BatchBuild<TVariable>(double lb, double ub, VarType type, object[] sets)
-            => BatchBuild(typeof(TVariable).Name, () => VariableBuilder.GetVarNames<TVariable>(sets), lb, ub, type);
+            => BatchBuild(typeof(TVariable).Name, () => VariableManager.ComposeNames<TVariable>(sets), lb, ub, type);
 
         // string 版以 setName 作為變數名稱的開頭，其餘流程與泛型版相同。
         private void BatchBuild(string setName, double lb, double ub, VarType type, object[] sets)
-            => BatchBuild(setName, () => VariableBuilder.GetVarNames(setName, sets), lb, ub, type);
+            => BatchBuild(setName, () => VariableManager.ComposeNames(setName, sets), lb, ub, type);
 
         private void BatchBuild(string setName, Func<IEnumerable<string>> nameFactory, double lb, double ub, VarType type)
         {
@@ -525,9 +525,13 @@ namespace OptimFoundation.Core
                 // 1) 由 sets 笛卡兒積組出所有變數名（TypeName@s1@s2@…）
                 names = nameFactory().ToList();
 
-                // 2) 實際在 solver 建立這些變數並登記進 Variables（子類別可用原生 batch API 加速）
+                // 2) 同名的不送進 solver：批內重複或池裡已有都沿用既有變數，否則 solver 會多一個同名變數、池只指得到最後一個
+                var newNames = SkipDuplicateVariableNames(setName, names);
+
+                // 3) 實際在 solver 建立這些變數並登記進 Variables（子類別可用原生 batch API 加速）
                 stage = "solver_creation";
-                AddVariables(names, lb, ub, type);
+                if (newNames.Count > 0)
+                    AddVariables(newNames, lb, ub, type);
 
                 int actual = Variables.Count - before;
                 RecordVariableBuild(setName, names.Count, actual);
@@ -549,6 +553,24 @@ namespace OptimFoundation.Core
                     $"type={setName} varType={type} bounds=[{lb},{ub}] count={actual}/{expected}");
                 throw;
             }
+        }
+
+        private List<string> SkipDuplicateVariableNames(string setName, List<string> names)
+        {
+            var newNames = new List<string>(names.Count);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var duplicates = new List<string>();
+            foreach (var name in names)
+            {
+                if (Variables.ContainsKey(name) || !seen.Add(name))
+                    duplicates.Add(name);
+                else
+                    newNames.Add(name);
+            }
+
+            if (duplicates.Count > 0)
+                Logging.Warn($"[VARIABLE_DUPLICATE] 略過同名變數 | type={setName} duplicates={duplicates.Count} sample={string.Join(",", duplicates.Take(5))} reason=name_exists result=kept_existing");
+            return newNames;
         }
 
         private static bool TryResolveVariableType(string className, out VarType type)
@@ -870,7 +892,7 @@ namespace OptimFoundation.Core
 
         #endregion
 
-        #region VariableManager — 設定變數界限
+        #region Variable Bounds — 設定變數界限
 
         /// <summary>把單一變數的下界改成 lb（上界不動）。用於固定變數或加開發期的暫時界限。</summary>
         protected void SetVarLB(object searchData, double lb)
@@ -1486,7 +1508,7 @@ namespace OptimFoundation.Core
         public virtual bool CreateLessEqualSoft(double rhs, double penalty)
             => BuildSoft(rhs, penalty, ConstraintSense.LessEqual, null);
 
-        /// <summary>具名軟性 LHS &lt;= rhs：名稱會用於限制式、彈性變數與自動 log。</summary>
+        /// <summary>具名軟性 LHS &lt;= rhs：名稱會用於限制式、彈性變數與自動 log；與任何限制式同名時第二次起略過（warn log）。</summary>
         public virtual bool CreateLessEqualSoft(double rhs, double penalty, string name)
             => BuildSoft(rhs, penalty, ConstraintSense.LessEqual,
                 ValidateConstraintName(nameof(CreateLessEqualSoft), name));
@@ -1499,7 +1521,7 @@ namespace OptimFoundation.Core
         public virtual bool CreateGreaterEqualSoft(double rhs, double penalty)
             => BuildSoft(rhs, penalty, ConstraintSense.GreaterEqual, null);
 
-        /// <summary>具名軟性 LHS &gt;= rhs：名稱會用於限制式、彈性變數與自動 log。</summary>
+        /// <summary>具名軟性 LHS &gt;= rhs：名稱會用於限制式、彈性變數與自動 log；與任何限制式同名時第二次起略過（warn log）。</summary>
         public virtual bool CreateGreaterEqualSoft(double rhs, double penalty, string name)
             => BuildSoft(rhs, penalty, ConstraintSense.GreaterEqual,
                 ValidateConstraintName(nameof(CreateGreaterEqualSoft), name));
@@ -1508,7 +1530,7 @@ namespace OptimFoundation.Core
         public virtual bool CreateGreaterEqualSoft(double rhs, double penalty, ConstraintBase owner, params object[] dims)
             => BuildSoft(rhs, penalty, ConstraintSense.GreaterEqual, ComposeConstraintName(owner, dims));
 
-        /// <summary>允許 LHS 偏離 rhs：加入不足量 dn 與超出量 dp（皆≥0），建立 lhs + dn − dp == rhs；最小化加上 penalty·(dn+dp)，最大化扣除。</summary>
+        /// <summary>允許 LHS 偏離 rhs：加入不足量 dn 與超出量 dp（皆≥0），建立 lhs + dn − dp == rhs；最小化加上 penalty·(dn+dp)，最大化扣除。同名第二次起略過（warn log）。</summary>
         public virtual bool CreateEqualSoft(double rhs, double penalty, string name)
             => BuildSoft(rhs, penalty, ConstraintSense.Equal,
                 ValidateConstraintName(nameof(CreateEqualSoft), name));
@@ -1530,6 +1552,15 @@ namespace OptimFoundation.Core
             }
             if (name == null)
                 name = ModelNaming.ValidateComposedName("automatic soft constraint", $"Soft_{sense}_{++_softCount}");
+
+            // 與一般限制式共用已用名稱：同名第二次起略過，否則彈性變數 Surplus_/Deficit_/Delta_ 也會撞名
+            if (_verifyConstraints.Contains(name))
+            {
+                LogDuplicateConstraint(name);
+                RecordConstraintBuild(name, false);
+                ClearPool();
+                return true;
+            }
 
             double adjustedRhs = rhs + _rhsConst - _lhsConst;
             double p = _objectiveSense == ObjectiveSense.Maximize ? -penalty : penalty;
@@ -1570,6 +1601,7 @@ namespace OptimFoundation.Core
                             break;
                         }
                 }
+                _verifyConstraints.Add(name);
                 RecordVariableBuild("SoftConstraint", expectedVariables, Variables.Count - variablesBefore);
                 RecordConstraintBuild(name, true);
                 MarkReferenced(terms);
