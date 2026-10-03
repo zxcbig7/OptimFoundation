@@ -3,7 +3,7 @@ using OptimFoundation.Cplex;
 
 namespace FJSP_BASIC_BRICK
 {
-    /// <summary>[LB] ∀ lot ∈ Lot, 相鄰道次 (op → nextOp)：Start_{lot,nextOp} ≥ Complete_{lot,op}</summary>
+    /// <summary>同批次的下一道作業必須等前一道完成：∀ lot ∈ Lot, 相鄰道次 (op → nextOp)，Start_{lot,nextOp} ≥ Complete_{lot,op}。</summary>
     public sealed class Constraint_RoutePrecedence : ConstraintBase
     {
         private readonly List<Set_Lot> _lots;
@@ -26,7 +26,7 @@ namespace FJSP_BASIC_BRICK
 
                     engine.AddLHS(1.0, new VariableC_Start { Lot = lot, Operation = nextOp });
                     engine.AddRHS(1.0, new VariableC_Complete { Lot = lot, Operation = op });
-                    engine.CreateGreatEqual(this, lot, op, nextOp);
+                    engine.CreateGreaterEqual(this, lot, op, nextOp);
                 }
             }
         }

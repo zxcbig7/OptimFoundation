@@ -3,7 +3,7 @@ using OptimFoundation.Core.IO;
 
 namespace TSP_MultiDimSet
 {
-    /// <summary>TSP 資料唯一入口；只讀已就位的 Template CSV，不生成也不補值。</summary>
+    /// <summary>從已備妥的標準 CSV 載入 TSP 集合與成本資料，不在這裡產生資料或補缺值。</summary>
     public sealed partial class Dataload : DataContext
     {
         public const string InstanceName = "TSP_MultiDimSet";
@@ -16,7 +16,7 @@ namespace TSP_MultiDimSet
 
         public Dataload() : this(new CsvDataSource()) { }
 
-        /// <summary>標準接口：一行載一份 row list，只讀不算。</summary>
+        /// <summary>逐一載入各集合與成本資料清單，不在載入時推算其他值。</summary>
         public Dataload(IDataSource source)
         {
             set_Node = source.Load<Set_Node>("Set_Node");

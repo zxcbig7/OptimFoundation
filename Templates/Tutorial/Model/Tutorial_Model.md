@@ -4,7 +4,7 @@ Phase 1 產物。本範本刻意涵蓋框架**所有建模元素**，作為教�
 - **Set 三種元素型別**：string（Product、Machine）、DateTime（Date）、int（Shift）
 - **Param 多維**：1D / 2D / 3D 都有
 - **Var 三種型別 + 多維，且全部有用到**：`VariableC_`（continuous）/ `VariableB_`（binary）/ `VariableI_`（integer）
-- **限制式三種**：`≤`（CreateLessEqual）/ `≥`（CreateGreatEqual）/ `=`（CreateEqual）
+- **限制式三種**：`≤`（CreateLessEqual）/ `≥`（CreateGreaterEqual）/ `=`（CreateEqual）
 
 ## 題目（去故事化）
 

@@ -67,11 +67,11 @@ modules: [core, cplex, experiments, templates]
 - [ ] **AC2 統計早於求解且不依賴解**：`CaptureProfile()` 在 `Solve()` 之前呼叫即可取得完整結構統計；模型 infeasible 或 timeout 時，結構統計仍完整（不再由取解 key 數反推）。
 - [ ] **AC3 `ObjectiveSense` 不再說謊**：匯入一個目標式為 maximize 的模型檔，`ModelProfile.ObjectiveSense` 回 `Maximize`；自建 maximize 模型亦回 `Maximize`。
 - [ ] **AC4 框架限定資訊型別上取不到**：匯入模式下 `engine.Authoring` 為 `null`；`RegisteredVariableCount` / `VariableBuildCounts` / `ConstraintBuildCounts` / `ObjectiveTermCount` / `SoftConstraintCount` / `SoftPenaltyTermCount` 不再能從 engine 直接讀到 0，必須經 `Authoring` 且先過 null 檢查。
-- [ ] **AC5 實驗端無腦換物件**：把 `OptExperiment` 的 `AddModel(OptModel.Build(...))` 換成 `AddModel(OptModel.FromFile(...))`，其餘呼叫端程式碼一行不改即可跑完整個矩陣，每個 Trial 的規模欄位都正確。
+- [ ] **AC5 實驗端無腦換物件**：把 `OptExperiment` 的 `AddModel(OptModel.Build(...))` 換成 `AddModel(OptModel.ReadModel(...))`，其餘呼叫端程式碼一行不改即可跑完整個矩陣，每個 Trial 的規模欄位都正確。
 - [ ] **AC6 來源可追溯**：Trial 輸出（CSV 與 JSON）含模型來源種類與來源檔路徑；自建模型的來源檔欄位為空而非遺漏欄位。
 - [ ] **AC7 覆蓋率警告**：匯入一個含非 LP-matrix 元素的模型檔時，`ModelProfile.UncoveredElementCount > 0` 且 `IsComplete == false`，流程不中斷；`ModelInspector` 報告會把這個警告印出來。
 - [ ] **AC8 模型載入耗時可見**：匯入來源的 Trial，其 metrics 含 `ModelLoadMs`（讀檔 + reindex 耗時）且 > 0；自建模型該欄位為 0。
-- [ ] **AC9 疊加行為保留**：`OptModel.FromFile(...).AddConstraints(...)` 仍然先匯入、再套用追加步驟（既有測試 `FromFile_ThenAddConstraints_AppliesBoth` 不需修改語意即通過）。
+- [ ] **AC9 疊加行為保留**：`OptModel.ReadModel(...).AddConstraints(...)` 仍然先匯入、再套用追加步驟（既有測試 `ReadModel_ThenAddConstraints_AppliesBoth` 不需修改語意即通過）。
 - [ ] **AC10 全綠**：`dotnet build OptimFoundation.sln` 與 `dotnet test` 通過，全部 Templates 可 build。
 
 ## Module Interactions
@@ -85,7 +85,7 @@ modules: [core, cplex, experiments, templates]
 
 - **Cplex（`OptimFoundation.Cplex`）**
   - `OptModel.cs`：拆成 abstract `OptModel` + `BuiltModel` + `ImportedModel`。
-  - `OptEngine.cs`：override `CaptureProfile()`；`ReindexFromModel` 補回寫 objective sense 與計數被跳過的元素；`ImportModel` 量測載入耗時。
+  - `OptEngine.cs`：override `CaptureProfile()`；`ReindexFromModel` 補回寫 objective sense 與計數被跳過的元素；`ReadModel` 量測載入耗時。
   - `OptProject.cs`、`OptExperiment.cs`：改吃 `OptModel` base 契約；把 `ModelProfile` 與載入耗時帶進 Trial。
 
 - **Templates**
@@ -117,7 +117,7 @@ namespace OptimFoundation.Cplex
         public static BuiltModel Build(string name = "Model");
 
         /// <summary>以既有模型檔（.lp / .mps / .sav，含 .gz / .bz2）定義模型。</summary>
-        public static ImportedModel FromFile(string fileName, string name = null);
+        public static ImportedModel ReadModel(string fileName, string name = null);
 
         public OptModel AddVariables(Action<OptEngine> build);
         public OptModel AddObjective(Action<OptEngine> build);
@@ -172,7 +172,7 @@ namespace OptimFoundation.Core
 
         public int ConstraintCount { get; }
         public int LessEqualCount { get; }
-        public int GreatEqualCount { get; }
+        public int GreaterEqualCount { get; }
         public int EqualCount { get; }
         public int RangeCount { get; }
 
@@ -254,7 +254,7 @@ ModelSource, ModelSourceFile, BinaryCount, IntegerCount, ContinuousCount, ModelL
 ## Edge Cases & Error Handling
 
 - **模型含非 LP-matrix 元素**：`ReindexFromModel` 的 `if (enumerator.Current is not ILPMatrix matrix) continue`（`OptEngine.cs:270`）改為計數後 continue。計數寫進 `ModelProfile.UncoveredElementCount`，`IsComplete` 轉 false，並發一次 `Logging.Warn`。不中斷流程（使用者裁決：不報錯、貼警告）。**注意這是計數 enumerator 跳過的元素，不比對 solver 彙總屬性**——後者的成員名未驗證，本設計刻意避開。
-- **`CaptureProfile()` 在 `Build()` 之前呼叫**：模型物件尚未存在 → 留 Error Log 後 throw `InvalidOperationException`，與既有 `ImportModel` 的前置檢查一致（`OptEngine.cs:213-251`）。
+- **`CaptureProfile()` 在 `Build()` 之前呼叫**：模型物件尚未存在 → 留 Error Log 後 throw `InvalidOperationException`，與既有 `ReadModel` 的前置檢查一致（`OptEngine.cs:213-251`）。
 - **匯入模型無目標式**：`Model.GetObjective()` 回 null → `ObjectiveSense` 取框架預設並在 profile 旁發 Warn，不 throw（求解一個沒有目標式的可行性問題是合法情境）。
 - **匯入的變數名為空或重複**：既有 `ResolveImportedName`（`OptEngine.cs:289-298`）已處理，本規格不改其行為；統計以去重後的 `Variables` 為準。
 - **bounds 判定的無限大門檻**：以 solver 的無限大常數為準（CPLEX 慣例 1e20），不自訂門檻，避免與 `BuildVars` 預設上界 1E100 混淆。
@@ -276,11 +276,11 @@ ModelSource, ModelSourceFile, BinaryCount, IntegerCount, ContinuousCount, ModelL
 | 六個自建限定成員從 `EngineBase` public 面移入 `Authoring` | `ModelInspector`；tests | 改走 `engine.Authoring?.Xxx` |
 | `SolveMetrics.VarCount` / `ConstraintCount` 改由 `ModelProfile` 填 | 無呼叫端語意變更 | 無 |
 
-`OptModel.FromFile(...)` 簽名不變，回傳型別改為子型別 `ImportedModel`，既有呼叫端（皆使用 `var` 或 `OptModel` 宣告）不需修改。
+`OptModel.ReadModel(...)` 簽名不變，回傳型別改為子型別 `ImportedModel`，既有呼叫端（皆使用 `var` 或 `OptModel` 宣告）不需修改。
 
 ## Open Questions
 
-- [ ] `IObjective` 讀取 sense 的確切成員名（`Sense` 屬性 vs `GetSense()`）未經本 repo 驗證，stub 階段第一件事就是寫最小探針確認；若兩者皆不可得，退回方案為在 `ImportModel` 後以 `Model.GetObjective()` 的字串化結果判定，並把此退路記進規格。
+- [ ] `IObjective` 讀取 sense 的確切成員名（`Sense` 屬性 vs `GetSense()`）未經本 repo 驗證，stub 階段第一件事就是寫最小探針確認；若兩者皆不可得，退回方案為在 `ReadModel` 後以 `Model.GetObjective()` 的字串化結果判定，並把此退路記進規格。
 - [ ] `specs/` 目錄目前是空的，但 workspace `CLAUDE.md` 與 `CodeMap.md` 都引用 `specs/developer-guide.md`、`specs/framework-dev-spec.md` 等七份檔案——這些檔案不存在，`CodeMap.md`（同步日期 2026-08-09）已 stale。本規格是 `specs/` 下第一份檔案。是否在本次一併重建 developer-guide，待確認。
 - [ ] `ModelSourceKind` 的命名（`Authored` vs `Built`）：型別叫 `BuiltModel` 但 enum 值叫 `Authored`，是否統一成 `Built`。
 
@@ -301,7 +301,7 @@ ModelSource, ModelSourceFile, BinaryCount, IntegerCount, ContinuousCount, ModelL
 - [ ] `ReindexFromModel`：回寫 objective sense、計數未涵蓋元素、`Authoring` 設 null
 - [ ] `OptEngine.CaptureProfile()`：型別分布（`INumVar.Type`）、sense 分布與 bounds 分布（`IRange.LB/UB`、`INumVar.LB/UB`）
 - [ ] `EngineBase`：六個自建限定成員收進 `AuthoringReport`，移除舊 public 成員
-- [ ] `ImportModel`：量測讀檔 + re-index 耗時
+- [ ] `ReadModel`：量測讀檔 + re-index 耗時
 - [ ] `SolveMetrics` / `Trial` / CSV / JSON writer 補欄位
 - [ ] `OptProject` / `OptExperiment` 改吃 base 契約，帶入 profile 與載入耗時
 - [ ] `Templates/ModelInspector` 改用 `ModelProfile`，移除已由型別表達的 caveat

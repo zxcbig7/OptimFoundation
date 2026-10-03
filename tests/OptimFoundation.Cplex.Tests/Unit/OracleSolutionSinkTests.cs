@@ -8,7 +8,7 @@ using Xunit;
 
 namespace OptimFoundation.Cplex.Tests.Unit
 {
-    // OracleSolutionSink 的批次/transaction 語意：用假 IDbCtrl 驗證 wiring，不碰真 Oracle。
+    // 用測試用 IDbCtrl 檢查 OracleSolutionSink 是否把多次 Write 放在同一個交易中批次寫入，不連線到 Oracle。
     public class OracleSolutionSinkTests
     {
         private static MockEngine BuiltEngine()
@@ -111,9 +111,9 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Throws<InvalidOperationException>(() => batch.Commit());
         }
 
-        // 巢狀 ExecuteInTransaction：已在交易中再次呼叫 → 直接執行 work，不重複開始/提交（用真 OracleDBCtrl
-        // 反而需要真連線，這裡只驗證 FakeDbCtrl 本身沒有這條語意——交由下方針對 OracleDBCtrl 的行為另行人工複查，
-        // 本測試改用 FakeDbCtrl 驗證「同一批次只呼叫一次」已由測試 (1) 覆蓋，此處補頂層呼叫不重入的計數穩定性。
+        // 確認一次 Commit 即使包含多個 Write，也只呼叫一次 ExecuteInTransaction。
+        // FakeDbCtrl 在這裡只記錄呼叫次數，不模擬資料庫處理巢狀交易的行為；
+        // 巢狀交易是否共用連線與只提交一次，由 DbCtrlBaseTransactionTests 另外驗證。
         [Fact]
         public void Commit_OnlyInvokesExecuteInTransactionOnce_NotPerWrite()
         {

@@ -2,30 +2,30 @@ using ModelTuner;
 using OptimFoundation.Core;
 using OptimFoundation.Cplex;
 
-// ModelTuner：吃既有模型檔（.sav / .lp / .mps）的 Phase 3 tuning 殼。
-// 模型不是 C# 組出來的，而是 Instances/ 裡凍結的檔案；本檔可寫的只有 productionBaseline 與 exp 區塊（見 README 白名單）。
-//   dotnet run → production：productionBaseline 解 Instances/tune 每個檔
-//   dotnet run -- lock → S0 凍結：模型檔指紋寫進 instances.lock
-//   dotnet run -- exp <N> → 跑下方 R<N> 區塊，完成後自動 archive 到 Experiments/ 並產 facts
-//   dotnet run -- holdout <N> <label> → R<N> 的 baseline 與 champion 在 holdout seeds / instances 重跑
-//   dotnet run -- facts <N> → 從 archive 重產 TUNING-FACTS 與彙總
-//   dotnet run -- cplex-tune [秒] → S2.5：CPLEX 內建 tuning tool 吃全部 tune instance
+// ModelTuner：讀取既有模型檔（.sav / .lp / .mps），執行 Phase 3 的參數比較實驗。
+// 模型從 Instances/ 讀取，調參期間保持檔案不變；調參時只修改 productionBaseline 與 exp 區塊（範圍見 README）。
+//   dotnet run → production：用 productionBaseline 求解 Instances/tune 的每個模型
+//   dotnet run -- lock → S0：把模型檔的 SHA-256 雜湊值記錄到 instances.lock，供後續檢查檔案是否改變
+//   dotnet run -- exp <N> → 執行下方 R<N> 實驗，完成後備存結果到 Experiments/，並產生統計報告
+//   dotnet run -- holdout <N> <label> → 用保留的 seed 和模型，比較 R<N> 基準設定與 label 指定的已選設定
+//   dotnet run -- facts <N> → 從備存的實驗結果重新產生 TUNING-FACTS 與統計摘要
+//   dotnet run -- cplex-tune [秒] → S2.5：使用 CPLEX 內建工具，對全部調參用模型提出參數建議
 
-// ── 1. 材料：凍結的模型檔與量測設定 ──
+// ── 1. 準備模型檔與量測設定；實驗期間保持模型檔不變 ──
 const string ProjectName = "ModelTuner";
 int[] tuningSeeds = { 11, 22, 33, 44, 55 };
 int[] holdoutSeeds = { 66, 77, 88 };
 
-var workspace = TunerWorkspace.Open(ProjectName);
+var workspace = TunerWorkspace.Open(new OptProject(ProjectName));
 string mode = args.Length > 0 ? args[0] : "production";
 
-// ── 2. production baseline：整個專案只有這一顆，experiment 一律從它 Clone()，promotion 只寫回這裡 ──
-// 停止契約 / 環境契約以 TuningHistory.md 契約區塊為準；變更任一項 = 重跑 S1 sizing 與 R0
-// baseline provenance:
-//   來源 experiment: initial
-//   champion Trial: initial
-//   promotion 日期: -
-//   diff: -
+// ── 2. 正式設定 productionBaseline：實驗用 Clone() 複製；確認新設定較好後，只更新這裡 ──
+// 求解停止條件與執行環境記錄在 TuningHistory.md；任一項變更後，須重跑 S1 規模測試與 R0 基準量測。
+// 目前正式設定的來源紀錄：
+//   來源實驗：initial
+//   採用的 Trial：initial
+//   採用日期：-
+//   設定差異：-
 var productionBaseline = new CplexConfig
 {
     MipGap = 1e-4,
@@ -62,12 +62,12 @@ if (mode is "exp" or "holdout")
     if (roundNo == 0)
     {
         // R0 — ModelTuner-tuning-r0
-        // 校準輪：只有 baseline，變的只有 seed（runner 展開 5 個 tuning seed，label 自動加 -s<seed>）
-        round = new TuningRound(workspace, roundNo, "R0 校準：baseline × 5 seeds，量 θ 與瓶頸剖面", tuningSeeds, holdoutSeeds)
+        // 基準量測：保持 baseline 設定不變，只更換 5 個調參用 seed；label 自動加上 -s<seed>。
+        round = new TuningRound(workspace, roundNo, "R0 基準：baseline × 5 seeds，當對照組並看瓶頸剖面", tuningSeeds, holdoutSeeds)
             .Add("r0-baseline", productionBaseline.Clone());
     }
-    // R1 範本：複製成新的 else if 區塊；一輪只改一顆搜尋策略旋鈕。
-    // 跑完後把每顆 config 的完整有效值改寫成字面值 initializer（baseline 之後會被 promotion 改掉），之後 NEVER 改寫或刪除。
+    // R1 範本：複製成新的 else if 區塊；每輪只調整一個搜尋策略參數。
+    // 實驗完成後，把每組 config 的完整設定值直接寫入初始化區塊並保留，避免日後更新 productionBaseline 時連帶改變舊實驗。
     // else if (roundNo == 1)
     // {
     //     // R1 — ModelTuner-tuning-r1
@@ -87,7 +87,7 @@ if (mode is "exp" or "holdout")
     return mode == "exp" ? round.Run() : round.RunHoldout(args.Length > 2 ? args[2] : "");
 }
 
-// ── 4. production：promotion 後的出口驗證也走這裡 ──
+// ── 4. 正式求解：採用新設定後，也從這裡執行一次確認結果 ──
 if (mode != "production")
 {
     Console.Error.WriteLine($"參數錯誤：未知模式 '{mode}'。");
@@ -105,10 +105,10 @@ if (!workspace.VerifyLock(required: false)) return 3;
 int unsolved = 0;
 foreach (var instance in workspace.Tune)
 {
-    using var project = new OptProject(OptModel.FromFile(instance.FullPath, instance.Name), $"{ProjectName}-{instance.Name}")
-        .UseConfig(() => new ProjectConfig { EnableSolverLog = true, ExportSol = true })
-        .UseConfig(() => productionBaseline.Clone());
-    if (!project.Execute()) unsolved++;
-    Logging.Info(RoundFacts.DescribeProduction(instance, project.Engine.LastMetrics));
+    // 每個模型使用不同的專案名稱，讓 log 與 .sol 檔名不同，避免同一秒完成時互相覆蓋。
+    using var project = new OptProject($"{ProjectName}-{instance.Name}")
+        .LoadConfig(new ProjectConfig { EnableSolverLog = true, ExportSol = true });
+    if (!project.Solve(OptModel.ReadModel(instance.FullPath, instance.Name), productionBaseline)) unsolved++;
+    Logging.Info(RoundFacts.DescribeProduction(instance, project.Trial.Metrics));
 }
 return unsolved == 0 ? 0 : 1;

@@ -7,11 +7,11 @@ using Xunit;
 
 namespace OptimFoundation.Cplex.Tests.Unit
 {
-    // Scale guard（EngineBase.PreSolveGuard）：RegisteredVariableCount 超過 ISolverConfig.ScaleWarnThreshold → Logging.Warn，不 throw、不中止。
-    // Logging 是 static class，直接寫 console/log 檔，無法用 mock 攔截呼叫；改用「讀回 log 檔內容」證明警告確實觸發——
+    // 模型大小檢查（EngineBase.PreSolveGuard）：已登記變數數量超過 ScaleWarnThreshold 時，只記錄警告，仍繼續求解。
+    // Logging 直接將訊息寫入 Console 與檔案，所以測試讀回 log 檔，確認是否真的寫入警告。
     // Logging.SetLogFileName(tag) 把之後所有寫入導向一個帶 tag 的新檔，Solve() 後讀該檔內容比對是否含 WARN。
-    // [Collection("Logging")]：本類別內測試序列執行（xUnit 預設同 class 內即序列，此為局部保險）；
-    // 全 repo 只有本類別碰 Logging 靜態單例，故不需要全域 [assembly: CollectionBehavior(DisableTestParallelization)]。
+    // [Collection("Logging")] 讓使用同一 collection 的測試依序執行，
+    // 避免其他共用 Logging 的測試改掉 log 檔名或混入訊息；不必停用所有測試的平行執行。
     [Collection("Logging")]
     public class ScaleGuardTests
     {
@@ -40,7 +40,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
                 .OrderByDescending(File.GetLastWriteTimeUtc)
                 .FirstOrDefault();
             Assert.True(file != null, $"找不到 log 檔（tag={tag}），Logging 應在寫入時建立此檔");
-            // Logging 的 FileWriter 仍持有寫入 handle（FileShare.Read）：讀端須明確開 FileShare.ReadWrite 才不會撞共用衝突
+            // Logging 仍持有寫入 handle（FileShare.Read），讀取時須使用 FileShare.ReadWrite。
             using var fs = new FileStream(file!, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             using var sr = new StreamReader(fs);
             return sr.ReadToEnd();
@@ -54,7 +54,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             var engine = new MockEngine(new SmallThresholdConfig());
             engine.Build();
-            engine.BuildBVs<VarS>(new List<string> { "A", "B" }); // RegisteredVariableCount = 2 > 門檻(1)
+            engine.BuildBVs<VarS>(new List<string> { "A", "B" }); // VariableCount = 2 > 門檻(1)
 
             bool ok = engine.Solve();
 
@@ -73,13 +73,13 @@ namespace OptimFoundation.Cplex.Tests.Unit
         {
             string tag = "ScaleGuardUnder_" + Guid.NewGuid().ToString("N");
             Logging.SetLogFileName(tag);
-            Logging.Info("[Test] marker start"); // 確保 log 檔一定被建立，之後才能斷言「內容不含 WARN」
+            Logging.Info("[Test] marker start"); // 先建立 log 檔，再檢查是否含 WARN。
 
             // 預設 MockConfig 門檻用 interface default(10,000,000)，遠大於這裡建的變數數，不應觸發警告
             var engine = new MockEngine();
             engine.Build();
             engine.BuildBVs<VarS>(new List<string> { "A" });
-            // 變數要被引用才會進 solver 模型；沒引用的話模型統計對帳會 WARN（MODEL_STATS_MISMATCH），與本測試的 scale guard 無關
+            // 變數要被引用才會進 solver 模型；沒引用的話會 WARN（UNREFERENCED_VARIABLES），與本測試的 scale guard 無關
             engine.AddLHS(1.0, new VarS { S = "A" });
             engine.CreateLessEqual("CapA");
 
@@ -95,14 +95,14 @@ namespace OptimFoundation.Cplex.Tests.Unit
         [Fact]
         public void PreSolveGuard_NullConfig_DoesNotThrow()
         {
-            // Config 為 null 時防禦性跳過：MockEngine(ISolverConfig) 建構子直接傳 null 模擬
+            // 以 null 建立 MockEngine，確認缺少 Config 時會略過大小檢查，不丟出例外。
             var engine = new MockEngine(null!);
             engine.Build();
             engine.BuildBVs<VarS>(new List<string> { "A" });
 
             bool ok = engine.Solve();
 
-            Assert.True(ok); // 沒有因 Config==null 而炸
+            Assert.True(ok); // Config 為 null 時仍能完成求解
         }
     }
 }

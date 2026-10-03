@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Diagnostics.CodeAnalysis;
 using OptimFoundation.Core.IO;
 using Xunit;
 
 namespace OptimFoundation.Cplex.Tests.Unit
 {
     /// <summary>
-    /// 假 IDbTransaction：記錄 Commit/Rollback/Dispose 呼叫次數，不碰真 DB。
+    /// 測試用 IDbTransaction：只記錄 Commit、Rollback、Dispose 次數，不連線到資料庫。
     /// </summary>
     public sealed class FakeDbTransaction : IDbTransaction
     {
@@ -26,14 +27,15 @@ namespace OptimFoundation.Cplex.Tests.Unit
     }
 
     /// <summary>
-    /// 假 IDbConnection：記錄 Open/Close/Dispose 呼叫，BeginTransaction 回傳可觀測的 FakeDbTransaction。
+    /// 測試用 IDbConnection：記錄 Open、Close、Dispose 的呼叫，BeginTransaction 回傳能記錄提交與回滾次數的 FakeDbTransaction。
     /// </summary>
     public sealed class FakeDbConnection : IDbConnection
     {
         public bool OpenCalled;
         public bool DisposeCalled;
-        public FakeDbTransaction LastTransaction;
+        public FakeDbTransaction LastTransaction = null!;
 
+        [AllowNull]
         public string ConnectionString { get; set; } = string.Empty;
         public int ConnectionTimeout => 0;
         public string Database => string.Empty;
@@ -54,24 +56,24 @@ namespace OptimFoundation.Cplex.Tests.Unit
     }
 
     /// <summary>
-    /// DBCtrlBase 的測試子類：只為了驅動交易編排（ExecuteInTransaction），
-    /// 其餘抽象成員留最小實作，不碰真資料庫。
+    /// DbCtrlBase 的測試子類，用來執行並檢查 ExecuteInTransaction 的開始、提交與回滾流程，
+    /// 其餘抽象成員僅供測試，不連線到資料庫。
     /// </summary>
-    public sealed class TestableDbCtrl : DBCtrlBase
+    public sealed class TestableDbCtrl : DbCtrlBase
     {
         private readonly Func<IDbConnection> _connectionFactory;
 
         public int CreateRawConnectionCallCount;
-        // work 執行當下觀察到的 ambient 連線/交易，供測試斷言「內層操作共用同一條連線」。
-        public IDbConnection ObservedAmbientConnectionDuringWork;
-        public IDbTransaction ObservedAmbientTransactionDuringWork;
+        // 記錄 work 執行時共用的連線與交易，讓測試確認內層操作沒有另開連線。
+        public IDbConnection? ObservedAmbientConnectionDuringWork;
+        public IDbTransaction? ObservedAmbientTransactionDuringWork;
 
         public TestableDbCtrl(Func<IDbConnection> connectionFactory) : base("fake-connection-string")
         {
             _connectionFactory = connectionFactory;
         }
 
-        // 暴露 base 的 ambient 狀態供測試斷言交易結束後已清空
+        // 提供基底類別目前的連線與交易，讓測試確認交易結束後已清空。
         public IDbConnection CurrentAmbientConnection => AmbientConnection;
         public IDbTransaction CurrentAmbientTransaction => AmbientTransaction;
 
@@ -87,21 +89,21 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
         public override int Execute(string sql, params (string name, object value)[] parameters)
         {
-            // 交易期間內層操作應共用 ambient 連線/交易——記錄下來供測試斷言。
+            // 記下內層操作取得的連線與交易，確認與外層交易使用的是同一組物件。
             ObservedAmbientConnectionDuringWork = AmbientConnection;
             ObservedAmbientTransactionDuringWork = AmbientTransaction;
             return 0;
         }
 
-        public override TResult QueryScalar<TResult>(string sql, params (string name, object value)[] parameters) => default;
+        public override TResult QueryScalar<TResult>(string sql, params (string name, object value)[] parameters) => default!;
 
         public override void ExecuteBatch(string sql, IReadOnlyList<(string name, object value)[]> rows) { }
     }
 
     /// <summary>
-    /// 驗證 DBCtrlBase.ExecuteInTransaction 真正的交易編排邏輯（與 Oracle 無關的部分）：
-    /// 用假 IDbConnection/IDbTransaction 取代真連線，不需要真 Oracle 也能抓到編排邏輯被破壞。
-    /// 這批測試就是「反向證明」的標的——把 Rollback() 呼叫拿掉時，下面應該要有測試失敗。
+    /// 驗證 DbCtrlBase.ExecuteInTransaction 如何開始、提交及回滾交易：
+    /// 以測試用 IDbConnection/IDbTransaction 取代資料庫連線，不需要 Oracle 也能檢查這些流程。
+    /// 若移除 Rollback() 呼叫，處理失敗的測試必須失敗，確保測試有檢查到回滾行為。
     /// </summary>
     public class DbCtrlBaseTransactionTests
     {
@@ -119,7 +121,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         // work 丟例外 → Rollback 被呼叫、例外原樣傳出、Commit 未被呼叫。
-        // ★ 這是反向證明鎖定的測試：把 DBCtrlBase 的 tx.Rollback() 註解掉，本測試必須失敗。
+        // 若刪除 DbCtrlBase 的 tx.Rollback() 呼叫，本測試必須失敗。
         [Fact]
         public void ExecuteInTransaction_WorkThrows_RollsBack_RethrowsOriginalException_NeverCommits()
         {
@@ -156,8 +158,8 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Equal(0, conn.LastTransaction.RollbackCallCount);
         }
 
-        // 交易期間內層操作（Execute）共用同一條 ambient 連線/交易，且該連線在 work 執行期間不被 dispose；
-        // 交易結束後 ambient 狀態已清空（回到可再次獨立交易的狀態）。
+        // 交易期間的內層 Execute 使用同一組連線與交易，且 work 尚未執行完前不釋放連線；
+        // 交易結束後清空共用連線與交易的參照，讓下一次呼叫可以重新開始交易。
         [Fact]
         public void ExecuteInTransaction_InnerOperationsShareAmbientConnection_NotDisposedDuringWork_ClearedAfter()
         {
@@ -175,7 +177,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Same(conn.LastTransaction, ctrl.ObservedAmbientTransactionDuringWork);
             Assert.False(connectionDisposedDuringWork);
 
-            // 交易結束後：連線已釋放、ambient 狀態歸零
+            // 交易結束後，連線已釋放，共用連線與交易參照也已清空。
             Assert.True(conn.DisposeCalled);
             Assert.Null(ctrl.CurrentAmbientConnection);
             Assert.Null(ctrl.CurrentAmbientTransaction);

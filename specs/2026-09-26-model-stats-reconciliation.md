@@ -1,12 +1,14 @@
 ---
 title: 模型統計對帳（框架建模統計 vs solver 模型實際統計）
-status: implemented
+status: superseded
 created: 2026-09-26
 modules: [core, cplex, experiments, templates]
 related: 2026-09-18-model-source-duality-and-profile.md
 ---
 
 # 模型統計對帳
+
+> 2026-10-03 已撤除：三方對帳與 `ModelStats.cs` 刪掉，只留 `Solve()` 前的 `[UNREFERENCED_VARIABLES]` WARN；模型數量與目標式方向一律直接讀 CPLEX（`SolveMetrics`、`-meta.csv` model 區段，schema v11）。
 
 ## Summary
 

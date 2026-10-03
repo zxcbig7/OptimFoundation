@@ -5,7 +5,7 @@ namespace Tutorial
 {
     /// <summary>
     /// [≤] fixed-charge Big-M：∀ product, date, shift：Produce_{p,d,s} ≤ BigM·Setup_{p,d,s}
-    /// 不開線（Setup=0）→ 該班該品產量強制為 0。BigM 由數據推導（見 Dataload.BigM），NEVER 寫死。
+    /// 未開線（Setup=0）時，該班該產品的產量必須為 0；BigM 由輸入資料計算，見 Dataload.BigM。
     /// </summary>
     public sealed class Constraint_SetupLink : ConstraintBase
     {

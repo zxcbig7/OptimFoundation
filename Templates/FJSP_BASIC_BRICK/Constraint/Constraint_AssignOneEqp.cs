@@ -3,7 +3,7 @@ using OptimFoundation.Cplex;
 
 namespace FJSP_BASIC_BRICK
 {
-    /// <summary>[Exclusive XOR] ∀ lot ∈ Lot, op ∈ Operation：Σ_eqp Assign_{lot,op,eqp} = ExactlyOne</summary>
+    /// <summary>每個批次的每道作業恰好指派一台機器：∀ lot ∈ Lot, op ∈ Operation，Σ_eqp Assign_{lot,op,eqp} = ExactlyOne。</summary>
     public sealed class Constraint_AssignOneEqp : ConstraintBase
     {
         private readonly List<Set_Lot> _lots;

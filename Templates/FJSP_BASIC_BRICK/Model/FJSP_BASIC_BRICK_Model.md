@@ -8,7 +8,7 @@
 有 N 個批次，每個批次依序有 M 道加工作業（OP1 → OP2 → …，前一道完成才能開始下一道）。
 有 K 台機台，每道作業可在任一機台加工（total flexibility），加工時間依（批次, 作業, 機台）而異，單位一律**小時**。
 每台機台同一時間只能加工一道作業，作業不可中斷（non-preemptive）。
-實例由 `Dataload(string rawFile)` import ctor（`dotnet run -- import raw/FJSP_Instance`）依 `Data/raw/FJSP_Instance.csv` 的規格 seeded 生成（決定論、可重現）；預設 N=6、M=3、K=4、seed=42、加工時間 2..9 小時（較大規模，讓求解夠久、收斂軌跡有多點可畫）。
+實例由 `Dataload(string rawFile)` import ctor（`dotnet run -- import-data raw/FJSP_Instance`）依 `FolderDir.Input` 下 `raw/FJSP_Instance.csv` 的規格 seeded 生成（決定論、可重現）；預設 N=6、M=3、K=4、seed=42、加工時間 2..9 小時（較大規模，讓求解夠久、收斂軌跡有多點可畫）。
 目標：所有作業完工的最晚時間（makespan）最小化。
 
 ## 1b · Terminology Mapping Table
@@ -51,7 +51,7 @@ Set 與 Parameter 都由 `IDataSource.Load<T>` 讀入；CSV 必須有與 generat
 | NoOverlapBackwardOffset | NoOverlapBackward Either-Or 結構常數 | -（scalar） | 2 | `Parameter_NoOverlapBackwardOffset`（QTY 欄） |
 | ExactlyOne | AssignOneEqp 等式右側結構常數 | -（scalar） | 1 | `Parameter_ExactlyOne`（QTY 欄） |
 
-ProcessTime 數據：canonical 求解路徑只讀已就位的 `Data/Parameter_ProcessTime.csv`。要重新生成／改規模，走 import 模式：`dotnet run -- import raw/FJSP_Instance` 讀 `Data/raw/FJSP_Instance.csv`（欄位 Lots,Operations,Eqps,Seed,MinHours,MaxHours）以固定 seed 決定論生成，再 `Export()` 落回標準 CSV；`Dataload(IDataSource)` 本身不生成資料。
+ProcessTime 數據：canonical 求解路徑只讀 `FolderDir.Input` 已就位的 `Parameter_ProcessTime.csv`。要重新生成／改規模，走 import 模式：`dotnet run -- import-data raw/FJSP_Instance` 讀 `FolderDir.Input` 下的 `raw/FJSP_Instance.csv`（欄位 Lots,Operations,Eqps,Seed,MinHours,MaxHours）以固定 seed 決定論生成，再 `Export()` 落回標準 CSV；`Dataload(IDataSource)` 本身不生成資料。
 
 BigM 推導：`Σ_{lot,op} max_eqp ProcessTime`（最壞情況全序列排程長度上界，為最緊合法上界），由實例在 `Dataload.BigM` 動態算出，數據換掉自動重算、不寫死。
 
@@ -118,7 +118,7 @@ $$MakespanFloor \le Makespan \le MakespanDeadline$$
 
 $$Makespan \le SoftMakespanTarget \quad (\text{soft})$$
 
-期望 makespan ≤ SoftMakespanTarget，允許違反。線性化：加彈性變數 $Overage \ge 0$，建 $Makespan - Overage \le SoftMakespanTarget$，並把 $MakespanPenalty \cdot Overage$ 併入目標式（框架 `CreateLeSoft` 自動處理）。demo：target = 5 < 最佳 6 → 被違反 $Overage = 1$ 小時。
+期望 makespan ≤ SoftMakespanTarget，允許違反。線性化：加彈性變數 $Overage \ge 0$，建 $Makespan - Overage \le SoftMakespanTarget$，並把 $MakespanPenalty \cdot Overage$ 併入目標式（框架 `CreateLessEqualSoft` 自動處理）。demo：target = 5 < 最佳 6 → 被違反 $Overage = 1$ 小時。
 
 ### MakespanInfeasibleCap `[1. UB]`（模型 C 專用，保證 infeasible 的 IIS 示範）
 

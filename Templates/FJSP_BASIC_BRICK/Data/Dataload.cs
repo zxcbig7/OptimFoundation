@@ -4,7 +4,7 @@ using OptimFoundation.Core.IO;
 
 namespace FJSP_BASIC_BRICK
 {
-    /// <summary>資料唯一入口：把 Data/*.csv 讀成 Set/Parameter rows，再由 DataContext 驗證 Parameter。</summary>
+    /// <summary>從 FolderDir.Input 的 CSV 載入集合與參數資料，再由 DataContext 檢查參數內容。</summary>
     public sealed partial class Dataload : DataContext
     {
         public List<Set_Lot> set_Lot = new();
@@ -19,16 +19,16 @@ namespace FJSP_BASIC_BRICK
         public List<Parameter_NoOverlapForwardOffset> parameter_NoOverlapForwardOffset = new();
         public List<Parameter_NoOverlapBackwardOffset> parameter_NoOverlapBackwardOffset = new();
 
-        /// <summary>BigM＝Σ_{lot,op} max_eqp ProcessTime（最壞情況全序列排程長度上界）；純粹 max/min 彙總，由數據推導、NEVER 寫死。</summary>
+        /// <summary>BigM＝Σ_{lot,op} max_eqp ProcessTime：每個作業取最慢機台的工時再加總，得到全部作業依序加工的時間上界；由輸入資料計算。</summary>
         public double BigM => parameter_ProcessTime
             .GroupBy(p => new { p.Lot, p.Operation })
             .Sum(g => g.Max(p => p.QTY));
 
-        /// <summary>Range 規劃窗上界＝最壞情況上界，保證放大實例仍可行；非綁定 demo 值。</summary>
+        /// <summary>完工時間上限取 BigM；用足以涵蓋全部作業的寬鬆上限示範範圍限制，不額外縮短允許的排程時間。</summary>
         public double MakespanDeadline => BigM;
 
         /// <summary>
-        /// Phase 3 demo variant 專用：保證 infeasible 的 Makespan 上限（＝理論下界 − 1；"− 1" 為 Model.md 定義的結構偏移，非資料）。
+        /// Phase 3 無可行解示範使用的 Makespan 上限：理論下界 − 1；其中減 1 是 Model.md 定義的公式，不是輸入資料。
         /// 任一 lot 的 makespan 下界＝Σ_op min_eqp ProcessTime，取所有 lot 下界的最大值再 − 1。
         /// </summary>
         public double InfeasibleMakespanCap => parameter_ProcessTime
@@ -40,7 +40,7 @@ namespace FJSP_BASIC_BRICK
         //public Dataload() : this(new DbDataSource()) { }
         public Dataload() : this(new CsvDataSource()) { }
 
-        /// <summary>讀取已就位的 Template CSV；此建構子只做資料載入。</summary>
+        /// <summary>載入資料來源中已備妥的集合與參數，不在此產生範例資料。</summary>
         public Dataload(IDataSource source)
         {
             set_Lot = source.Load<Set_Lot>("Set_Lot");
@@ -56,9 +56,9 @@ namespace FJSP_BASIC_BRICK
         }
 
         /// <summary>
-        /// import 模式：把不規則的「實例生成規格」（規模＋seed＋範圍）攤平成 seeded、決定論的標準 CSV。
-        /// rawFile 相對於 Data/、不帶副檔名；內容見 Data/raw/FJSP_Instance.csv（表頭 Lots,Operations,Eqps,Seed,MinHours,MaxHours）。
-        /// 這是全專案唯一允許出現迴圈與 Random 的地方；求解路徑（上面的 IDataSource ctor）只讀已就位的 CSV。
+        /// import 模式：依規模、seed 與工時範圍產生標準 CSV；相同輸入與 seed 會產生相同資料。
+        /// rawFile 相對於 FolderDir.Input、不帶副檔名；內容見 FolderDir.Input 下的 raw/FJSP_Instance.csv（表頭 Lots,Operations,Eqps,Seed,MinHours,MaxHours）。
+        /// 產生資料所需的迴圈與 Random 集中在 import；求解時使用上面的 IDataSource 建構子，只讀取已備妥的 CSV。
         /// </summary>
         public Dataload(string rawFile)
         {
@@ -101,7 +101,7 @@ namespace FJSP_BASIC_BRICK
             parameter_NoOverlapBackwardOffset.Add(new Parameter_NoOverlapBackwardOffset { QTY = 2.0 });
         }
 
-        /// <summary>把 import ctor 產生的資料輸出成求解流程使用的 Template CSV。</summary>
+        /// <summary>將 import 建構子產生的資料寫成標準 CSV，供之後求解時讀取。</summary>
         public void Export()
         {
             CsvCtrl.WriteRows(set_Lot, "Set_Lot");

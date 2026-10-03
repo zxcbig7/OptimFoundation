@@ -6,13 +6,13 @@ using System.Reflection;
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 把一個變數 / 參數類別的 property 反推出對應的 DB 表結構與 SQL——DB 端的表結構契約集中在這裡。
+    /// 讀取變數或參數類別的公開欄位與屬性，轉成 Oracle 欄位名稱與型別，供建表 SQL 使用。
     /// </summary>
     public static class ReflectionHelper
     {
         /// <summary>
         /// C# → Oracle 欄位型別對應（數學模型資料用）。
-        /// 整數型用 NUMBER(p) 自帶 scale 0 → 保整數性；浮點型一律用無精度 NUMBER → 保數值保真。
+        /// 整數型對應 NUMBER(p)，小數位數為 0；浮點型對應未指定精度的 NUMBER。
         /// </summary>
         private static readonly Dictionary<Type, string> OracleTypeMap = new Dictionary<Type, string>
         {
@@ -20,7 +20,7 @@ namespace OptimFoundation.Core
             [typeof(string)] = "VARCHAR2(255)",
             [typeof(char)] = "CHAR(1)",
 
-            // 布林 — 二元變數 / 旗標（Oracle 資料表欄位無原生 BOOLEAN）
+            // 布林值與旗標使用 NUMBER(1) 儲存。
             [typeof(bool)] = "NUMBER(1)",
 
             // 整數 — index、計數、整數變數
@@ -29,7 +29,7 @@ namespace OptimFoundation.Core
             [typeof(int)] = "NUMBER(10)",
             [typeof(long)] = "NUMBER(19)",
 
-            // 浮點 / 連續量 — 係數、QTY、目標值（用 NUMBER 保值，避免 BINARY_DOUBLE 浮點誤差）
+            // 浮點數與連續量（係數、QTY、目標值）使用 NUMBER，不額外限制小數位數。
             [typeof(float)] = "NUMBER",
             [typeof(double)] = "NUMBER",
             [typeof(decimal)] = "NUMBER",
@@ -38,9 +38,9 @@ namespace OptimFoundation.Core
             [typeof(DateTime)] = "DATE",
         };
         /// <summary>
-        /// 對class 反射取得 Type 的 public field/property 名稱與型別（不含 method）。用於 SQL 欄位定義、CSV 標頭等。
+        /// 取得型別的 public field/property 名稱，包含 instance 與 static 成員，不包含方法。
         /// </summary>
-        /// <returns>成員名稱，順序為反射回傳順序（實務上等同宣告順序，全框架的欄位對位都靠它）。</returns>
+        /// <returns>成員名稱按 reflection 回傳順序排列，與 GetMemberTypes 回傳的型別逐項對應。</returns>
         public static string[] GetMemberNames(Type type)
         {
             return type.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
@@ -79,18 +79,18 @@ namespace OptimFoundation.Core
 
                 if (OracleTypeMap.TryGetValue(t, out string sqlType))
                     cols += $", {names[i]} {sqlType}";
-                // 未對應型別 → 跳過（維持原行為，不產生意外欄位）
+                // 沒有 Oracle 型別對應時略過，不產生欄位。
             }
             return cols.ToUpper();
         }
     }
     /// <summary>
-    /// 由一個變數 / 參數類別的 property 反推出對應的 DB 表結構與 SQL——DB 端的表結構契約集中在這裡。
+    /// 依變數或參數類別的公開欄位與屬性產生 Oracle 建表與 INSERT 語句，讓兩者的欄位保持一致。
     ///
     /// 慣例（建表與 INSERT 都照這套，兩邊必須一致）：
-    /// - 參數表：DATA_ID + 各 property 欄 + USER_ID + TIME
-    /// - 結果表：DATA_ID + VAR_TYPE + 各 property 欄 + QTY + USER_ID + TIME
-    /// - 欄位順序 = property 宣告順序；表名與欄名一律大寫
+    /// - 參數表：DATA_ID + 各公開欄位/屬性 + USER_ID + TIME
+    /// - 結果表：DATA_ID + VAR_TYPE + 各公開欄位/屬性 + QTY + USER_ID + TIME
+    /// - 欄位依 reflection 回傳順序排列；建表語句會轉成大寫
     /// </summary>
     public class ClassInfo
     {
@@ -100,10 +100,10 @@ namespace OptimFoundation.Core
         /// <summary>類別名，同時是解 key 的前綴與 VAR_TYPE 欄的值來源。</summary>
         public string TypeName => Type.Name;
 
-        /// <summary>各 property 名（依宣告順序），即 DB 的維度欄名。</summary>
+        /// <summary>各 public field/property 的名稱（依 reflection 順序），用作資料庫欄名。</summary>
         public string[] SetNames => ReflectionHelper.GetMemberNames(Type);
 
-        /// <summary>各 property 的型別（順序同 <see cref="SetNames"/>），決定寫入時的資料轉型。</summary>
+        /// <summary>各 public field/property 的型別，順序與 <see cref="SetNames"/> 相同，用來轉換寫入值。</summary>
         public Type[] PropertyTypes => ReflectionHelper.GetMemberTypes(Type);
 
         /// <summary>維度欄名以逗號串接，供 INSERT 的欄位清單使用。</summary>
@@ -115,7 +115,7 @@ namespace OptimFoundation.Core
         /// <summary>維度欄的 DDL 片段（含前導逗號），供 CREATE TABLE 拼接。</summary>
         public string SQLColsDefinition => ReflectionHelper.GenerateSQLCols(Type);
 
-        /// <summary>以指定型別建立描述器；本身不碰 DB，只做名稱 / 型別推導。</summary>
+        /// <summary>記住要處理的類別型別，供後續產生欄位名稱與 SQL；此時不連線資料庫。</summary>
         public ClassInfo(Type type) { Type = type; }
 
         /// <summary>解結果表的 INSERT（欄位 DATA_ID, VAR_TYPE, 各維度, QTY, USER_ID），對得上 <see cref="VarTableCreateCmd"/>。</summary>

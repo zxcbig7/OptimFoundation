@@ -30,14 +30,38 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         [Fact]
-        public void OptModel_IsDefinitionOnly_AndOnSolvedExistsOnlyOnOptProject()
+        public void OptModel_IsDefinitionOnly_AndOnlyProjectSolves()
         {
-            string[] forbidden = { "Execute", "UseConfig", "OnSolved", "Dispose" };
+            string[] forbidden = { "Execute", "Solve", "LoadConfig", "Dispose" };
             foreach (string method in forbidden)
                 Assert.Null(typeof(OptModel).GetMethod(method, BindingFlags.Public | BindingFlags.Instance));
 
-            Assert.NotNull(typeof(OptProject).GetMethod("OnSolved", BindingFlags.Public | BindingFlags.Instance));
-            Assert.Null(typeof(OptExperiment).GetMethod("OnSolved", BindingFlags.Public | BindingFlags.Instance));
+            Assert.NotNull(typeof(OptProject).GetMethod("Solve", BindingFlags.Public | BindingFlags.Instance));
+            Assert.Null(typeof(OptExperiment).GetMethod("Solve", BindingFlags.Public | BindingFlags.Instance));
+        }
+
+        [Fact]
+        public void ProjectIsTheOnlyEntryPoint_NoExtraRunnerTypes()
+        {
+            Assert.Empty(typeof(OptExperiment).GetConstructors(BindingFlags.Public | BindingFlags.Instance));
+            Assert.Null(typeof(OptProject).Assembly.GetType("OptimFoundation.Cplex.OptSolve"));
+            Assert.Null(typeof(OptProject).Assembly.GetType("OptimFoundation.Cplex.OptRun"));
+            Assert.Null(typeof(ProjectConfig).Assembly.GetType("OptimFoundation.Core.OutputOptions"));
+        }
+
+        [Fact]
+        public void ConfigConsumers_AreAllNamedLoadConfig()
+        {
+            Assert.NotNull(typeof(OptProject).GetMethod("LoadConfig", new[] { typeof(ProjectConfig) }));
+            Assert.NotNull(typeof(OptExperiment).GetMethod("LoadConfig", new[] { typeof(ProjectConfig) }));
+            Assert.NotNull(typeof(OptEngine).GetMethod("LoadConfig", new[] { typeof(ISolverConfig) }));
+
+            foreach (var type in new[] { typeof(OptProject), typeof(OptExperiment), typeof(OptEngine) })
+            {
+                Assert.Null(type.GetMethod("UseOutput"));
+                Assert.Null(type.GetMethod("UseConfig"));
+                Assert.Null(type.GetMethod("Configuration"));
+            }
         }
 
         [Fact]
@@ -51,20 +75,17 @@ namespace OptimFoundation.Cplex.Tests.Unit
                 Seed = 41,
                 HeuristicEffort = 0.7,
             };
-            var project = new ProjectConfig
+            var projectConfig = new ProjectConfig
             {
-                ProjectName = new string("clone-project".ToCharArray()),
-                RetentionDays = 11,
                 EnableSolverLog = false,
                 ExportLP = true,
                 ExportMPS = true,
                 ExportSol = true,
+                ExportIIS = true,
             };
 
             AssertAllPublicMembersEqual(cplex, cplex.Clone());
-            ProjectConfig projectClone = project.Clone();
-            AssertAllPublicMembersEqual(project, projectClone);
-            Assert.Same(project.ProjectName, projectClone.ProjectName);
+            AssertAllPublicMembersEqual(projectConfig, projectConfig.Clone());
         }
 
         [Fact]
@@ -77,26 +98,43 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Contains("Items", error.Message);
             Assert.Contains("模型建構階段不得修改資料", error.Message);
 
-            // Approved Packet 1b scope: direct public fields remain mutable.
+            // 載入後的保護只限制框架提供的修改方法；直接公開的欄位仍可賦值。
             data.PublicValue = 7;
             Assert.Equal(7, data.PublicValue);
         }
 
         [Fact]
-        public void OptExperiment_DefaultProjectConfig_DisablesOutputAndHousekeeping()
+        public void OptExperiment_Defaults_QuietOutputAndTrajectoryOn()
         {
-            var experiment = new OptExperiment("defaults", "test");
-            FieldInfo field = typeof(OptExperiment).GetField(
-                "_projectConfigFactory",
-                BindingFlags.Instance | BindingFlags.NonPublic)!;
-            var factory = (Func<ProjectConfig>)field.GetValue(experiment)!;
-            ProjectConfig config = factory();
+            var experiment = new OptProject("defaults-" + Guid.NewGuid().ToString("N"), retentionDays: 0)
+                .Experiment("exp", "test");
+            var projectConfig = (ProjectConfig)typeof(OptExperiment)
+                .GetField("_projectConfig", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(experiment)!;
+            FieldInfo trajectory = typeof(OptExperiment)
+                .GetField("_captureTrajectory", BindingFlags.Instance | BindingFlags.NonPublic)!;
 
-            Assert.False(config.EnableSolverLog);
-            Assert.False(config.ExportLP);
-            Assert.False(config.ExportMPS);
-            Assert.False(config.ExportSol);
-            Assert.Equal(0, config.RetentionDays);
+            Assert.False(projectConfig.EnableSolverLog);
+            Assert.False(projectConfig.ExportLP);
+            Assert.False(projectConfig.ExportMPS);
+            Assert.False(projectConfig.ExportSol);
+            Assert.False(projectConfig.ExportIIS);
+            Assert.True((bool)trajectory.GetValue(experiment)!);
+
+            experiment.CaptureTrajectory(false);
+            Assert.False((bool)trajectory.GetValue(experiment)!);
+        }
+
+        [Fact]
+        public void ProjectConfig_DefaultIsSolveBehavior_AndQuietSilencesEverything()
+        {
+            var solve = new ProjectConfig();
+            Assert.True(solve.EnableSolverLog);
+            Assert.False(solve.ExportLP || solve.ExportMPS || solve.ExportSol || solve.ExportIIS);
+
+            var quiet = ProjectConfig.Quiet();
+            Assert.False(quiet.EnableSolverLog);
+            Assert.False(quiet.ExportLP || quiet.ExportMPS || quiet.ExportSol || quiet.ExportIIS);
         }
 
         private static void AssertAllPublicMembersEqual<T>(T original, T clone) where T : class

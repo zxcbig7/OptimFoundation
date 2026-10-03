@@ -8,7 +8,7 @@ using System.Reflection;
 
 namespace OptimFoundation.Core.IO
 {
-    /// <summary>集中處理 Set／Parameter model row 的表頭對位、去除空白與 invariant 型別轉換。</summary>
+    /// <summary>依表頭把資料填入 Set/Parameter 的 property，去除欄位前後空白，並以 InvariantCulture 轉換數值與日期。</summary>
     internal static class ModelRowMapper
     {
         internal static List<TRow> MapTable<TRow>(DataTable table, string sourceDescription)
@@ -16,8 +16,8 @@ namespace OptimFoundation.Core.IO
             => MapRows<TRow>(TabularData.ToRecords(table), sourceDescription);
 
         /// <summary>
-        /// 將原始資料列映射成 Set 或 Parameter model row。第一列必須列出所有 public property，
-        /// 後續資料列依該表頭對應。
+        /// 把字串資料列轉成 Set 或 Parameter 物件。第一列須包含該類別所有 public property 的名稱，
+        /// 後續列依欄名填入對應 property，欄名比對不分大小寫。
         /// </summary>
         internal static List<TRow> MapRows<TRow>(IEnumerable<string[]> rows, string sourceDescription)
             where TRow : ModelElementBase, new()

@@ -3,7 +3,7 @@ using OptimFoundation.Cplex;
 
 namespace Sudoku_SHC279
 {
-    /// <summary>Sudoku template 的三態入口：import、experiment 與正式求解。</summary>
+    /// <summary>Sudoku 範例的程式入口，提供題盤匯入、參數比較實驗與正式求解三種模式。</summary>
     internal static class Program
     {
         private static int Main(string[] args)
@@ -16,8 +16,8 @@ namespace Sudoku_SHC279
 
             bool isExperiment = args.Any(
                 arg => string.Equals(arg, "exp", StringComparison.OrdinalIgnoreCase));
-            if (isExperiment)
-                Logging.SetLogFileName($"{Dataload.PuzzleName}_exp");
+            // 由 OptProject 管理 log、資料夾與檔案保留天數；實驗和正式求解都透過它執行。
+            using var project = new OptProject(Dataload.PuzzleName);
 
             // 1. 材料
             var data = OptData.Load(() => new Dataload());
@@ -25,14 +25,13 @@ namespace Sudoku_SHC279
 
             var projectConfig = new ProjectConfig
             {
-                ProjectName = Dataload.PuzzleName,
                 EnableSolverLog = false,
                 ExportLP = true,
             };
-            // Production baseline/champion：tuning promotion 只更新這一個設定來源。
-            // Provenance：initial baseline；r2 評估後 retained（無 promotion）。詳見 TuningHistory.md。
-            // 每次 promotion MUST 同步更新此 provenance 與 TuningHistory.md。
-            // Experiment 從它 clone variants；正式求解直接使用它。
+            // 正式求解使用這組設定；調參結果確認較好後，統一更新在這裡。
+            // 設定來源：最初的基準設定；r2 比較後仍保留原設定，詳見 TuningHistory.md。
+            // 每次採用新的正式設定時，都要同步更新這份來源紀錄與 TuningHistory.md。
+            // 實驗先複製這組設定，再調整要比較的參數；正式求解直接使用這組設定。
             var productionBaseline = new CplexConfig
             {
                 TimeLimit = 30,
@@ -79,7 +78,7 @@ namespace Sudoku_SHC279
             // 3. 環境
             if (isExperiment)
             {
-                // r2：先 warm-up，再以三個 seed 與輪替順序降低 cold-start / 執行順序偏差。
+                // r2：先求解一次暖機，再用三個 seed 輪替各組設定的執行順序，減少啟動耗時與先後順序對比較的影響。
                 var warmup = productionBaseline.Clone();
 
                 var baselineSeed1 = productionBaseline.Clone();
@@ -103,8 +102,8 @@ namespace Sudoku_SHC279
                 var probeSeed3 = baselineSeed3.Clone();
                 probeSeed3.Probe = 2;
 
-                var result = new OptExperiment(
-                        $"{Dataload.PuzzleName}-tuning-r2",
+                var result = project.Experiment(
+                        "tuning-r2",
                         "warm-up + three seeds with rotated variant order")
                     .AddModel(model)
                     .AddConfig("r2-warmup-exclude", warmup)
@@ -122,18 +121,16 @@ namespace Sudoku_SHC279
                 foreach (var trial in result.Trials)
                     Logging.Info(
                         $"[Experiment] {trial.Label} status={trial.Metrics.Status} " +
-                        $"runTimeMs={trial.Metrics.RunTimeMs:F0} " +
+                        $"solveTimeMs={trial.Metrics.SolveTimeMs:F0} " +
                         $"nodes={trial.Metrics.NodeCount?.ToString() ?? "-"}");
                 return 0;
             }
 
             // 4. 正式求解
-            using var project = new OptProject(model)
-                .UseConfig(() => projectConfig)
-                .UseConfig(() => productionBaseline)
-                .OnSolved(engine => Sudoku_SHC279Solution.ReadAndValidate(engine, data).Print());
-
-            return project.Execute() ? 0 : 1;
+            project.LoadConfig(projectConfig);
+            bool solved = project.Solve(model, productionBaseline,
+                onSolved: engine => Sudoku_SHC279Solution.ReadAndValidate(engine, data).Print());
+            return solved ? 0 : 1;
         }
     }
 }

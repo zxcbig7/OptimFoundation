@@ -21,14 +21,14 @@ namespace Tutorial
             var batch = engine.GetSetVarValues<VariableI_Batch>();
             ValidateRules(produce, setup, batch, data);
 
-            FolderDir.Output.CreateFolder(); // MUST，否則 WriteSolution 丟 DirectoryNotFoundException
+            FolderDir.Output.CreateFolder(); // 先建立輸出目錄，避免 WriteSolution 因目錄不存在而失敗
             CsvCtrl.WriteSolution<VariableC_Produce>(engine, "Tutorial", "SYSTEM");
             CsvCtrl.WriteSolution<VariableB_Setup>(engine, "Tutorial", "SYSTEM");
             CsvCtrl.WriteSolution<VariableI_Batch>(engine, "Tutorial", "SYSTEM");
             return new TutorialSolution(produce);
         }
 
-        /// <summary>逐條把解代回 Model.md 的限制式；不成立就丟例外，NEVER 只記 log 繼續。</summary>
+        /// <summary>逐條將解值代回 Model.md 的限制式；任一條不成立就丟出例外，停止後續處理。</summary>
         private static void ValidateRules(
             Dictionary<string, double> produce, Dictionary<string, double> setup, Dictionary<string, double> batch,
             Dataload data)

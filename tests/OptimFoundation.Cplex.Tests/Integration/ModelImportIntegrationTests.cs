@@ -5,8 +5,8 @@ using Xunit;
 namespace OptimFoundation.Cplex.Tests.Integration
 {
     /// <summary>
-    /// 模型匯入（.lp / .mps / .sav）與 re-index。需要 CPLEX DLL 才能執行，DLL 不存在時全部 Skip。
-    /// 每個測試先用 code 建模並匯出，再讀回來，證明匯入後框架索引與下游功能都復原。
+    /// 檢查讀入 .lp / .mps / .sav 後是否重建變數與限制式的名稱索引；缺少 CPLEX DLL 時，測試方法直接返回。
+    /// 每個測試先用程式建立並匯出模型，再讀回來，確認索引、取解與衝突分析等功能仍可使用。
     /// </summary>
     [Collection("Logging")]
     public class ModelImportIntegrationTests
@@ -29,7 +29,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             engine.BuildCVs<VarS>(0, 100, new[] { "a", "b" });
             engine.AddLHS(1.0, new VarS { S = "a" });
             engine.AddLHS(1.0, new VarS { S = "b" });
-            engine.CreateGreatEqual(10, "Demand");
+            engine.CreateGreaterEqual(10, "Demand");
             engine.AddLHS(1.0, new VarS { S = "a" });
             engine.CreateLessEqual(4, "CapA");
             engine.AddLHS(2.0, new VarS { S = "a" });
@@ -43,7 +43,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             string fileName = $"ImportTest_{Guid.NewGuid():N}{extension}";
             using var engine = NewEngine();
             BuildReferenceModel(engine);
-            engine.ExportModelFile(fileName);
+            engine.ExportModel(fileName);
             return fileName;
         }
 
@@ -61,14 +61,14 @@ namespace OptimFoundation.Cplex.Tests.Integration
         [InlineData(".lp")]
         [InlineData(".mps")]
         [InlineData(".sav")]
-        public void ImportModel_ReindexesAndSolves(string extension)
+        public void ReadModel_ReindexesAndSolves(string extension)
         {
             if (!CplexAvailable) return;
 
             string fileName = ExportReferenceModel(extension);
 
             using var engine = NewEngine();
-            var counts = engine.ImportModel(fileName);
+            var counts = engine.ReadModel(fileName);
 
             Assert.Equal(2, counts.VarCount);
             Assert.Equal(2, counts.ConstraintCount);
@@ -93,7 +93,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
             string fileName = ExportReferenceModel(extension);
             using var engine = NewEngine();
-            var counts = engine.ImportModel(fileName);
+            var counts = engine.ReadModel(fileName);
 
             Assert.Equal(2, counts.VarCount);
             Assert.Equal(2, counts.ConstraintCount);
@@ -109,7 +109,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
         [InlineData(".sav", true, false, ModelType.IP)]
         [InlineData(".lp", true, true, ModelType.MILP)]
         [InlineData(".sav", true, true, ModelType.MILP)]
-        public void ImportModel_IntegerModel_ReportsModelType(string extension, bool withInteger, bool withContinuous, ModelType expected)
+        public void ReadModel_IntegerModel_ReportsModelType(string extension, bool withInteger, bool withContinuous, ModelType expected)
         {
             if (!CplexAvailable) return;
 
@@ -129,24 +129,24 @@ namespace OptimFoundation.Cplex.Tests.Integration
                     source.AddLHS(1.0, new VariableC_Amt { S = "a" });
                 }
                 source.CreateMinimize();
-                source.ExportModelFile(fileName);
+                source.ExportModel(fileName);
             }
 
             using var engine = NewEngine();
-            engine.ImportModel(fileName);
+            engine.ReadModel(fileName);
 
             Assert.Equal(expected, engine.ModelType);
         }
 
         [Fact(DisplayName = "匯入後以變數名取解：名稱沿用原模型的 TypeName@dim 格式")]
-        public void ImportModel_ReadsSolutionByName()
+        public void ReadModel_ReadsSolutionByName()
         {
             if (!CplexAvailable) return;
 
             string fileName = ExportReferenceModel(".lp");
 
             using var engine = NewEngine();
-            engine.ImportModel(fileName);
+            engine.ReadModel(fileName);
             Assert.True(engine.Solve());
 
             Assert.Equal(4.0, engine.GetVariableValue("VarS@a"), 6);
@@ -157,30 +157,31 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.Equal(4.0, solution["VarS@a"], 6);
         }
 
-        [Fact(DisplayName = "匯入後依 solver 型別分類取解可用；型別化取解不可用")]
-        public void ImportModel_TypeBasedSolutionWorks_TypedSetSolutionDoesNot()
+        [Fact(DisplayName = "匯入後依 solver 型別分類取解可用；名稱沿用 TypeName@dim 時型別化取解也可用")]
+        public void ReadModel_TypeBasedAndTypedSetSolutionBothWork()
         {
             if (!CplexAvailable) return;
 
             string fileName = ExportReferenceModel(".lp");
 
             using var engine = NewEngine();
-            engine.ImportModel(fileName);
+            engine.ReadModel(fileName);
             Assert.True(engine.Solve());
 
             // 依 INumVar.Type 分類：不看名字，匯入模式照常運作
             Assert.Equal(2, engine.GetCVSolution().Count);
             Assert.Empty(engine.GetBVSolution());
 
-            // 依 C# 變數類別分組：匯入的模型沒有類別可對應，VariableSets 保持空的
-            Assert.Empty(engine.GetSetVarNames<VarS>());
-            Assert.Empty(engine.GetSetVarValues<VarS>());
-            Assert.Empty(engine.GetAllVarNames());
-            Assert.Equal(2, engine.GetAllVarNames(true).Length);
+            // 依型別名篩選變數池：匯入的名稱沿用 VarS@…，同樣篩得到
+            var values = engine.GetSetVarValues<VarS>();
+            Assert.Equal(2, values.Count);
+            Assert.Equal(4.0, values["VarS@a"], 6);
+            Assert.Equal(6.0, values["VarS@b"], 6);
+            Assert.Equal(2, engine.GetAllVarNames().Length);
         }
 
         [Fact(DisplayName = "匯入的模型 infeasible 時仍跑 IIS 分析")]
-        public void ImportModel_Infeasible_RunsConflictAnalysis()
+        public void ReadModel_Infeasible_RunsConflictAnalysis()
         {
             if (!CplexAvailable) return;
 
@@ -190,67 +191,68 @@ namespace OptimFoundation.Cplex.Tests.Integration
             {
                 source.BuildCVs<VarS>(0, 100, new[] { "a" });
                 source.AddLHS(1.0, new VarS { S = "a" });
-                source.CreateGreatEqual(10, "Floor");
+                source.CreateGreaterEqual(10, "Floor");
                 source.AddLHS(1.0, new VarS { S = "a" });
                 source.CreateLessEqual(4, "Ceiling");
                 source.AddLHS(1.0, new VarS { S = "a" });
                 source.CreateMinimize();
-                source.ExportModelFile(fileName);
+                source.ExportModel(fileName);
             }
 
             using var engine = NewEngine();
-            engine.ImportModel(fileName);
+            engine.ReadModel(fileName);
 
             Assert.False(engine.Solve());
             Assert.Equal(SolveStatus.Infeasible, engine.Status);
-            // _constraints 若沒 re-index 就是空的，RunConflictAnalysis 會被守衛擋掉、拿不到任何衝突
+            // 匯入時若沒有填入 _constraints，RunConflictAnalysis 會因限制式清單為空而直接返回，無法列出衝突。
             Assert.NotEmpty(engine.GetConflictConstraints());
         }
 
         [Fact(DisplayName = "匯入後 LastMetrics 的規模欄位不是 0")]
-        public void ImportModel_MetricsCarryModelSize()
+        public void ReadModel_MetricsCarryModelSize()
         {
             if (!CplexAvailable) return;
 
             string fileName = ExportReferenceModel(".lp");
 
             using var engine = NewEngine();
-            engine.ImportModel(fileName);
+            engine.ReadModel(fileName);
             Assert.True(engine.Solve());
 
             Assert.Equal(2, engine.LastMetrics.VarCount);
             Assert.Equal(2, engine.LastMetrics.ConstraintCount);
         }
 
-        // ── OptModel.FromFile：接上 OptProject / OptExperiment ────────────
+        // ── OptModel.ReadModel：接上 OptProject / OptExperiment ────────────
 
-        [Fact(DisplayName = "OptModel.FromFile 走 OptProject 可求解，模型名取自檔名")]
-        public void FromFile_RunsThroughOptProject()
+        [Fact(DisplayName = "OptModel.ReadModel 走 OptProject.Solve 可求解，模型名取自檔名")]
+        public void ReadModel_RunsThroughOptProject()
         {
             if (!CplexAvailable) return;
 
             string fileName = ExportReferenceModel(".lp");
-            var model = OptModel.FromFile(fileName);
+            var model = OptModel.ReadModel(fileName);
 
             Assert.Equal(Path.GetFileNameWithoutExtension(fileName), model.Name);
             Assert.Equal(fileName, model.SourceFile);
 
-            using var project = new OptProject(model, "ImportProject_" + Guid.NewGuid().ToString("N"), retentionDays: 0)
-                .UseConfig(() => new ProjectConfig { EnableSolverLog = false });
+            using var project = new OptProject("ImportProject_" + Guid.NewGuid().ToString("N"), retentionDays: 0)
+                .LoadConfig(new ProjectConfig { EnableSolverLog = false });
 
-            Assert.True(project.Execute());
+            Assert.True(project.Solve(model, new CplexConfig()));
             Assert.Equal(26.0, project.Engine.GetObjectiveValue(), 6);
         }
 
         [Fact(DisplayName = "OptExperiment 可拿檔案模型跑多組設定，每個 trial 的規模欄位都正確")]
-        public void FromFile_RunsThroughOptExperiment()
+        public void ReadModel_RunsThroughOptExperiment()
         {
             if (!CplexAvailable) return;
 
             string fileName = ExportReferenceModel(".lp");
 
-            var experiment = new OptExperiment("ImportExp_" + Guid.NewGuid().ToString("N"), "檔案模型 × 兩組設定")
-                .AddModel(OptModel.FromFile(fileName, "RefModel"))
+            var experiment = new OptProject("ImportExp_" + Guid.NewGuid().ToString("N"), retentionDays: 0)
+                .Experiment("exp", "檔案模型 × 兩組設定")
+                .AddModel(OptModel.ReadModel(fileName, "RefModel"))
                 .AddConfig("r0", new CplexConfig { TimeLimit = 30 })
                 .AddConfig("r1-single-thread", new CplexConfig { TimeLimit = 30, Threads = 1 })
                 .Run();
@@ -266,25 +268,25 @@ namespace OptimFoundation.Cplex.Tests.Integration
             });
         }
 
-        [Fact(DisplayName = "FromFile 後仍可追加限制式：匯入先跑，再套用錄下的步驟")]
-        public void FromFile_ThenAddConstraints_AppliesBoth()
+        [Fact(DisplayName = "ReadModel 後仍可追加限制式：匯入先跑，再套用錄下的步驟")]
+        public void ReadModel_ThenAddConstraints_AppliesBoth()
         {
             if (!CplexAvailable) return;
 
             string fileName = ExportReferenceModel(".lp");
 
             // 追加 a >= 4 不改變最佳解，但限制式數要多一條
-            var model = OptModel.FromFile(fileName)
+            var model = OptModel.ReadModel(fileName)
                 .AddConstraints(engine =>
                 {
                     engine.AddLHS(1.0, "VarS@a");
-                    engine.CreateGreatEqual(4, "ExtraFloor");
+                    engine.CreateGreaterEqual(4, "ExtraFloor");
                 });
 
-            using var project = new OptProject(model, "ImportAppend_" + Guid.NewGuid().ToString("N"), retentionDays: 0)
-                .UseConfig(() => new ProjectConfig { EnableSolverLog = false });
+            using var project = new OptProject("ImportAppend_" + Guid.NewGuid().ToString("N"), retentionDays: 0)
+                .LoadConfig(new ProjectConfig { EnableSolverLog = false });
 
-            Assert.True(project.Execute());
+            Assert.True(project.Solve(model, new CplexConfig()));
             Assert.Equal(3, project.Engine.ConstraintCount);
             Assert.Equal(26.0, project.Engine.GetObjectiveValue(), 6);
         }
@@ -292,37 +294,37 @@ namespace OptimFoundation.Cplex.Tests.Integration
         // ── 錯誤處理 ──────────────────────────────────────────────────────
 
         [Fact(DisplayName = "檔案不存在丟 FileNotFoundException")]
-        public void ImportModel_MissingFile_Throws()
+        public void ReadModel_MissingFile_Throws()
         {
             if (!CplexAvailable) return;
 
             using var engine = NewEngine();
-            Assert.Throws<FileNotFoundException>(() => engine.ImportModel("no_such_model.lp"));
+            Assert.Throws<FileNotFoundException>(() => engine.ReadModel("no_such_model.lp"));
         }
 
         [Fact(DisplayName = "空檔名丟 ArgumentException")]
-        public void ImportModel_EmptyFileName_Throws()
+        public void ReadModel_EmptyFileName_Throws()
         {
             if (!CplexAvailable) return;
 
             using var engine = NewEngine();
-            Assert.Throws<ArgumentException>(() => engine.ImportModel("  "));
+            Assert.Throws<ArgumentException>(() => engine.ReadModel("  "));
         }
 
         [Fact(DisplayName = "Build() 之前呼叫丟 InvalidOperationException")]
-        public void ImportModel_BeforeBuild_Throws()
+        public void ReadModel_BeforeBuild_Throws()
         {
             if (!CplexAvailable) return;
 
             using var engine = new OptEngine(new CplexConfig(), new ProjectConfig { EnableSolverLog = false });
-            Assert.Throws<InvalidOperationException>(() => engine.ImportModel("anything.lp"));
+            Assert.Throws<InvalidOperationException>(() => engine.ReadModel("anything.lp"));
         }
 
         [Theory(DisplayName = "匯出副檔名不支援：交給 CPLEX 前就擋下，留 Error Log、不產生檔案")]
         [InlineData(".txt")]
         [InlineData("")]
         [InlineData(".bz2")]
-        public void ExportModelFile_UnsupportedExtension_ThrowsAndLogs(string extension)
+        public void ExportModel_UnsupportedExtension_ThrowsAndLogs(string extension)
         {
             if (!CplexAvailable) return;
             string tag = "ModelExportExt_" + Guid.NewGuid().ToString("N");
@@ -332,15 +334,15 @@ namespace OptimFoundation.Cplex.Tests.Integration
             using var engine = NewEngine();
             BuildReferenceModel(engine);
 
-            Assert.Throws<ArgumentException>(() => engine.ExportModelFile(fileName));
+            Assert.Throws<ArgumentException>(() => engine.ExportModel(fileName));
             Assert.False(File.Exists(FolderDir.Model.GetPathFile(fileName)));
             Assert.Contains(
-                $"[MODEL_EXPORT_FAILED] 模型匯出失敗 | context=ExportModelFile value={fileName} reason=unsupported_extension supported=.lp|.mps|.sav[.gz|.bz2] result=aborted",
+                $"[MODEL_EXPORT_FAILED] 模型匯出失敗 | context=ExportModel value={fileName} reason=unsupported_extension supported=.lp|.mps|.sav[.gz|.bz2] result=aborted",
                 ReadLog(tag));
         }
 
         [Fact(DisplayName = "匯入副檔名不支援：先於檔案存在檢查，丟 ArgumentException 並留 Error Log")]
-        public void ImportModel_UnsupportedExtension_ThrowsAndLogs()
+        public void ReadModel_UnsupportedExtension_ThrowsAndLogs()
         {
             if (!CplexAvailable) return;
             string tag = "ModelImportExt_" + Guid.NewGuid().ToString("N");
@@ -348,9 +350,9 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
             using var engine = NewEngine();
 
-            Assert.Throws<ArgumentException>(() => engine.ImportModel("no_such_model.txt"));
+            Assert.Throws<ArgumentException>(() => engine.ReadModel("no_such_model.txt"));
             Assert.Contains(
-                "[MODEL_IMPORT_FAILED] 模型匯入失敗 | context=ImportModel value=no_such_model.txt reason=unsupported_extension supported=.lp|.mps|.sav[.gz|.bz2] result=aborted",
+                "[MODEL_IMPORT_FAILED] 模型匯入失敗 | context=ReadModel value=no_such_model.txt reason=unsupported_extension supported=.lp|.mps|.sav[.gz|.bz2] result=aborted",
                 ReadLog(tag));
         }
     }

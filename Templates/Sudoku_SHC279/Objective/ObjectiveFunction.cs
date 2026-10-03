@@ -3,7 +3,7 @@ using OptimFoundation.Cplex;
 
 namespace Sudoku_SHC279
 {
-    /// <summary>逐項建立 Sudoku 的零權重可行性目標；對應 Model.md 的 OBJ。</summary>
+    /// <summary>將每個變數以權重 0 加入目標式；Sudoku 只要找到滿足所有限制的解即可，對應 Model.md 的 OBJ。</summary>
     public sealed class ObjectiveFunction
     {
         private readonly List<Set_Row> _rows;

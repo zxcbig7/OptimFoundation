@@ -102,7 +102,7 @@ $$\min \sum_{(i,j)\,\in\,ARC} ArcCost_{i,j} \cdot UseArc_{i,j}$$
 
 ## 驗收基準
 
-`Data/` 的預設實例為 5 節點（depot `N1` + customer `N2`–`N5`）完全有向圖，成本對稱。
+範本附的預設實例為 5 節點（depot `N1` + customer `N2`–`N5`）完全有向圖，成本對稱。
 
 **已知最佳解 = 14**，路線 `N1 → N2 → N3 → N4 → N5 → N1`（或其反向）。
 

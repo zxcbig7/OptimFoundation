@@ -35,7 +35,7 @@ namespace RosteringProblem
 
                 engine.AddLHS(1.0, new VariableC_BelowAVG { Employee = employee });
                 engine.AddRHS(avgOff);
-                engine.CreateGreatEqual(this, employee);
+                engine.CreateGreaterEqual(this, employee);
             }
         }
     }

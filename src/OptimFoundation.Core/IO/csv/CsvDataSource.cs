@@ -7,19 +7,17 @@ using System.Text;
 namespace OptimFoundation.Core.IO
 {
     /// <summary>
-    /// CSV 資料來源：包 CsvCtrl，檔案放 Data/ 資料夾。
+    /// 從 FolderDir.Input 讀取 CSV 檔案，並使用 CsvCtrl 解析內容。
     /// 檔名省略時使用型別名；Set 與 Parameter 都依 CSV 表頭對應資料列的 public property，缺欄即丟例外。
     /// </summary>
     public sealed class CsvDataSource : IDataSource
     {
         /// <summary>
-        /// 建構即備好輸入資料夾 Data/（即使空的）：引用 CSV 來源就把資料夾建好，使用者一眼知道往哪放檔；
-        /// 缺檔的錯誤也從 DirectoryNotFound 降為明確的 FileNotFound（少了哪個檔一目了然）。
-        /// 與輸出端對稱——Solution/ 等輸出資料夾寫入時本就自動建立（CsvCtrl.WriteSolution → TryCreateFile）。
+        /// 建立 FolderDir.Input，供使用者放入 CSV；讀取缺檔會拋出含檔名的 FileNotFoundException。輸出端也會先建立資料夾。
         /// </summary>
         public CsvDataSource() => FolderDir.Input.CreateFolder();
 
-        /// <summary>從 <c>Data/{fileName}</c> 載入完整 RFC4180 資料列，包含必填表頭；副檔名可省略。</summary>
+        /// <summary>從 FolderDir.Input 載入 fileName 指定的 CSV，保留表頭並解析完整資料列；.csv 副檔名可省略。</summary>
         private IEnumerable<string[]> LoadRows(string fileName)
         {
             if (string.IsNullOrWhiteSpace(fileName))
@@ -32,7 +30,7 @@ namespace OptimFoundation.Core.IO
                 yield return row;
         }
 
-        /// <summary>將含 schema 的 CSV 載入為中立 DataTable，不映射至 Set 或 Parameter。</summary>
+        /// <summary>把含表頭的 CSV 讀成 DataTable，不建立 Set 或 Parameter 物件。</summary>
         public DataTable LoadData(string fileName)
         {
             if (string.IsNullOrWhiteSpace(fileName))
@@ -57,18 +55,18 @@ namespace OptimFoundation.Core.IO
     }
 
     /// <summary>
-    /// CSV 解輸出：包 CsvCtrl.WriteSolution，寫到 Solution/{變數型別名}.csv。
+    /// 呼叫 CsvCtrl.WriteSolution，把解值寫到 FolderDir.Output 下的 {變數型別名}.csv。
     /// 輸出帶表頭；欄位相容時可由 IDataSource.Load&lt;T&gt; 讀回。
     /// </summary>
     public sealed class CsvSolutionSink : ISolutionSink
     {
-        /// <summary>把某變數型別的解寫成 Solution/{型別名}.csv（覆寫既有檔）。dataId / userId 省略時寫空字串。</summary>
+        /// <summary>把某變數型別的解寫到 FolderDir.Output 下的 {型別名}.csv，覆寫同名檔；CSV 不輸出 dataId / userId。</summary>
         public void WriteSolution<TVariableClass>(ISolverEngine engine, string dataId = null, string userId = null)
             => CsvCtrl.WriteSolution<TVariableClass>(engine, dataId ?? "", userId ?? "");
 
         /// <summary>
-        /// 取得批次輸出物件。CSV 沒有 transaction 語意，這是 no-op batch——每次 Write 就直接落檔，Commit 不做事。
-        /// 存在的理由是讓消費端寫法與 DB sink 一致（換來源不必改 code）。
+        /// 取得批次輸出物件。每次 Write 都立即寫檔，Commit 不做任何事，也不提供交易回滾。
+        /// 這個物件提供與資料庫輸出相同的呼叫方式，方便切換輸出目的地。
         /// </summary>
         public ISolutionBatch BeginBatch(string dataId = null, string userId = null)
             => new CsvSolutionBatch(this, dataId, userId);
@@ -91,12 +89,12 @@ namespace OptimFoundation.Core.IO
             public void Write<TVariableClass>(ISolverEngine engine)
                 => _sink.WriteSolution<TVariableClass>(engine, _dataId, _userId);
 
-            /// <summary>no-op：CSV 在 Write 當下就已落檔。</summary>
+            /// <summary>不做任何事；CSV 已在 Write 時寫出。</summary>
             public void Commit()
             {
             }
 
-            /// <summary>no-op：沒有需要釋放的資源。</summary>
+            /// <summary>不做任何事；沒有需要釋放的資源。</summary>
             public void Dispose()
             {
             }

@@ -3,12 +3,12 @@ using OptimFoundation.Cplex;
 
 namespace FJSP_BASIC_BRICK
 {
-    /// <summary>FJSP_BASIC_BRICK 的三態入口：import、experiment 與正式求解。</summary>
+    /// <summary>FJSP_BASIC_BRICK 的程式入口，提供資料匯入、參數比較實驗與正式求解三種模式。</summary>
     internal static class Program
     {
         private static int Main(string[] args)
         {
-            // 模式 1：import —— 攤平 Data/raw/ 的實例生成規格，產出標準 CSV（只有不規則來源才需要）
+            // 模式 1：import，讀取 FolderDir.Input 下 raw/ 的規模與亂數設定，產生求解用的標準 CSV。
             if (args.Length >= 2 && args[0] == "import")
             {
                 OptData.Load(() => new Dataload(args[1])).Export();
@@ -16,8 +16,8 @@ namespace FJSP_BASIC_BRICK
             }
 
             bool isExperiment = args.Any(arg => string.Equals(arg, "exp", StringComparison.OrdinalIgnoreCase));
-            if (isExperiment)
-                Logging.SetLogFileName("FJSP_BASIC_BRICK_exp");
+            // 由 OptProject 管理 log、資料夾與檔案保留天數；實驗和正式求解都透過它執行。
+            using var project = new OptProject("FJSP_BASIC_BRICK");
 
             // ── 1. 材料 ────────────────────────────────────────────
             var data = OptData.Load(() => new Dataload());
@@ -33,12 +33,11 @@ namespace FJSP_BASIC_BRICK
 
             var projectConfig = new ProjectConfig
             {
-                ProjectName = "FJSP_BASIC_BRICK",
                 EnableSolverLog = false,
                 ExportLP = true,
             };
-            // Production baseline/champion：tuning promotion 只更新這一個設定來源。
-            // Provenance：沿用重構前 demo 值——TimeLimit=90 已實測兩種組裝寫法各 3 次，全數 Status=Optimal 且 ObjVal 一致。
+            // 正式求解使用這組設定；調參結果確認較好後，統一更新在這裡。
+            // 設定來源：沿用重構前範例值；TimeLimit=90 已對兩種模型組裝寫法各測 3 次，皆為 Optimal，且目標值相同。
             var productionBaseline = new CplexConfig
             {
                 MipGap = 1e-4,
@@ -46,7 +45,7 @@ namespace FJSP_BASIC_BRICK
                 Threads = 8,
             };
 
-            // ── 2. 模型（canonical：只用 hard constraint API）─────────
+            // ── 2. 正式模型：全部使用必須滿足的限制式 ─────────
             var model = new OptModel("Canonical")
                 .AddVariables(engine => engine.BuildVars<VariableB_Assign>(data.set_Lot, data.set_Operation, data.set_Eqp))
                 .AddVariables(engine => engine.BuildVars<VariableB_Precede>(data.set_Lot, data.set_Operation, data.set_Lot, data.set_Operation))
@@ -62,11 +61,11 @@ namespace FJSP_BASIC_BRICK
                 .AddConstraints(engine => new Constraint_MakespanWindow(makespanFloor, makespanDeadline).Build(engine));
 
             // ── 3. 環境 ────────────────────────────────────────────
-            // 模式 2：exp —— 掃 solver 設定 + 展示兩個具名 Phase 3 模型結構 variant，不做正式求解
+            // 模式 2：exp，比較 solver 設定，並求解兩個 Phase 3 示範模型：允許超時但加罰分，以及刻意造成無可行解。
             if (isExperiment)
             {
-                // Phase 3 demo variant：canonical + soft makespan target（示範 CreateLeSoft）。§4.5 天條：
-                // soft constraint NEVER 進 canonical production 組裝，只能是具名 experiment variant，故獨立整份重列（非包裝呼叫）。
+                // Phase 3 示範：在正式模型加上最晚完工時間目標，超過目標時加罰分（CreateLessEqualSoft，見 §4.5）。
+                // 軟性限制只用於具名實驗模型，因此在此重新列出完整組裝內容，保持正式模型的限制不變。
                 var softModel = new OptModel("Canonical-SoftMakespanDemo")
                     .AddVariables(engine => engine.BuildVars<VariableB_Assign>(data.set_Lot, data.set_Operation, data.set_Eqp))
                     .AddVariables(engine => engine.BuildVars<VariableB_Precede>(data.set_Lot, data.set_Operation, data.set_Lot, data.set_Operation))
@@ -82,7 +81,7 @@ namespace FJSP_BASIC_BRICK
                     .AddConstraints(engine => new Constraint_MakespanWindow(makespanFloor, makespanDeadline).Build(engine))
                     .AddConstraints(engine => new Constraint_MakespanTargetSoft(softMakespanTarget, makespanPenalty).Build(engine));
 
-                // Phase 3 demo variant：canonical + 保證 infeasible 的 makespan 上限（示範 IIS 輸出，見 IISs/*.ilp）。
+                // Phase 3 示範：在正式模型加入不可能達到的完工時間上限，觸發無可行解的衝突分析（IISs/*.ilp）。
                 var infeasibleModel = new OptModel("Canonical-InfeasibleCapDemo")
                     .AddVariables(engine => engine.BuildVars<VariableB_Assign>(data.set_Lot, data.set_Operation, data.set_Eqp))
                     .AddVariables(engine => engine.BuildVars<VariableB_Precede>(data.set_Lot, data.set_Operation, data.set_Lot, data.set_Operation))
@@ -104,8 +103,8 @@ namespace FJSP_BASIC_BRICK
                 var optimal = baseline.Clone();
                 optimal.Emphasis = 2;
 
-                var result = new OptExperiment(
-                        "FJSP_BASIC_BRICK-tuning-r1",
+                var result = project.Experiment(
+                        "tuning-r1",
                         "canonical vs soft-makespan-demo vs infeasible-cap-demo × 3 個 MIP emphasis")
                     .AddModel(model)
                     .AddModel(softModel)
@@ -116,17 +115,15 @@ namespace FJSP_BASIC_BRICK
                     .Run();
 
                 foreach (var trial in result.Trials)
-                    Logging.Info($"[Experiment] {trial.Label} status={trial.Metrics.Status} runTimeMs={trial.Metrics.RunTimeMs:F0}");
+                    Logging.Info($"[Experiment] {trial.Label} status={trial.Metrics.Status} solveTimeMs={trial.Metrics.SolveTimeMs:F0}");
                 return 0;
             }
 
             // 模式 3（預設）：正式求解
-            using var project = new OptProject(model)
-                .UseConfig(() => projectConfig)
-                .UseConfig(() => productionBaseline)
-                .OnSolved(engine => FJSP_BASIC_BRICKSolution.ReadAndValidate(engine, data).Print());
-
-            return project.Execute() ? 0 : 1;
+            project.LoadConfig(projectConfig);
+            bool solved = project.Solve(model, productionBaseline,
+                onSolved: engine => FJSP_BASIC_BRICKSolution.ReadAndValidate(engine, data).Print());
+            return solved ? 0 : 1;
         }
     }
 }

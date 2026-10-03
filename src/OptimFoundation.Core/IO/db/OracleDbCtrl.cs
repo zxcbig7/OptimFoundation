@@ -10,25 +10,25 @@ using OptimFoundation.Core.IO;
 namespace OptimFoundation.Db.Oracle
 {
     /// <summary>
-    /// transaction 期間（ExecuteInTransaction 執行中）本實例持有 ambient connection/transaction 狀態，
-    /// 非 thread-safe，勿跨執行緒共用同一實例做交易。
+    /// ExecuteInTransaction 執行期間，同一實例的各操作會共用目前的連線與交易，
+    /// 因此不能讓多個執行緒同時使用此實例執行交易。
     /// </summary>
-    public sealed class OracleDBCtrl : DBCtrlBase
+    public sealed class OracleDbCtrl : DbCtrlBase
     {
         /// <summary>只記下連線字串；實際連線在每次操作時才由 connection pool 取得。</summary>
-        public OracleDBCtrl(string connectionString) : base(connectionString) { }
+        public OracleDbCtrl(string connectionString) : base(connectionString) { }
 
         #region IDbCtrl 基本操作
 
         // Open/Close 留空：每次操作自建 connection（Oracle Connection Pool）
 
-        /// <summary>no-op：本實作每次操作自行取連線，不需預先開啟。</summary>
+        /// <summary>不做任何事；每次操作會自行取得連線，不需預先開啟。</summary>
         public override void Open() { }
 
-        /// <summary>no-op：連線在每次操作結束時就已歸還 pool。</summary>
+        /// <summary>不做任何事；操作或交易結束時會自行歸還連線。</summary>
         public override void Close() { }
 
-        /// <summary>執行查詢並回傳整張 DataTable。transaction 進行中會自動沿用 ambient 連線與交易。</summary>
+        /// <summary>執行查詢並回傳 DataTable。若正在 ExecuteInTransaction 中，會沿用該次交易的連線。</summary>
         public override DataTable Query(string sql, params (string name, object value)[] parameters)
         {
             return AtPublicBoundary(nameof(Query), sql, () =>
@@ -59,7 +59,7 @@ namespace OptimFoundation.Db.Oracle
                 {
                     using var cmd = BuildCommand(sql, conn, AmbientTransactionOracle, parameters);
                     int rows = cmd.ExecuteNonQuery();
-                    Logging.Info($"[OracleDBCtrl] Execute ({rows} row(s))");
+                    Logging.Info($"[OracleDbCtrl] Execute ({rows} row(s))");
                     return rows;
                 }
                 finally
@@ -69,7 +69,7 @@ namespace OptimFoundation.Db.Oracle
             });
         }
 
-        /// <summary>取第一列第一欄並轉成 TResult。無資料列時 Convert.ChangeType 會丟例外（不回預設值）。</summary>
+        /// <summary>取第一列第一欄，再用 Convert.ChangeType 轉成 TResult；空結果或無法轉型時，回傳 null 或拋例外取決於 TResult。</summary>
         public override TResult QueryScalar<TResult>(string sql, params (string name, object value)[] parameters)
         {
             return AtPublicBoundary(nameof(QueryScalar), sql, () =>
@@ -109,9 +109,9 @@ namespace OptimFoundation.Db.Oracle
                 return true;
             });
 
-        // 交易編排（ambient 連線/交易、巢狀參與外層、commit/rollback）與 Oracle 無關，
-        // 已下沉到 DBCtrlBase.ExecuteInTransaction；這裡只提供 Oracle 專屬的連線建立方式。
-        /// <summary>建立並開啟一條 Oracle 連線，供 base 的 ExecuteInTransaction 當 ambient 連線使用。</summary>
+        // 共用連線、處理巢狀交易與 Commit/Rollback 的流程由基底類別負責，
+        // 見 DbCtrlBase.ExecuteInTransaction；這裡只提供 Oracle 的連線建立方式。
+        /// <summary>建立並開啟 Oracle 連線，供基底類別的 ExecuteInTransaction 在整個交易期間共用。</summary>
         protected override IDbConnection CreateRawConnection() => CreateConnection();
 
         #endregion
@@ -126,8 +126,8 @@ namespace OptimFoundation.Db.Oracle
         }
 
         /// <summary>
-        /// 取得本次操作要用的連線：ambient 連線存在（transaction 進行中）→ 回傳它、owned=false
-        /// （呼叫端不可 dispose，歸 ExecuteInTransaction 管）；否則照舊自建一條新連線、owned=true。
+        /// 取得本次操作的連線。若正在交易中，回傳共用連線，並設 owned=false，
+        /// 由 ExecuteInTransaction 負責釋放；否則新開連線並設 owned=true，由本次操作結束時釋放。
         /// </summary>
         private OracleConnection AcquireConnection(out bool owned)
         {
@@ -140,8 +140,8 @@ namespace OptimFoundation.Db.Oracle
             return CreateConnection();
         }
 
-        // DBCtrlBase 的 ambient 交易用 BCL IDbTransaction 承載；Oracle 專屬操作（掛 cmd.Transaction、
-        // array-bind）需要具體型別，這裡統一轉型一次，避免各方法重複 cast。
+        // DbCtrlBase 以 IDbTransaction 保存目前的交易，OracleCommand.Transaction 與
+        // array-bind 操作需要 OracleTransaction，因此在此統一轉型。
         private OracleTransaction AmbientTransactionOracle => (OracleTransaction)AmbientTransaction;
 
         private static OracleCommand BuildCommand(string sql, OracleConnection conn, OracleTransaction transaction,
@@ -160,7 +160,7 @@ namespace OptimFoundation.Db.Oracle
 
         /// <summary>
         /// 組 Oracle 連線字串：給了 serviceName 走 SERVICE_NAME 格式，否則走 SID 格式。
-        /// 產出的字串含明文密碼——NEVER 寫進 log、commit 進 repo 或存進設定檔範本。
+        /// 產出的字串含明文密碼，請勿寫入 log、提交到 repo 或放進設定檔範本。
         /// </summary>
         public static string BuildConnectionString(
             string host, string port,
@@ -178,7 +178,7 @@ namespace OptimFoundation.Db.Oracle
 
         /// <summary>
         /// 查 USER_TABLES 判斷表是否存在（只看目前 schema）。
-        /// tableName 會轉大寫直接拼進 SQL，MUST 只傳程式內部決定的表名，NEVER 傳使用者輸入。
+        /// tableName 會轉大寫並直接拼進 SQL，只能傳入程式內部決定的表名，不可傳使用者輸入。
         /// </summary>
         public bool CheckHasTable(string tableName)
         {
@@ -196,11 +196,11 @@ namespace OptimFoundation.Db.Oracle
             tableName = tableName.ToUpper();
             if (CheckHasTable(tableName))
             {
-                Logging.Info($"[OracleDBCtrl] Table {tableName} already exists.");
+                Logging.Info($"[OracleDbCtrl] Table {tableName} already exists.");
                 return;
             }
             Execute(new ClassInfo(typeof(TParameter)).ParamTableCreateCmd(tableName));
-            Logging.Info($"[OracleDBCtrl] Created param table: {tableName}");
+            Logging.Info($"[OracleDbCtrl] Created param table: {tableName}");
         }
 
         /// <summary>
@@ -212,15 +212,15 @@ namespace OptimFoundation.Db.Oracle
             tableName = tableName.ToUpper();
             if (CheckHasTable(tableName))
             {
-                Logging.Info($"[OracleDBCtrl] Table {tableName} already exists.");
+                Logging.Info($"[OracleDbCtrl] Table {tableName} already exists.");
                 return;
             }
             Execute(new ClassInfo(typeof(TVariable)).VarTableCreateCmd(tableName));
-            Logging.Info($"[OracleDBCtrl] Created result table: {tableName}");
+            Logging.Info($"[OracleDbCtrl] Created result table: {tableName}");
         }
 
         /// <summary>
-        /// ⚠ 破壞性：DROP TABLE，整張表連結構一起消失且不可回復（DDL 不受 transaction 保護）。
+        /// 執行 DROP TABLE，刪除整張表及其結構，無法回復；DDL 不受交易保護。
         /// 表不存在時只寫 log 不報錯。
         /// </summary>
         public void DropTable(string tableName)
@@ -228,19 +228,19 @@ namespace OptimFoundation.Db.Oracle
             tableName = tableName.ToUpper();
             if (!CheckHasTable(tableName))
             {
-                Logging.Info($"[OracleDBCtrl] Table not found: {tableName}");
+                Logging.Info($"[OracleDbCtrl] Table not found: {tableName}");
                 return;
             }
             Execute($"DROP TABLE {tableName}");
-            Logging.Info($"[OracleDBCtrl] Dropped: {tableName}");
+            Logging.Info($"[OracleDbCtrl] Dropped: {tableName}");
         }
 
         /// <summary>
-        /// ⚠ 破壞性：依條件刪除資料列（表結構保留）。conditions 以 AND 串接，全部轉大寫後直接拼進 WHERE。
-        /// 安全設計：沒給條件時**不會**清空整表，只寫 warn log 後跳過——要清整表請明確用 <see cref="TruncateTable"/>。
+        /// 依條件刪除資料列，保留表結構。conditions 以 AND 串接，轉大寫後直接拼入 WHERE。
+        /// 未提供條件時只記錄警告並略過；要清空整表請用 <see cref="TruncateTable"/>。
         /// </summary>
         /// <param name="tableName">目標表名（自動轉大寫）。</param>
-        /// <param name="conditions">如 "DATA_ID = 'RUN1'"；MUST 為程式內部產生，NEVER 接使用者輸入。</param>
+        /// <param name="conditions">例如 "DATA_ID = 'RUN1'"；須由程式內部產生，不可直接使用外部輸入。</param>
         public void DeleteTable(string tableName, params string[] conditions)
         {
             if (conditions == null || conditions.Length == 0)
@@ -253,7 +253,7 @@ namespace OptimFoundation.Db.Oracle
         }
 
         /// <summary>
-        /// ⚠ 破壞性：清空整張表的所有資料列，無條件、不可回復（TRUNCATE 是 DDL，不受 transaction 保護）。
+        /// 執行 TRUNCATE，無條件清空整表資料且無法回復；DDL 不受交易保護。
         /// </summary>
         public void TruncateTable(string tableName)
             => Execute($"TRUNCATE TABLE {tableName.ToUpper()}");
@@ -270,7 +270,7 @@ namespace OptimFoundation.Db.Oracle
         /// <param name="dataId">本次寫入的批次識別，用於之後查詢 / 刪除同一批資料。</param>
         /// <param name="tableName">目標結果表名（自動轉大寫）。</param>
         /// <param name="userId">寫入者識別，存進 USER_ID 欄。</param>
-        /// <exception cref="FormatException">某維度值轉不成該 property 的型別（整批中止，不會寫入半套）。</exception>
+        /// <exception cref="FormatException">維度值無法轉成對應 property 型別；整批中止，不寫入資料。</exception>
         public void SaveToDB<TVariable>(ISolverEngine engine, string dataId, string tableName, string userId)
         {
             tableName = tableName.ToUpper();
@@ -314,13 +314,13 @@ namespace OptimFoundation.Db.Oracle
             }
 
             ExecuteArrayBind(insertCmd, dataIds.Count, columns);
-            Logging.Info($"[OracleDBCtrl] SaveToDB {classInfo.TypeName} -> {tableName} ({dataIds.Count} rows)");
+            Logging.Info($"[OracleDbCtrl] SaveToDB {classInfo.TypeName} -> {tableName} ({dataIds.Count} rows)");
         }
 
         /// <summary>
-        /// 同一句 SQL 套用多列參數，一次用 array-bind 送出——OracleSolutionSink 批次寫入的實作路徑。
-        /// 與 SaveToDB 共用下方 ExecuteArrayBind，差別只在型別來源：SaveToDB 型別已知（走 ClassInfo），
-        /// 這裡沒有型別資訊，用每欄首個非 null 值推斷 OracleDbType。
+        /// 用 array-bind 一次送出多列 SQL 參數，供 OracleSolutionSink 批次寫入。
+        /// 與 SaveToDB 共用 ExecuteArrayBind；SaveToDB 從 ClassInfo 取得型別，
+        /// 這裡則以每欄首個非 null 值推斷 OracleDbType。
         /// </summary>
         public override void ExecuteBatch(string sql, IReadOnlyList<(string name, object value)[]> rows)
         {
@@ -336,7 +336,7 @@ namespace OptimFoundation.Db.Oracle
                 }
 
                 ExecuteArrayBind(sql, rows.Count, columns);
-                Logging.Info($"[OracleDBCtrl] ExecuteBatch ({rows.Count} row(s))");
+                Logging.Info($"[OracleDbCtrl] ExecuteBatch ({rows.Count} row(s))");
             });
         }
 
@@ -404,10 +404,9 @@ namespace OptimFoundation.Db.Oracle
     }
 
     /// <summary>
-    /// Oracle 解輸出：依賴 IDbCtrl 介面（非具體型別 OracleDBCtrl），可注入假物件單元測試交易/批次語意。
-    /// 單一變數型別的寫入走 IDbCtrl.ExecuteBatch，一次把該型別的所有列 array-bind 送出——
-    /// MILP 解動輒數十萬～百萬列，逐列 INSERT 會讓輸出從秒級退化成分鐘級，故不走 Execute 逐列。
-    /// 讓 transaction 期間可共用 ambient 連線，batch 的 commit/rollback 語意也能用假 IDbCtrl 驗證。
+    /// 透過 IDbCtrl 將解值寫入 Oracle 結果表；測試時可換成假物件，檢查批次寫入與交易行為。
+    /// 每個變數型別的解值以 ExecuteBatch 一次送出，Oracle 使用 array-bind 減少連線往返。
+    /// BeginBatch 可把多個型別的寫入放進同一交易，全部成功才提交，失敗時整批回滾。
     /// 與 CsvSolutionSink 同介面，換輸出目的地不動求解端 code。
     /// </summary>
     public sealed class OracleSolutionSink : ISolutionSink
@@ -428,8 +427,8 @@ namespace OptimFoundation.Db.Oracle
         }
 
         /// <summary>
-        /// 立即寫出單一變數型別的解（自成一個 transaction）。
-        /// 多個型別要一起成敗 ALWAYS 改用 <see cref="BeginBatch"/>。
+        /// 立即呼叫 ExecuteBatch 寫出單一變數型別的解；此方法本身不另開交易。
+        /// 若多個型別必須全部成功才保留，請使用 <see cref="BeginBatch"/>。
         /// </summary>
         public void WriteSolution<TVariableClass>(ISolverEngine engine, string dataId = null, string userId = null)
         {
@@ -445,12 +444,12 @@ namespace OptimFoundation.Db.Oracle
             }
         }
 
-        /// <summary>開一個批次：多變數型別的寫入先緩衝，Commit() 時把全部緩衝包進單一 ExecuteInTransaction 原子寫入。</summary>
+        /// <summary>開始一批輸出。先記住要寫入哪些變數型別，Commit() 時在同一交易內讀取解值並寫入，失敗則整批回滾。</summary>
         public ISolutionBatch BeginBatch(string dataId = null, string userId = null)
             => new OracleSolutionBatch(this, dataId ?? "", userId ?? "");
 
         // 單一變數型別的實際寫入：把所有列組好參數後一次呼叫 ctrl.ExecuteBatch（array-bind），
-        // 與既有 SaveToDB 產出相同的 INSERT 語意，但不再逐列往返。
+        // INSERT 欄位與 SaveToDB 一致，所有列用一次批次呼叫送出。
         private void WriteRows<TVariableClass>(IDbCtrl ctrl, ISolverEngine engine, string dataId, string userId)
         {
             var classInfo = new ClassInfo(typeof(TVariableClass));
@@ -469,7 +468,7 @@ namespace OptimFoundation.Db.Oracle
                 for (int i = 0; i < classInfo.SetNames.Length; i++)
                 {
                     string raw = i + 1 < parts.Length ? parts[i + 1] : "";
-                    parameters.Add(($":{classInfo.SetNames[i]}", OracleDBCtrl.ConvertToDbType(classInfo.PropertyTypes[i], raw)));
+                    parameters.Add(($":{classInfo.SetNames[i]}", OracleDbCtrl.ConvertToDbType(classInfo.PropertyTypes[i], raw)));
                 }
                 parameters.Add((":QTY", kv.Value));
                 parameters.Add((":USER_ID", userId));
@@ -484,8 +483,8 @@ namespace OptimFoundation.Db.Oracle
         }
 
         /// <summary>
-        /// 單一輸出 transaction 的批次：Write 只緩衝、Commit 時才把全部緩衝放進單一 ExecuteInTransaction 執行。
-        /// 未 Commit 即 Dispose → 捨棄緩衝、完全不寫（不是寫了再回滾）。
+        /// Write 只記錄待執行的寫入操作；Commit 時才在同一交易內讀取各型別解值並寫入。
+        /// 未 Commit 就 Dispose 時，只捨棄待寫操作，不會寫入資料。
         /// </summary>
         private sealed class OracleSolutionBatch : ISolutionBatch
         {
@@ -503,7 +502,7 @@ namespace OptimFoundation.Db.Oracle
                 _userId = userId;
             }
 
-            /// <summary>把一個變數型別的寫入排進緩衝，此時還沒碰 DB（真正寫入在 Commit）。</summary>
+            /// <summary>記住此變數型別與引擎；Commit 時才讀取解值並寫入資料庫，因此引擎須保留到 Commit 完成。</summary>
             /// <exception cref="InvalidOperationException">批次已 Commit。</exception>
             public void Write<TVariableClass>(ISolverEngine engine)
             {
@@ -515,7 +514,7 @@ namespace OptimFoundation.Db.Oracle
                 _pending.Add(ctrl => _sink.WriteRows<TVariableClass>(ctrl, engine, _dataId, _userId));
             }
 
-            /// <summary>把緩衝的所有寫入放進單一 transaction 執行——全部成功才留下，任一失敗整批 rollback。</summary>
+            /// <summary>在同一交易執行所有待寫操作；全部成功才提交，任一失敗則整批回滾。</summary>
             /// <exception cref="InvalidOperationException">重複 Commit。</exception>
             public void Commit()
             {
@@ -540,7 +539,7 @@ namespace OptimFoundation.Db.Oracle
                 }
             }
 
-            /// <summary>清掉緩衝。未 Commit 就 Dispose = 完全沒寫進 DB（不是寫了再回滾）。</summary>
+            /// <summary>清除待寫操作；未 Commit 的資料不會寫入資料庫。</summary>
             public void Dispose()
             {
                 _pending.Clear();

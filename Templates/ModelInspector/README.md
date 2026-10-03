@@ -6,23 +6,22 @@
 
 ## 為什麼是「吃檔案」而不是引用專案
 
-框架這一側的入口是 `OptEngine.ImportModel(fileName)` 與 `OptModel.FromFile(fileName, name)`。`ImportModel` 讀完檔會呼叫 `ReindexFromModel()`，從 active model 的 `ILPMatrix` 反向取回 `INumVar` 與 `IRange` 回填框架索引——這一步是關鍵，它讓求解、取解、IIS、metrics 這些「框架特定功能」在匯入的模型上照常運作。
+框架這一側的入口是 `OptEngine.ReadModel(fileName)` 與 `OptModel.ReadModel(fileName, name)`。`ReadModel` 讀完檔會呼叫 `ReindexFromModel()`，從 active model 的 `ILPMatrix` 反向取回 `INumVar` 與 `IRange` 回填框架索引——這一步是關鍵，它讓求解、取解、IIS、metrics 這些「框架特定功能」在匯入的模型上照常運作。
 
-代價只有一個：`VariableSets` 是空的。匯入的模型沒有 C# 變數類別可對應，所以型別化那一整套用不了。取捨如下：
+型別化取解是以型別名篩選變數池（名稱為 `TypeName` 或以 `TypeName@` 開頭），不需要 C# 變數類別：檔案裡的變數名沿用框架命名時（框架匯出的模型皆是）照常可用，名稱不符時回空。取捨如下：
 
 | 功能 | 匯入模式 | 說明 |
 | --- | --- | --- |
-| `Solve()` / metrics / log / LP·MPS·SOL 匯出 / retention | 可用 | 不經過 `VariableSets` |
+| `Solve()` / metrics / log / LP·MPS·SOL 匯出 / retention | 可用 | 不依賴變數命名 |
 | `GetVariableValue(name)` / `GetSolution()` | 可用 | 走 `Variables` 索引，re-index 已填好 |
 | `GetCVSolution` / `GetIVSolution` / `GetBVSolution` | 可用 | 依 solver 型別分類，不依賴 C# 類別 |
 | `ModelType`（LP / MILP / IP / BP）與 `[模型類型]` log | 可用 | 向 CPLEX 模型取 `Ncols` / `NbinVars` / `NintVars` / `IsMIP()`，不經 `Variables` 索引 |
 | `GetConflictConstraints()` / IIS `.ilp` | 可用 | 走 `_constraints`，匯入時無名的 row 自動補 `c0`、`c1`… |
-| `CplexConfig` 全部旋鈕 / tuning | 可用 | `ImportModel` 在 `Build()` 之後執行，只換模型內容不動 solver 參數 |
-| `OptProject` / `OptExperiment` | 可用 | 兩者都走 `_model.ApplyTo(engine)` 這個統一入口 |
-| `GetSetVarValues<T>()` / `GetSetVarNames<T>()` / `GetSolution("TypeName")` | **不可用** | `VariableSets` 為空，一律回空字典 |
-| `CsvCtrl.WriteSolution<T>()` / `OracleDBCtrl.WriteSolution<T>()` | **不可用** | 同上，沒有型別可寫 |
-| `RegisteredVariableCount` | **失真** | 恆為 0；請改看 `VariableCount` |
-| `ObjectiveSense` | 可用 | `ImportModel` 依檔案內容同步；`.mps` 沒有方向欄位，CPLEX 把 maximize 寫成係數取負的 minimize，讀回來目標值反號 |
+| `CplexConfig` 全部旋鈕 / tuning | 可用 | `ReadModel` 在 `Build()` 之後執行，只換模型內容不動 solver 參數 |
+| `OptProject.Solve` / `OptProject.Experiment` | 可用 | 兩者都走 `OptEngine.RunModel` → `_model.ApplyTo(engine)` 這個統一入口 |
+| `GetSetVarValues("TypeName")` / `GetSetVarNames("TypeName")` / `GetSolution("TypeName")` | **依命名** | 以型別名篩選變數池；名稱不符 `TypeName@…` 時回空 |
+| `CsvCtrl.WriteSolution<T>()` / `OracleDbCtrl.WriteSolution<T>()` | **依命名** | 內部走 `GetSolution(typeof(T).Name)`，同上 |
+| `ObjectiveSense` | 可用 | `ReadModel` 依檔案內容同步；`.mps` 沒有方向欄位，CPLEX 把 maximize 寫成係數取負的 minimize，讀回來目標值反號 |
 | `ObjectiveTermCount` / `SoftConstraintCount` / `SoftPenaltyTermCount` | **失真** | 恆為 0；量的是框架 pool 的累積，匯入的目標式沒經過 pool |
 | `VariableBuildCounts` / `ConstraintBuildCounts` | **失真** | 為空；Expected vs Actual 對帳只在 `Build*Vs` 路徑成立 |
 
@@ -76,15 +75,15 @@ Console 印分區摘要；完整內容寫進執行檔目錄的 `Reports/`：
 | --- | --- |
 | `<label>_Inspection_<時間戳>.md` | 九節完整報告（見下） |
 | `<label>_Variables_<時間戳>.csv` | 全變數解值 `Name,Type,Value`，數值以 `R` 格式寫出（round-trip 保真） |
-| `<label>_Trajectory_<時間戳>.csv` | 收斂軌跡 `TimeMs,Objective,Bound,Gap`（有取樣點才產生） |
+| `<label>_Trajectory_<時間戳>.csv` | 收斂軌跡 `ElapsedMs,ObjectiveValue,BestBound,Gap`（有取樣點才產生） |
 | `<label>_Conflicts_<時間戳>.txt` | IIS 衝突限制式名稱（infeasible 才產生） |
 
 報告的九節：
 
 1. **來源** — 路徑、格式、大小、最後寫入時間
-2. **執行設定** — `ProjectConfig` 全欄 + `ConfigSnapshot`（只記真的有設的旋鈕）
+2. **執行設定** — 專案名 / 保留天數 + `ProjectConfig` 全欄 + `ConfigSnapshot`（只記真的有設的旋鈕）
 3. **模型結構** — re-index 後的變數 / 限制式數，逐項標注匯入模式下是否有效；解出來後另附變數型別分布
-4. **求解結果** — `Status`、目標值、`BestBound`、`MIPGap`，加 `SolveMetrics` 全欄（`RunTimeMs` / `NodeCount` / `IterationCount` / `TrajectoryPoints` / `TFeasMs` / `DeltaBound` / `TStallMs`）與 `OptProject` 的 `TotalElapsed` / `BuildModelElapsed`
+4. **求解結果** — `Status`、目標值、`BestBound`、`Gap`，加 `SolveMetrics` 全欄（`SolveTimeMs` / `NodeCount` / `IterationCount` / `TrajectoryPoints` / `FirstSolutionMs` / `BoundChange` / `LastBoundChangeMs`）與 `OptProject` 的 `TotalElapsed` / `BuildModelElapsed`
 5. **收斂軌跡** — 等距抽樣 30 點的表；完整序列在 CSV
 6. **變數解值** — 三型別分布 + 非零變數前 100 筆
 7. **Infeasible 診斷** — `RefineConflict` 找出的衝突限制式清單，另有 `.ilp` 衝突模型寫進 `IISs/`
@@ -103,4 +102,4 @@ Console 印分區摘要；完整內容寫進執行檔目錄的 `Reports/`：
 
 ## 注意
 
-`--no-trajectory`：不加的話會掛 trajectory callback，而 CPLEX 掛了 callback 就關閉 dynamic search。要拿 `RunTimeMs` 跟別次執行比較時務必加上，否則比的不是同一件事。報告裡也會提醒這點。
+`--no-trajectory`：不加的話會掛 trajectory callback，而 CPLEX 掛了 callback 就關閉 dynamic search。要拿 `SolveTimeMs` 跟別次執行比較時務必加上，否則比的不是同一件事。報告裡也會提醒這點。

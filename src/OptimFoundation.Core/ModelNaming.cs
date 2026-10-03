@@ -8,7 +8,7 @@ using System.Globalization;
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 名稱標準化工具：將 Set row / Parameter row / 其他維度值格式化為 solver-safe token，並組成完整模型名稱。
+    /// 把維度值轉成可用於求解器名稱的文字（token），檢查非法字元，再用 @ 組成完整名稱；Set 資料列會展開各維度。
     /// </summary>
     internal static class ModelNaming
     {
@@ -25,7 +25,7 @@ namespace OptimFoundation.Core
             '+', '-', '*', '/', '^', '<', '>', '=', ':', ',', '\\', Separator
         ];
 
-        /// <summary>將單一維度值格式化為 solver-safe token。</summary>
+        /// <summary>把一個維度值轉成名稱片段，並檢查是否含空白或保留字元；不合法時拋出例外。</summary>
         internal static string Token(string context, object? value)
         {
             if (!TryToken(value, out string? token, out string? reason))
@@ -78,7 +78,7 @@ namespace OptimFoundation.Core
             return true;
         }
 
-        /// <summary>日期 token：粒度到秒，純日期維持 <see cref="DateFormat"/>，帶時分秒才展開成 <see cref="DateTimeFormat"/>。</summary>
+        /// <summary>把日期轉成名稱片段：純日期使用 <see cref="DateFormat"/>，有時間則使用 <see cref="DateTimeFormat"/>；不接受秒以下精度。</summary>
         internal static string FormatDate(string context, DateTime value)
         {
             if (!TryFormatDate(value, out string token))
@@ -86,10 +86,10 @@ namespace OptimFoundation.Core
             return token;
         }
 
-        // 不合法時 token 為 round-trip 格式的顯示字串
+        // 不接受的日期會以保留完整精度的 "O" 格式回傳，供錯誤訊息顯示。
         private static bool TryFormatDate(DateTime value, out string token)
         {
-            // 秒以下靜默截掉會讓兩個不同時刻產生同一個 token，key 悄悄相撞
+            // 不能直接捨去秒以下的值，否則不同時刻可能產生相同名稱。
             if (value.Ticks % TimeSpan.TicksPerSecond != 0)
             {
                 token = value.ToString("O", CultureInfo.InvariantCulture);
@@ -102,7 +102,7 @@ namespace OptimFoundation.Core
             return true;
         }
 
-        /// <summary>以 head 與維度值組成完整模型名稱；多維 Set row 會展開成多個 token。</summary>
+        /// <summary>以 head 作為名稱開頭，再用 @ 接上維度值；一筆多維 Set 資料會展開成多個名稱片段。</summary>
         internal static string Compose(string head, params object?[] dims)
         {
             ValidateToken("model name head", head);
@@ -139,7 +139,7 @@ namespace OptimFoundation.Core
                 : head + Separator + string.Join(Separator, tokens);
         }
 
-        /// <summary>驗證既有 string overload 收到的完整名稱；合法時原樣回傳。</summary>
+        /// <summary> 檢查呼叫端直接傳入的完整名稱，包括開頭與 @ 分隔的每一段；合法時原樣回傳。</summary>
         internal static string ValidateComposedName(string context, string name)
         {
             if (string.IsNullOrWhiteSpace(name))

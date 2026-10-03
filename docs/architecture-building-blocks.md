@@ -78,7 +78,7 @@ flowchart TD
   end
 
   subgraph L3["④ 一鍵求解：一條龍入口"]
-    OPT["OptModel<br/>設定 → 加積木 → 求解 → 拿結果"]:::primary
+    OPT["OptProject.Solve<br/>專案 → 模型 × 設定 → 求解 → 拿結果"]:::primary
   end
 
   subgraph L4["⑤ 可換插頭"]
@@ -97,7 +97,7 @@ flowchart TD
   CON -->|"當組裝元件"| MODEL
   DS -->|"餵資料"| MODEL
   MODEL -->|"交給一條龍"| OPT
-  CFG -->|"UseConfig"| OPT
+  CFG -->|"Solve(model, config)"| OPT
   OPT ==>|"Execute"| ENGINE
   ENGINE -->|"寫解"| SINK
 
@@ -126,8 +126,8 @@ flowchart TD
 一個類別把積木照正確順序組起來（例如「soft 放鬆規則一定要排在目標式之後」）。它**只管順序**，不管每顆積木內部在算什麼。
 > 像樂高說明書：告訴你先裝哪塊、再裝哪塊；零件本身長怎樣它不管。
 
-**④ 一鍵求解——一條龍入口（`OptModel`）**
-把「設定 solver → 加變數 → 加模型 → 求解 → 解出來要做什麼」串成一句話接下去寫，按一下就跑完。你不用自己去戳求解引擎那些細節（怎麼開、怎麼跑、跑完怎麼收）——它一手包辦。
+**④ 一鍵求解——一條龍入口（`OptProject.Solve`）**
+先開一個專案 `new OptProject("名稱")`（它管 log、輸出資料夾、保留期），再 `.Solve(模型, 設定, onSolved: 解出來要做什麼)`，一個呼叫就跑完。你不用自己去戳求解引擎那些細節（怎麼開、怎麼跑、跑完怎麼收）——它一手包辦，還會順手把這次求解記成一筆紀錄。
 > 像自助點餐機：一路點下去（設定→內容→送出），後面廚房怎麼運作你不用管。想自己進廚房調火候（實驗模式）時，才掀開它、直接操作引擎。
 
 **⑤ 可換插頭——資料 / 設定 / 輸出**
@@ -146,7 +146,7 @@ flowchart TD
 | 多一條限制式 | 加一顆積木 + 組裝器登記一行 | 其他積木不動 |
 | 改集合 / 維度定義 | 改積木 attribute，程式自動重產 | 手寫 code 不動 |
 
-> 這就是 Tutorial 能用 `dotnet run` / `dotnet run -- inmemory` / `dotnet run -- experiment` 三種跑法、但**模型只寫一次**的原因。
+> 這就是 Tutorial 能用 `dotnet run`（正式求解）/ `dotnet run -- exp`（實驗）兩種跑法、但**模型只寫一次**的原因。
 
 ---
 
@@ -155,7 +155,7 @@ flowchart TD
 1. **宣告積木**：Set / Parameter / Variable 用 attribute 標好維度。
 2. **寫積木**：每個限制式、目標式各寫一顆，只碰自己那段數學。
 3. **組裝**：`TutorialModel` 把積木照順序組成一顆完整模型。
-4. **接一條龍**：`OptModel` 鏈式接上資料來源、solver 設定、解輸出 → `Execute`。
+4. **接一條龍**：`new OptProject(名稱).Solve(模型, solver 設定, onSolved: 解輸出)`。
 5. **求解**：引擎算，解由輸出插頭寫出去。
 
 > 現成範例：`Templates/Tutorial/` 就是這套架構的最小可跑實作，照它的模式起手最快。
@@ -164,7 +164,14 @@ flowchart TD
 
 ## 多跑幾次來比較：實驗層（Tuning 用）
 
-前面五層講的是「把一顆模型組出來、解**一次**」。**實驗層是在外面再包一圈：把同一顆模型跑很多次，每次只換 solver 設定那個插頭，把每次結果收成一筆 Trial 存起來比較。** 這正是前面「換插頭、模型不動」設計的回報——模型只寫一次，就能被實驗層當成黑盒子反覆跑。
+前面五層講的是「把一顆模型組出來、解**一次**」。**實驗層是同一個專案底下的另一種用法：把模型跑很多次，每次只換 solver 設定那個插頭（也可以多個模型交叉），把每次結果收成一筆 Trial 存起來比較。** 這正是前面「換插頭、模型不動」設計的回報——模型只寫一次，就能被實驗層當成黑盒子反覆跑。
+
+```
+OptProject：專案（名稱、輸出資料夾、log、保留期）
+├─ Solve：跑 1 次 → 交出解 + 留一筆 Trial
+└─ Experiment：N 個模型 × M 組設定 → 只留 Trial
+兩者底層都是同一條「跑一次」路徑：建 engine → 套模型 → 求解 → 記成 Trial
+```
 
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{
@@ -193,14 +200,14 @@ flowchart LR
   classDef muted    fill:#f8fafc,stroke:#cbd5e1,stroke-width:1px,color:#64748b;
 ```
 
-它做的四件事（對照 `Templates/Tutorial/ExperimentRunner.cs`）：
+它做的四件事（對照 `Templates/Tutorial/Program.cs` 的 `exp` 分支：`project.Experiment("tuning-r1", ...)`）：
 
-1. **重用同一顆模型**：每個 trial 都 `new TutorialModel(data).Build(engine)`——跟 solve 模式共用**同一顆**模型積木，模型 code 一行不改。
+1. **重用同一顆模型**：每個 trial 都在全新的 engine 上套用同一個 `OptModel`——跟 solve 模式共用**同一顆**模型積木，模型 code 一行不改。
 2. **只換 solver 設定**：三組 MIP emphasis 對照——`balanced`(0) / `feasible-first`(1) / `optimal-first`(2)，換的只有設定插頭。
-3. **每次 solve 收成一筆 Trial**：`Trial.Capture` 記下當次設定（ConfigSnapshot）＋結果（狀態、目標值、耗時、收斂軌跡），不接管 engine 生命週期。
-4. **存檔比較**：`exp.Save()` 輸出三種 CSV——`{name}.csv`（一列一個 trial 的摘要，只記跟基準差在哪）、`-meta.csv`（基準完整設定、模型規模、求解環境）、`-trajectory.csv`（畫收斂曲線用，有軌跡才寫）。同名實驗**直接覆寫**，要留歷史就換實驗名（Phase 3 用 `<Project>-tuning-r<N>` 逐輪遞增）。
+3. **每次 solve 收成一筆 Trial**：記下當次設定（ConfigSnapshot）＋結果（狀態、目標值、耗時、收斂軌跡）。收斂軌跡的 callback 會改變 solver 搜尋路徑，要和正式求解對照的驗證用 `.CaptureTrajectory(false)` 關掉。
+4. **存檔比較**：`Run()` 把紀錄接在 `Experiment/` 下這個專案的四個累積檔尾端——`{專案名}-trial.csv`（一列一個 trial 的摘要，只記跟基準差在哪）、`-meta.csv`（基準完整設定、模型規模、求解環境，每批一份）、`-summary.csv`（每組設定一列：各狀態數、找到可行解數，以及逐 seed 跟基準比大小贏 / 輸 / 平手幾個，由框架判好）、`-trajectory.csv`（畫收斂曲線用，有軌跡點才寫）。檔案依功能分、不依實驗分：每列前三欄是 `RecordedAt`（寫入時間）、`Experiment`（實驗名，例 `tuning-r1`）、`RunId`（批次），同名實驗再跑一次就多一批 RunId，舊列不動。正式求解也接在同一個 `-trial.csv`（Experiment 欄寫 `solve`），可以直接和實驗的 Trial 對照。
 
-> 一句話：**solve 模式 = 把模型解一次拿答案；實驗層 = 同一顆模型在不同 solver 設定下各跑一次，收集數據做 tuning 比較。** 跑法 `dotnet run -- experiment`，屬於 Phase 3（Tuning）的工具——模型正確之後，用它系統化地找「哪組 solver 設定最快 / 最好」。
+> 一句話：**solve 模式 = 把模型解一次拿答案；實驗層 = 同一顆模型在不同 solver 設定下各跑一次，收集數據做 tuning 比較。** 跑法 `dotnet run -- exp`，屬於 Phase 3（Tuning）的工具——模型正確之後，用它系統化地找「哪組 solver 設定最快 / 最好」。
 
 ---
 

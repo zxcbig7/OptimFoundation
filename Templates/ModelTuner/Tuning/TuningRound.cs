@@ -5,10 +5,10 @@ using OptimFoundation.Cplex;
 namespace ModelTuner
 {
     /// <summary>
-    /// 一輪 tuning experiment：一組具名 CplexConfig，第一顆必須是 <c>r&lt;N&gt;-baseline</c>。
-    /// runner 自己把 seeds × instances 展開成 cell，並落實 solver-tuning-guide §3.4 的降噪要求：
-    /// seed 是共同因子（寫成 label 的 <c>-s&lt;seed&gt;</c> 後綴，不是 variant）、第一個 solve 當 warm-up 不計入、
-    /// variant 執行順序跨 seed 輪替，避免固定讓某一顆承擔 cold-start。
+    /// 執行一輪參數比較。每組 CplexConfig 都要命名，第一組必須是基準設定 <c>r&lt;N&gt;-baseline</c>。
+    /// 每組設定會用所有亂數種子求解所有模型檔，並依 solver-tuning-guide §3.4 降低量測誤差：
+    /// 各組設定使用相同的 seed 清單，label 自動加上 <c>-s&lt;seed&gt;</c>；先求解一次暖機，這次結果不列入比較；
+    /// 換 seed 時輪替各組設定的執行順序，避免同一組總是最先執行而受到啟動耗時影響。
     /// </summary>
     public sealed class TuningRound
     {
@@ -38,7 +38,7 @@ namespace ModelTuner
 
         public string BaselineLabel => $"r{Round}-baseline";
 
-        /// <summary>加入一顆 config。label 帶 <c>r&lt;N&gt;-</c> 前綴、不帶 seed 後綴（runner 會加）。</summary>
+        /// <summary>加入一組參數設定。label 必須以 <c>r&lt;N&gt;-</c> 開頭；seed 後綴由執行流程自動加上。</summary>
         public TuningRound Add(string label, CplexConfig config)
         {
             string reason =
@@ -59,13 +59,13 @@ namespace ModelTuner
             return this;
         }
 
-        /// <summary>全部 config × tuning seeds × Instances/tune。</summary>
+        /// <summary>以每組參數設定和每個調參用 seed，逐一求解 Instances/tune 的所有模型。</summary>
         public int Run() =>
-            Execute(_workspace.ExperimentName(Round), _description, _configs, _tuningSeeds, _workspace.Tune);
+            Execute(holdout: false, _description, _configs, _tuningSeeds, _workspace.Tune);
 
         /// <summary>
-        /// §4.6 hold-out：只跑 baseline 與 champion，seed 換成 holdout seeds；有 Instances/holdout 就改用它（train / test 分離）。
-        /// holdout 只能估計、NEVER 用來選 config——所以這裡只接受一個已經選好的 champion。
+        /// 依 §4.6 用保留的 seed 比較基準設定和已選出的最佳設定；若有 Instances/holdout 模型，也改用這批未參與調參的模型。
+        /// 這一步只驗證已選設定的表現，不再挑選參數，因此只接受一個已選好的設定名稱。
         /// </summary>
         public int RunHoldout(string championLabel)
         {
@@ -80,7 +80,7 @@ namespace ModelTuner
             Logging.Info($"[Holdout] instances={(_workspace.Holdout.Count > 0 ? "Instances/holdout" : "Instances/tune（無 holdout instance）")} seeds={string.Join(",", _holdoutSeeds)}");
 
             return Execute(
-                _workspace.ExperimentName(Round, holdout: true),
+                holdout: true,
                 $"R{Round} hold-out：{championLabel} vs baseline",
                 new List<(string, CplexConfig)> { _configs[0], champion },
                 _holdoutSeeds,
@@ -88,25 +88,26 @@ namespace ModelTuner
         }
 
         private int Execute(
-            string experimentName,
+            bool holdout,
             string description,
             IReadOnlyList<(string Label, CplexConfig Config)> configs,
             int[] seeds,
             IReadOnlyList<TuningInstance> instances)
         {
+            string experimentName = _workspace.ExperimentName(Round, holdout);
+            string shortName = TunerWorkspace.ExperimentShortName(Round, holdout);
             if (configs.Count == 0 || instances.Count == 0)
             {
                 Logging.Error($"[ROUND_DEFINITION_INVALID] round 沒有 config 或沒有 instance | value={experimentName} configs={configs.Count} instances={instances.Count} result=aborted");
                 return 2;
             }
-            if (!_workspace.PrepareRun(experimentName)) return 3;
+            if (!_workspace.PrepareRun(shortName)) return 3;
 
-            // 跟 OptExperiment 用同一個 log 名，warm-up 與正式 cell 收在同一個檔，dynamic search 檢查才掃得到全部
-            Logging.SetLogFileName($"{experimentName}_exp");
+            // 先建立實驗以切換 log 檔，讓暖機和正式求解的紀錄都在同一檔，後續才能完整檢查 dynamic search 是否啟用。
+            var experiment = _workspace.Project.Experiment(shortName, description);
             Warmup(experimentName, configs[0].Config, seeds[0], instances[0]);
 
-            var models = instances.Select(i => OptModel.FromFile(i.FullPath, i.Name)).ToList();
-            var experiment = new OptExperiment(experimentName, description);
+            var models = instances.Select(i => OptModel.ReadModel(i.FullPath, i.Name)).ToList();
             for (int k = 0; k < seeds.Length; k++)
                 foreach (var model in models)
                     for (int j = 0; j < configs.Count; j++)
@@ -120,21 +121,19 @@ namespace ModelTuner
             Logging.Info($"[Round] {experimentName} configs={configs.Count} seeds={seeds.Length} instances={instances.Count} cells={configs.Count * seeds.Length * instances.Count}");
             experiment.Run();
 
-            _workspace.Archive(experimentName);
+            _workspace.Archive(shortName);
             return RoundFacts.Report(_workspace, experimentName);
         }
 
-        // cold-start（JIT、DLL 載入、OS cache）固定懲罰第一個 solve；先跑一次同規格的 cell 丟掉
+        // 第一次求解包含 JIT 編譯、DLL 載入與快取準備的耗時；先用同樣設定求解一次暖機，結果不列入實驗。
         private static void Warmup(string experimentName, CplexConfig config, int seed, TuningInstance instance)
         {
             var cell = config.Clone();
             cell.Seed = seed;
-            var quiet = new ProjectConfig { EnableSolverLog = false, ExportLP = false, ExportMPS = false, ExportSol = false };
-
-            using var engine = new OptEngine(cell, quiet);
+            using var engine = new OptEngine(cell, ProjectConfig.Quiet());
             engine.SetModelName($"{experimentName}-warmup");
             engine.Build();
-            engine.ImportModel(instance.FullPath);
+            engine.ReadModel(instance.FullPath);
             engine.Solve();
             Logging.Info($"[Warmup] {instance.Name} seed={seed} status={engine.Status} result=excluded_from_experiment");
         }

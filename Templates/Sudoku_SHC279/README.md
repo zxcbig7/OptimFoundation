@@ -11,7 +11,7 @@
 - `Variable/`：`VariableB_CellDigit{Row,Column,Digit}`。
 - `Objective/`：逐項套用 `ObjCoef`；目前全為零，因此是純可行性問題。
 - `Constraint/`：CellValue、RowDigit、ColumnDigit、BlockDigit、Given 五組限制式。
-- `Data/`：Template CSV 與唯一資料入口 `Dataload`；`raw/` 保留原始矩陣供 import。
+- `Data/`：範例 Template CSV 與唯一資料入口 `Dataload`；`raw/` 保留原始矩陣供 import。執行時一律讀 `FolderDir.Input`，範例 CSV 不會自動複製過去。
 - `Solution/`：讀解後逐條驗證 givens、列、欄與宮規則。
 - `Program.cs`：唯一組裝點，依序建立材料、`OptModel("Canonical")` 與執行環境。
 
@@ -19,7 +19,7 @@
 
 ## 資料
 
-求解模式只讀以下已就位的 Template CSV：
+求解模式只讀 `FolderDir.Input` 已就位的以下 Template CSV：
 
 - `Set_Row.csv`、`Set_Column.csv`、`Set_Digit.csv`、`Set_Block.csv`
 - `Set_Given.csv`
@@ -40,8 +40,12 @@ dotnet run --project Templates\Sudoku_SHC279\Sudoku_SHC279.csproj
 # r2：warm-up 後比較 baseline / feasibility emphasis / aggressive probe（3 seeds、輪替順序）
 dotnet run --project Templates\Sudoku_SHC279\Sudoku_SHC279.csproj -- exp
 
-# 將 Data/raw/Puzzle_SHC279.csv 展開並 Export 成 Template CSV
-dotnet run --project Templates\Sudoku_SHC279\Sudoku_SHC279.csproj -- import raw/Puzzle_SHC279
+# 模型改讀既有模型檔（相對路徑以 FolderDir.Model 為基準，不讀 CSV；與正式求解共用設定），可再接 exp 跑實驗
+dotnet run --project Templates\Sudoku_SHC279\Sudoku_SHC279.csproj -- read-model Sudoku_SHC279_LP_<時間戳>.lp
+dotnet run --project Templates\Sudoku_SHC279\Sudoku_SHC279.csproj -- read-model Sudoku_SHC279_LP_<時間戳>.lp exp
+
+# 將 FolderDir.Input 下的 raw/Puzzle_SHC279.csv 展開並 Export 成 Template CSV
+dotnet run --project Templates\Sudoku_SHC279\Sudoku_SHC279.csproj -- import-data raw/Puzzle_SHC279
 ```
 
 `exp` 會從 `Program.cs` 的 `productionBaseline` clone baseline 與 variants，輸出 Trial 設定快照及 metrics。AI 完成 tuning 時必須讀取本輪結果，只有在 champion 通過解品質、穩健效能與 production 驗證 gate 後，才把勝出設定寫回 `productionBaseline`。因此後續無參數命令直接使用已 promotion 的設定；`OptExperiment` 本身不會自動修改 config 或 source。若沒有 variant 能可靠勝過 baseline，production 保留原設定。

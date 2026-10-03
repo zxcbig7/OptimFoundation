@@ -3,7 +3,7 @@ using OptimFoundation.Core.IO;
 
 namespace RosteringProblem
 {
-    /// <summary>資料唯一入口：把 Data/*.csv 讀成 Set/Parameter rows，再由 DataContext 驗證 Parameter。</summary>
+    /// <summary>從 FolderDir.Input 的 CSV 載入集合與參數資料，再由 DataContext 檢查參數內容。</summary>
     public sealed partial class Dataload : DataContext
     {
         /// <summary>班別群組列舉，只用於 import 模式產生 Set_Group 的固定成員順序（O,D,E,N,C）。</summary>
@@ -35,10 +35,10 @@ namespace RosteringProblem
         public List<Parameter_BelowAVGPenalty> parameter_BelowAVGPenalty = new();
         public List<Parameter_Weekend4DayPenalty> parameter_Weekend4DayPenalty = new();
 
-        /// <summary>無參數 ctor 只做一件事：把預設來源餵給下面真正讀檔的 ctor。</summary>
+        /// <summary>使用預設資料來源，轉交給下方接收 IDataSource 的建構子載入資料。</summary>
         public Dataload() : this(new CsvDataSource()) { }
 
-        /// <summary>標準接口：一行載一顆，只讀不算。換 CSV / Oracle / 記憶體只換 source。</summary>
+        /// <summary>逐一載入集合與參數，不在這裡產生資料；切換 CSV、Oracle 或記憶體來源時，只需更換 source。</summary>
         public Dataload(IDataSource source)
         {
             set_Employee = source.Load<Set_Employee>("Set_Employee");
@@ -69,10 +69,10 @@ namespace RosteringProblem
         }
 
         /// <summary>
-        /// import 模式：本專案沒有不規則外部來源（原始版本是用固定種子 Random(42) 程式生成範例排班資料，
-        /// 不是攤平外部矩陣／報表），因此白名單外的生成邏輯（迴圈、Random、enum 掃描、日期運算）集中在這裡，
-        /// 而不是 Dataload(IDataSource)。<paramref name="rawFile"/> 僅為配合三態 CLI 簽名一致，不讀取任何檔案。
-        /// 所有數值與原始 Dataload() 完全一致，只是把「怎麼組織」改成 import → Export() → 求解只讀 CSV 的標準流程。
+        /// import 模式：用固定種子 Random(42) 產生範例排班資料，沿用原始版本的生成方式，
+        /// 不讀取外部矩陣或報表；需要的迴圈、亂數、列舉與日期運算都放在此建構子，
+        /// 讓 Dataload(IDataSource) 只負責載入資料。<paramref name="rawFile"/> 用來保持各範例 CLI 呼叫方式一致，實際不會讀取這個檔案。
+        /// 產生的數值與原始 Dataload() 相同；先執行 import，再由 Export() 寫出 CSV，之後求解只讀取 CSV。
         /// </summary>
         public Dataload(string rawFile)
         {
@@ -83,13 +83,13 @@ namespace RosteringProblem
             double sixDayPenalty = 1;
             double groupMismatchPenalty = 0.2;
             double nightToDayPenalty = 0.2;
-            double preGroupPenalty = 0.2;      // NightToDayRule 表 QTY 的快照值；目前未被任何 Constraint 讀取（見 Model.md）
+            double preGroupPenalty = 0.2;      // 寫入 NightToDayRule 表 QTY 的權重；目前未被任何 Constraint 讀取（見 Model.md）
             double belowAvgPenalty = 0.1;
             double doubleOffLT2Penalty = 0.1;
             double weekend4DayPenalty = 0.1;
-            double backupGroupPenalty = 0;     // CrossGroup 表中 Backup 班別的權重快照值；同上未被讀取
+            double backupGroupPenalty = 0;     // 寫入 CrossGroup 表中 Backup 班別的權重；目前未被任何 Constraint 讀取
 
-            // 結構常數（原本是 Constraint 內的字面數字，現在資料化）
+            // 限制式使用的固定值；先前直接寫在 Constraint 內，現在會輸出到 CSV。
             double one = 1;
             double sixDayWindow = 6;
             double nightToDayWindow = 2;
@@ -149,7 +149,7 @@ namespace RosteringProblem
                 new Parameter_NightToDay { PreGroup = "C", Group = "N", QTY = preGroupPenalty },
             };
 
-            // 每日各班別需求：既有種子（2026-01-01、2026-01-02）優先，其餘日期以固定種子隨機生成
+            // 每日各班別需求：2026-01-01、2026-01-02 使用下方指定的資料，其餘日期以固定亂數種子產生。
             var shiftDemand = new List<Parameter_ShiftDemand>
             {
                 new Parameter_ShiftDemand { Date = new DateTime(2026, 1, 1), Group = "D", QTY = 4 },
@@ -166,7 +166,7 @@ namespace RosteringProblem
             int year = 2026;
             int month = 1;
             int daysInMonth = DateTime.DaysInMonth(year, month);
-            var random = new Random(42); // 固定種子：範本教學需要每次跑出同一份需求資料，才能對照解可重現
+            var random = new Random(42); // 固定種子，讓每次產生的需求資料相同，便於重現結果。
 
             var dateList = new List<DateTime>();
             for (int day = 1; day <= daysInMonth; day++)
@@ -174,7 +174,7 @@ namespace RosteringProblem
                 var date = new DateTime(year, month, day);
                 dateList.Add(date);
 
-                if (seededDates.Contains(date)) continue; // 這天的需求由既有種子提供
+                if (seededDates.Contains(date)) continue; // 這天已有指定的需求資料，不再隨機產生
 
                 shiftDemand.Add(new Parameter_ShiftDemand { Date = date, Group = "D", QTY = random.Next(4, 6) });
                 shiftDemand.Add(new Parameter_ShiftDemand { Date = date, Group = "E", QTY = 3 });
@@ -218,7 +218,7 @@ namespace RosteringProblem
             parameter_Weekend4DayPenalty.Add(new Parameter_Weekend4DayPenalty { QTY = weekend4DayPenalty });
         }
 
-        /// <summary>把 import ctor 產生的資料輸出成求解流程使用的 Template CSV。</summary>
+        /// <summary>將 import 建構子產生的資料寫成標準 CSV，供之後求解時讀取。</summary>
         public void Export()
         {
             CsvCtrl.WriteRows(set_Employee, "Set_Employee");

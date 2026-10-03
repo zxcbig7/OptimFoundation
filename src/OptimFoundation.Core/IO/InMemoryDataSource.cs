@@ -6,8 +6,8 @@ using System.Linq;
 namespace OptimFoundation.Core.IO
 {
     /// <summary>
-    /// 記憶體資料來源：demo / 單元測試 / 程式生成實例用。
-    /// 以 AddRows 流暢註冊中立表格或具型別資料列，Dataload 端與 CSV / DB 使用同一介面讀取。
+    /// 把程式提供的資料列存放在記憶體，供範例、單元測試或程式產生的模型資料使用。
+    /// 用 AddRows 加入含表頭的字串列，或 Set/Parameter 物件；Dataload 可透過 IDataSource 讀取。
     /// </summary>
     public sealed class InMemoryDataSource : IDataSource
     {
@@ -55,7 +55,7 @@ namespace OptimFoundation.Core.IO
             return this;
         }
 
-        /// <summary>載入註冊於 <paramref name="name"/> 的所有資料列之防禦性複本。</summary>
+        /// <summary>依 <paramref name="name"/> 取回資料，並複製各列，避免呼叫端修改已保存的內容。</summary>
         private IEnumerable<string[]> LoadRows(string name)
         {
             if (_rows.TryGetValue(name, out var rows))
@@ -65,7 +65,7 @@ namespace OptimFoundation.Core.IO
                 "DATA_SOURCE_NOT_FOUND", "找不到記憶體資料來源", nameof(LoadRows), name, "table_not_registered");
         }
 
-        /// <summary>將已註冊資料列載入為中立且含 schema 的表格。</summary>
+        /// <summary>將已加入的資料轉成 DataTable，第一列作為欄名，其餘列作為資料。</summary>
         public DataTable LoadData(string name)
             => TabularData.ToDataTable(LoadRows(name), name);
 

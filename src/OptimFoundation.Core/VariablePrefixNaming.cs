@@ -3,8 +3,8 @@ using System;
 namespace OptimFoundation.Internal
 {
     /// <summary>
-    /// Variable 類別名前綴的唯一解析規則。
-    /// 此檔也以 linked source 編入 Generator，避免編譯期與執行期規則漂移。
+    /// 依 Variable 類別名的 B/C/I 前綴判定 Binary、Continuous 或 Integer 型別。
+    /// Generator 也編譯同一份檔案，讓產生程式碼時與執行時使用相同規則。
     /// 僅回傳既有 OptimFoundation.Core.VarType 的成員名稱，不另行定義變數型別。
     /// </summary>
     internal static class VariablePrefixNaming
@@ -20,9 +20,9 @@ namespace OptimFoundation.Internal
         {
             if (className != null)
             {
-                // 轉名稱統一
-                if (className.StartsWith("VariableX_", StringComparison.Ordinal)) className.Replace("VariableX_", "VariableC_");
-                if (className.StartsWith("VariableY_", StringComparison.Ordinal)) className.Replace("VariableY_", "VariableI_");
+                // 舊版 X/Y 前綴先轉成 C/I，讓既有模型仍能使用。
+                if (className.StartsWith("VariableX_", StringComparison.Ordinal)) className = className.Replace("VariableX_", "VariableC_");
+                if (className.StartsWith("VariableY_", StringComparison.Ordinal)) className = className.Replace("VariableY_", "VariableI_");
 
                 if (className.StartsWith("VariableB_", StringComparison.Ordinal))
                 {

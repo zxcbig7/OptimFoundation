@@ -9,16 +9,16 @@ using Xunit;
 
 namespace OptimFoundation.Cplex.Tests.Unit
 {
-    // ── 端到端鎖住「數值 sanity 涵蓋範圍」的實質漏洞修正（見框架資料防護規格追補）──
+    // ── 驗證 source generator 會把自行宣告的 double 欄位納入數值檢查（見框架資料防護規格追補）──
     //
-    // 手寫 double 值欄位（Profit/Required/Stock…）也必須受數值 sanity 檢查；Parameter 的
-    // canonical 模型係數仍固定是 generator 產生的 QTY。
+    // 自行宣告的 double 欄位（Profit/Required/Stock…）也要檢查 NaN 等無效數值；Parameter 的
+    // 模型係數仍統一使用 generator 產生的 QTY 欄位。
     //
-    // 這裡刻意讓本檔宣告的 [OptSet]/[OptParam]/DataContext 類別「真的」走 AutoSetsGenerator（見
-    // csproj 把 Generators.csproj 掛成 Analyzer），而非像 DataValidatorTests 那樣手動塞
-    // ParamRegistration/ParamRow——手動塞只驗證 DataValidator 本身正確，鎖不住 generator 端
-    // ResolveNumberPropNames 的涵蓋範圍。反向證明：把 ResolveNumberPropNames 還原成舊版
-    // （只取 index props + QTY）後，本檔測試必須失敗（Profit 不會被納入 numbersOf，NaN 永遠驗不到）。
+    // 本檔的 [OptSet]、[OptParam] 與 DataContext 類別會實際交給 AutoSetsGenerator 處理，
+    // 因為 csproj 將 Generators.csproj 設為 Analyzer。測試不自行建立
+    // ParamRegistration/ParamRow，才能同時確認 generator 的
+    // ResolveNumberPropNames 有找到所有需要檢查的欄位。若改回只收集
+    // 索引屬性與 QTY 的舊行為，Profit 就不會進入 numbersOf，NaN 無法被發現，本檔測試應失敗。
 
     // Set 的元素型別一律由同類別上的 OptDim<T> 宣告。
     [OptSet]
@@ -31,7 +31,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
     [OptDim<string>("GncItem")]
     public partial class Parameter_GncProfit
     {
-        // 使用者在 partial 另一半手寫的 double 值欄位（非 QTY，非 index 屬性）——真實專案的 Profit/Required/Stock 型態。
+        // 模擬使用者在 partial 類別自行加入的 double 欄位；它不是 QTY 或索引屬性，例如實際專案中的 Profit、Required、Stock。
         public double Profit { get; set; }
     }
 
@@ -149,7 +149,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Contains(result.DataIssues, i => i.Kind == DataIssueKind.Numeric && i.Detail.Contains("Profit"));
         }
 
-        // 正常值不誤擋：確認修正只是「擴大涵蓋範圍」，不是「所有 double 屬性都被誤判成問題」。
+        // 確認自行宣告的 double 欄位若有正常數值，就不會被誤報為資料問題。
         [Fact]
         public void HandwrittenNonQtyDoubleField_NormalValue_NoIssue()
         {
@@ -176,7 +176,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
                 && issue.Detail.Contains("duplicate Set key"));
         }
 
-        // 值欄位不進名稱：負數、科學記號不得被當成命名保留字元（'-'、'+'）擋下
+        // 數值欄位不參與模型名稱組成，因此負數或科學記號中的 -、+ 不應觸發名稱字元檢查。
         [Fact]
         public void CsvLoad_NegativeAndScientificValues_AreNotNamingErrors()
         {

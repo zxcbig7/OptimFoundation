@@ -5,7 +5,7 @@ namespace Tutorial
 {
     /// <summary>
     /// [=] ∀ product, date：Σ_shift Produce_{p,d,s} = BatchSize_p·Batch_{p,d}
-    /// 展示 CreateEqual + 連結連續變數（Produce）與整數變數（Batch）——每日總產量必為整數批的倍數。
+    /// 用 CreateEqual 連結產量 Produce 與整數批數 Batch，確保每日產量是批量的整數倍。
     /// </summary>
     public sealed class Constraint_BatchDef : ConstraintBase
     {

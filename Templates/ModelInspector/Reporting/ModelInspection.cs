@@ -4,9 +4,9 @@ using OptimFoundation.Cplex;
 namespace ModelInspector.Reporting
 {
     /// <summary>
-    /// 一次檢視作業從框架挖出的全部資訊。純資料收集，不做任何輸出格式化。
-    /// 每個欄位都對應一支框架的 public API；匯入模式下語意失真的欄位在
-    /// <see cref="Caveats"/> 逐條列名，NEVER 把失真值當有效資料直接印出。
+    /// 收集一次模型檢視的來源檔、求解結果與輸出檔資訊；顯示格式由 ReportWriter 處理。
+    /// 資料透過框架的 public API 取得；匯入模型時，某些欄位無法反映模型的實際內容，原因記在
+    /// <see cref="Caveats"/> 中，報告需一併顯示這些限制，避免讀者誤解數值。
     /// </summary>
     public sealed class ModelInspection
     {
@@ -28,20 +28,23 @@ namespace ModelInspector.Reporting
         /// <summary>engine 的啟動時間戳，框架用它組所有輸出檔名。</summary>
         public string StartTime { get; private set; } = "";
 
-        /// <summary>專案層設定（ProjectName / 匯出開關 / 保留天數）。</summary>
+        /// <summary>專案名（OptProject.Name），用作 log 與輸出檔名的前綴。</summary>
+        public string ProjectName { get; private set; } = "";
+
+        /// <summary>專案保留天數（OptProject.RetentionDays）；&lt;= 0 表示不清理。</summary>
+        public int RetentionDays { get; private set; }
+
+        /// <summary>本次求解的專案設定（solver log / LP / MPS / Sol 匯出）。</summary>
         public ProjectConfig ProjectConfig { get; private set; } = new ProjectConfig();
 
-        /// <summary>solver 設定快照——只記真的有設的旋鈕，沒列到的就是用 CPLEX 預設。</summary>
+        /// <summary>本次指定的 solver 參數值；未列出的參數使用 CPLEX 預設值。</summary>
         public ConfigSnapshot ConfigSnapshot { get; private set; } = new ConfigSnapshot();
 
-        /// <summary>ImportModel 回填框架索引後的變數數。</summary>
+        /// <summary>ReadModel 讀取模型後，記錄到框架名稱索引中的變數總數。</summary>
         public int VariableCount { get; private set; }
 
-        /// <summary>ImportModel 回填框架索引後的限制式數。</summary>
+        /// <summary>ReadModel 讀取模型後，記錄到框架名稱索引中的限制式總數。</summary>
         public int ConstraintCount { get; private set; }
-
-        /// <summary>經 Build*Vs 登記進 VariableSets 的變數數；匯入模式恆為 0。</summary>
-        public int RegisteredVariableCount { get; private set; }
 
         /// <summary>各變數型別的預期 / 實際建立數；匯入模式為空。</summary>
         public IReadOnlyDictionary<string, (int Expected, int Actual)> VariableBuildCounts { get; private set; }
@@ -54,13 +57,13 @@ namespace ModelInspector.Reporting
         /// <summary>框架記錄的目標式方向；匯入模式依檔案內容同步（.mps 的 maximize 會讀成反號的 minimize，見 Caveats）。</summary>
         public ObjectiveSense ObjectiveSense { get; private set; }
 
-        /// <summary>框架 pool 累積的目標式項數；匯入模式恆為 0。</summary>
+        /// <summary>透過框架暫存算式建立的目標式項數；匯入模型不經過這個步驟，因此為 0。</summary>
         public int ObjectiveTermCount { get; private set; }
 
         /// <summary>已建立的軟性限制式條數；匯入模式恆為 0。</summary>
         public int SoftConstraintCount { get; private set; }
 
-        /// <summary>soft penalty 併入目標式的項數；匯入模式恆為 0。</summary>
+        /// <summary>加入目標式的軟性限制違反懲罰項數；匯入模式恆為 0。</summary>
         public int SoftPenaltyTermCount { get; private set; }
 
         /// <summary>engine 是否支援收斂軌跡。</summary>
@@ -72,7 +75,7 @@ namespace ModelInspector.Reporting
         /// <summary>求解狀態。</summary>
         public SolveStatus Status { get; private set; } = SolveStatus.NotSolved;
 
-        /// <summary>OptProject 認定的成功（Optimal 或 Feasible）。</summary>
+        /// <summary>OptProject.Solve 認定的成功（Optimal 或 Feasible）。</summary>
         public bool IsSuccess { get; private set; }
 
         /// <summary>目標式解值；無解時為 NaN。</summary>
@@ -81,16 +84,16 @@ namespace ModelInspector.Reporting
         /// <summary>最佳界；無解時為 NaN。</summary>
         public double BestBound { get; private set; } = double.NaN;
 
-        /// <summary>相對 MIP gap；無解時為 NaN。</summary>
-        public double MipGap { get; private set; } = double.NaN;
+        /// <summary>求解結束時實際達到的相對 MIP gap（不是 --mipgap 停止門檻）；無解時為 NaN。</summary>
+        public double Gap { get; private set; } = double.NaN;
 
-        /// <summary>Solve() 本身的統一 telemetry；求解丟例外時為 null。</summary>
+        /// <summary>Solve() 記錄的求解狀態、耗時、目標值等指標；求解丟出例外時為 null。</summary>
         public SolveMetrics? Metrics { get; private set; }
 
-        /// <summary>OptProject 量到的整趟耗時（含建模、匯出、housekeeping）。</summary>
+        /// <summary>OptProject.Solve 的總耗時，包含建模、求解、匯出與寫入紀錄檔。</summary>
         public TimeSpan TotalElapsed { get; private set; }
 
-        /// <summary>OptProject 量到的模型套用耗時；匯入模式下即讀檔 + re-index 的時間。</summary>
+        /// <summary>OptProject.Solve 準備模型的耗時；匯入模式下包含讀檔及建立變數、限制式名稱索引。</summary>
         public TimeSpan BuildModelElapsed { get; private set; }
 
         /// <summary>二元變數解值（依名稱）。</summary>
@@ -115,7 +118,7 @@ namespace ModelInspector.Reporting
         /// <summary>框架自動產生的輸出檔（存在者才列入）。</summary>
         public IReadOnlyList<ArtifactFile> Artifacts { get; private set; } = new List<ArtifactFile>();
 
-        /// <summary>匯入模式下失真或不可用的項目，逐條說明原因。</summary>
+        /// <summary>列出匯入模型後無法使用或不能直接解讀的統計項目，並說明原因。</summary>
         public IReadOnlyList<string> Caveats { get; private set; } = new List<string>();
 
         /// <summary>求解過程丟出的例外訊息；正常結束時為 null。</summary>
@@ -128,8 +131,8 @@ namespace ModelInspector.Reporting
         public sealed record ArtifactFile(string Kind, string Path, long Bytes);
 
         /// <summary>
-        /// 從一次已執行完的 <see cref="OptProject"/> 收集全部可得資訊。
-        /// MUST 在 Execute() 之後呼叫（成功或失敗都可以——infeasible 的 IIS 只有這時候拿得到）。
+        /// 從一次已執行完的 <see cref="OptProject.Solve"/> 收集全部可得資訊。
+        /// 必須在 Solve() 結束後呼叫，成功或失敗都可以；無可行解時的衝突分析結果也要等求解後才能取得。
         /// </summary>
         public static ModelInspection Capture(
             OptProject project, ProjectConfig projectConfig, InspectionOptions options, string? failure)
@@ -138,6 +141,8 @@ namespace ModelInspector.Reporting
             {
                 SourceFile = options.ModelFile,
                 Label = options.Label,
+                ProjectName = project.Name,
+                RetentionDays = project.RetentionDays,
                 ProjectConfig = projectConfig,
                 TrajectoryRequested = options.CaptureTrajectory,
                 Failure = failure,
@@ -159,7 +164,6 @@ namespace ModelInspector.Reporting
 
             inspection.VariableCount = engine.VariableCount;
             inspection.ConstraintCount = engine.ConstraintCount;
-            inspection.RegisteredVariableCount = engine.RegisteredVariableCount;
             inspection.VariableBuildCounts = engine.VariableBuildCounts;
             inspection.ConstraintBuildCounts = engine.ConstraintBuildCounts;
             inspection.ObjectiveSense = engine.ObjectiveSense;
@@ -176,9 +180,9 @@ namespace ModelInspector.Reporting
             {
                 inspection.ObjectiveValue = engine.GetObjectiveValue();
                 inspection.BestBound = engine.BestObjValue;
-                inspection.MipGap = engine.MIPGap;
+                inspection.Gap = engine.MIPGap;
 
-                // 三支取解 API 都走 Variables 索引，ImportModel 的 re-index 已把它填好，故匯入模式照常可用。
+                // ReadModel 已建立 Variables 名稱索引，因此這三個 API 也能讀取匯入模型的變數解值。
                 inspection.BinaryValues = engine.GetBVSolution();
                 inspection.IntegerValues = engine.GetIVSolution();
                 inspection.ContinuousValues = engine.GetCVSolution();
@@ -192,8 +196,8 @@ namespace ModelInspector.Reporting
             return inspection;
         }
 
-        // 框架的輸出檔名是「前綴 + 用途 + 啟動時間戳」的固定組合，engine 把兩個組件都開成 public，
-        // 因此這裡用組路徑 + File.Exists 判定，比掃資料夾精準——不會撈到前幾次執行的殘留。
+        // 輸出檔名由「模型名稱 + 用途 + 啟動時間」組成，名稱與時間可從 engine 取得，
+        // 所以直接組出本次檔案的路徑並用 File.Exists 檢查，避免把以前執行留下的檔案算進來。
         private static List<ArtifactFile> CollectArtifacts(OptEngine engine, ProjectConfig config, bool hasConflict)
         {
             string name = engine.ModelName;
@@ -222,12 +226,9 @@ namespace ModelInspector.Reporting
         {
             var caveats = new List<string>
             {
-                "VariableSets 為空：匯入的模型沒有 C# 變數類別可對應，"
-                    + "GetSetVarValues<T>() / GetSetVarNames<T>() / GetSolution(\"TypeName\") / CsvCtrl.WriteSolution<T>() 全部不可用，"
-                    + "本報告一律改用名稱層級的 GetBVSolution / GetIVSolution / GetCVSolution。",
-                $"RegisteredVariableCount = {inspection.RegisteredVariableCount}（恆為 0）：它量的是 VariableSets，"
-                    + $"匯入模式請看 VariableCount = {inspection.VariableCount}。",
-                $"ObjectiveSense = {inspection.ObjectiveSense}：ImportModel 依檔案內容同步。"
+                "型別化取解（GetSetVarValues / GetSetVarNames / GetSolution(\"TypeName\") / CsvCtrl.WriteSolution<T>()）以型別名篩選變數池，"
+                    + "檔案裡的變數名不符 TypeName@… 時回空；本報告一律改用不看名稱的 GetBVSolution / GetIVSolution / GetCVSolution。",
+                $"ObjectiveSense = {inspection.ObjectiveSense}：ReadModel 依檔案內容同步。"
                     + "注意 .mps 沒有方向欄位，CPLEX 把 maximize 寫成係數取負的 minimize，讀回來的目標值會反號。",
                 "ObjectiveTermCount / SoftConstraintCount / SoftPenaltyTermCount 恆為 0："
                     + "這三個量的是框架 pool 的累積，匯入的目標式直接來自檔案、沒有經過 pool。",
@@ -240,7 +241,7 @@ namespace ModelInspector.Reporting
 
             if (inspection.TrajectoryRequested)
                 caveats.Add("已開啟收斂軌跡：掛 callback 會關閉 CPLEX dynamic search，"
-                    + "本次的 RunTimeMs 不適合拿去跟未開軌跡的執行比較。加 --no-trajectory 可關掉。");
+                    + "本次的 SolveTimeMs 不適合拿去跟未開軌跡的執行比較。加 --no-trajectory 可關掉。");
 
             return caveats;
         }

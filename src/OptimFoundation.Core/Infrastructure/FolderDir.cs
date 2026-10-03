@@ -5,7 +5,8 @@ namespace OptimFoundation.Core
 {
     /// <summary>
     /// 框架固定的資料夾配置：全部掛在執行檔目錄下，一個屬性對應一個用途。
-    /// 各資料夾在需要時才建立（寫入端自行呼叫 CreateFolder），不會在啟動時全部生出來。
+    /// 建立 OptProject 時以 <see cref="CreateAll"/> 一次全部建好，不論之後有沒有用到；
+    /// 寫入端也會呼叫 CreateFolder，資料夾已存在時不會重建，因此不必先建立專案。
     /// </summary>
     public class FolderDir
     {
@@ -27,13 +28,24 @@ namespace OptimFoundation.Core
         /// <summary>solver 的解檔（.sol）。</summary>
         public static ProjFolder Solution = new ProjFolder("Solution");
 
-        /// <summary>實驗記錄（.csv / -meta.csv / -trajectory.csv）。</summary>
+        /// <summary>實驗與正式求解紀錄：每個專案四個累積檔 {專案}-trial.csv / -meta.csv / -summary.csv / -trajectory.csv。</summary>
         public static ProjFolder Experiment = new ProjFolder("Experiment");
 
-        /// <summary>框架產生的輸出資料夾（不含輸入用的 Data），供保留期清理逐一掃描。</summary>
-        private static readonly ProjFolder[] _outputs = { Log, Model, Solution, IIS, Experiment, Output };
+        /// <summary>全部資料夾，供 <see cref="CreateAll"/> 一次建立。</summary>
+        private static readonly ProjFolder[] _all = { Input, Output, Log, Model, IIS, Solution, Experiment };
 
-        /// <summary>清除所有輸出資料夾中 LastWriteTime 超過 retentionDays 天的舊檔，回傳總刪除數。retentionDays &lt;= 0 時視為關閉、不清理。</summary>
+        /// <summary>
+        /// 依保留期清理的資料夾。不含 Input 與 Experiment，保留輸入資料與調參紀錄。
+        /// </summary>
+        private static readonly ProjFolder[] _outputs = { Log, Model, Solution, IIS, Output };
+
+        /// <summary>建立全部資料夾（Input / Output / Log / Model / IIS / Solution / Experiment），已存在的不動。</summary>
+        public static void CreateAll()
+        {
+            foreach (var folder in _all) folder.CreateFolder();
+        }
+
+        /// <summary>清除輸出資料夾（不含 Input 與 Experiment）中 LastWriteTime 超過 retentionDays 天的舊檔，回傳總刪除數。retentionDays &lt;= 0 時視為關閉、不清理。</summary>
         public static int PurgeAllOutputs(int retentionDays)
         {
             if (retentionDays <= 0) return 0;
@@ -42,10 +54,10 @@ namespace OptimFoundation.Core
             return total;
         }
 
-        /// <summary>單一資料夾的路徑計算與檔案操作；不持有狀態，只記資料夾名。</summary>
+        /// <summary>保存一個資料夾名稱，提供完整路徑計算、建立與舊檔清理方法。</summary>
         public class ProjFolder
         {
-            /// <summary>執行檔的目錄位置(執行的地方)</summary>
+            /// <summary>應用程式的基底目錄；所有框架資料夾都放在此目錄下。</summary>
             public static string ProjectPath => System.AppDomain.CurrentDomain.BaseDirectory;
 
             private readonly string _folderName;
@@ -63,7 +75,7 @@ namespace OptimFoundation.Core
             public string GetPathFile(string fileName) => Path.Combine(GetPath(), fileName);
 
             /// <summary>
-            /// 建立資料夾。Directory.CreateDirectory 是 idempotent，目錄已存在時不 throw。
+            /// 建立資料夾；目錄已存在時保留原有內容，不會因此拋出例外。
             /// </summary>
             public void CreateFolder()
             {
@@ -76,7 +88,7 @@ namespace OptimFoundation.Core
             {
                 string path = GetPathFile(fileName);
                 if (File.Exists(path)) return false;
-                Directory.CreateDirectory(GetPath());   // 確保資料夾存在（idempotent），否則 File.CreateText 丟 DirectoryNotFound
+                Directory.CreateDirectory(GetPath());   // 先確保資料夾存在，避免 File.CreateText 因找不到目錄而失敗。
                 File.CreateText(path).Close();
                 return true;
             }

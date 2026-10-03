@@ -2,7 +2,7 @@ using OptimFoundation.Modeling;
 
 namespace Tutorial
 {
-    /// <summary>生產量（件）≥ 0。數學：Produce_{p,d,s}。前綴 C_ = Continuous。3D 變數（Product × Date × Shift）。</summary>
+    /// <summary>每個產品每天各班次的產量（件，可為非負小數），對應 Produce_{p,d,s}；VariableC_ 表示連續變數，依 Product × Date × Shift 建立。</summary>
     [OptVar]
     [OptDim<string>("Product")]
     [OptDim<DateTime>("Date")]

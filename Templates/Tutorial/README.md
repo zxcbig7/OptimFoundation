@@ -1,6 +1,6 @@
 # OptimFoundation Tutorial Template
 
-本範例示範現行 API：row-based Set/Parameter、統一 `Load<T>`、B/C/I Variable、owner-based constraint naming、`OptModel` / `OptProject` 與 solution sink。
+本範例示範現行 API：row-based Set/Parameter、統一 `Load<T>`、B/C/I Variable、owner-based constraint naming、`OptModel` / `OptProject`（`Solve` 與 `Experiment`）與 solution sink。
 
 ## 結構
 
@@ -14,7 +14,7 @@ Tutorial/
 ├── Constraint/Constraint_*.cs
 ├── Solution/TutorialSolution.cs
 ├── Data/Dataload.cs
-├── Data/*.csv
+├── Data/*.csv（範例資料；執行時一律讀 FolderDir.Input，不會自動複製）
 └── Program.cs
 ```
 
@@ -63,7 +63,7 @@ public Dataload(IDataSource source)
 
 CSV、InMemory 與 DB 都走 `IDataSource`。DB 的名稱引數是完整 SQL；需 bind parameters 時使用具體 `DbDataSource.Load<T>(sql, parameters)` overload。
 
-raw import 若需要產出 Template CSV，Set 與 Parameter 都用：
+raw import-data 若需要產出 Template CSV，Set 與 Parameter 都用：
 
 ```csharp
 CsvCtrl.WriteRows(rows, "TypeName");
@@ -88,7 +88,7 @@ engine.BuildVars<VariableC_Produce>(data.set_Product, data.set_Date, data.set_Sh
 ```csharp
 engine.AddLHS(1.0, variable);
 engine.AddRHS(required);
-engine.CreateGreatEqual(this, product, date);
+engine.CreateGreaterEqual(this, product, date);
 ```
 
 新 code 傳 owner 與原始維度值，framework 統一產生名稱。模型名稱日期為 `yyyy_MM_dd`，帶時分秒時為 `yyyy_MM_dd_HH_mm_ss`；CSV 日期對應為 `yyyy-MM-dd` 與 `yyyy-MM-dd HH:mm:ss`。
@@ -98,9 +98,16 @@ engine.CreateGreatEqual(this, product, date);
 ```powershell
 dotnet run
 dotnet run -- exp
+dotnet run -- read-model Tutorial_LP_<時間戳>.lp
+dotnet run -- read-model Tutorial_LP_<時間戳>.lp exp
 ```
 
-預設模式求解並驗證/輸出；`exp` 使用相同模型比較 solver config。
+CLI 是兩軸自由組合：
+
+- 模型來源：預設讀 CSV 建構 canonical；`read-model <file>` 改讀既有模型檔（.lp / .mps / .sav，相對路徑以 `FolderDir.Model` 為基準），不讀 CSV。
+- 執行方式：預設正式求解並驗證/輸出（read-model 沒有資料，不跑解驗證）；`exp` 使用同一模型比較 solver config。read-model 的實驗名會加上模型名，累積檔裡跟 canonical 同一輪的紀錄分得開（Experiment 欄不同）。
+
+兩條來源共用同一組 `projectConfig` / `productionBaseline`，新舊模型的 Trial 可以直接對照。
 
 ## 驗收
 

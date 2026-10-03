@@ -2,7 +2,7 @@ using OptimFoundation.Modeling;
 
 namespace FJSP_BASIC_BRICK
 {
-    /// <summary>NoOverlap Either-Or pattern 的 forward 結構常數；對應 Model.md NoOverlapForward 式中的 3。</summary>
+    /// <summary>NoOverlapForward 式中的常數 3，用來控制「A 在 B 之前完成」這條限制何時生效；對應 Model.md。</summary>
     [OptParam]
     public sealed partial class Parameter_NoOverlapForwardOffset { }
 }

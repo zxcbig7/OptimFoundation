@@ -5,7 +5,7 @@ using Xunit;
 namespace OptimFoundation.Cplex.Tests.Integration
 {
     /// <summary>
-    /// 需要 CPLEX DLL 才能執行。若 DLL 不存在，全部 Skip。
+    /// 需要 CPLEX DLL 才能執行；找不到 DLL 時，測試方法直接返回，不執行後續檢查。
     /// 執行：dotnet test --filter Category=Integration
     /// </summary>
     [Collection("Logging")]
@@ -26,18 +26,12 @@ namespace OptimFoundation.Cplex.Tests.Integration
             return engine;
         }
 
-        [Fact(DisplayName = "OptModel 設定解析：ctor 專案名與保留天數優先於 ProjectConfig")]
-        public void OptModel_CtorProjectNameAndRetentionDays_TakePrecedenceOverProjectConfig()
+        [Fact(DisplayName = "Solve：engine 名稱與 log 檔名都以專案名為根，建立專案時印出專案設定")]
+        public void Solve_UsesProjectNameForEngineAndLog()
         {
             if (!CplexAvailable) return;
 
-            string projectName = "CtorPriority_" + Guid.NewGuid().ToString("N");
-            var projectConfig = new ProjectConfig
-            {
-                ProjectName = "ConfigName",
-                RetentionDays = 9999,
-                EnableSolverLog = false,
-            };
+            string projectName = "SolveNaming_" + Guid.NewGuid().ToString("N");
 
             var model = new OptModel(projectName)
                 .AddVariables(engine => engine.BuildBVs<VarS>(new[] { "x" }))
@@ -46,11 +40,10 @@ namespace OptimFoundation.Cplex.Tests.Integration
                     engine.AddLHS(1.0, new VarS { S = "x" });
                     engine.CreateMinimize();
                 });
-            using var project = new OptProject(model, projectName, retentionDays: 0)
-                .UseConfig(() => new CplexConfig { TimeLimit = 30 })
-                .UseConfig(() => projectConfig);
+            using var project = new OptProject(projectName, retentionDays: 0)
+                .LoadConfig(new ProjectConfig { EnableSolverLog = false });
 
-            Assert.True(project.Execute());
+            Assert.True(project.Solve(model, new CplexConfig { TimeLimit = 30 }));
             Assert.Equal(projectName, project.Engine.ModelName);
 
             string logFile = Directory.GetFiles(FolderDir.Log.GetPath(), $"{projectName}_*.txt")
@@ -58,10 +51,9 @@ namespace OptimFoundation.Cplex.Tests.Integration
                 .First();
             using var stream = new FileStream(logFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             using var reader = new StreamReader(stream);
-            Assert.Contains(
-                $"[EffectiveConfig] ProjectName={projectName}(ctor) RetentionDays=0* " +
-                "SolverLog=OFF* ExportLP=OFF ExportMPS=OFF ExportSol=OFF",
-                reader.ReadToEnd());
+            string log = reader.ReadToEnd();
+            Assert.Contains($"[Project] Name={projectName} RetentionDays=0 ", log);
+            Assert.Contains("[Project Setting] CPLEX Log → framework log file only", log);
         }
 
         // ── 基本求解 ────────────────────────────────────────────────────────
@@ -75,7 +67,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             engine.BuildCVs<VarS>(new List<string> { "x" });
 
             engine.AddLHS(1.0, new VarS { S = "x" });
-            engine.CreateGreatEqual(3.0, "LB");
+            engine.CreateGreaterEqual(3.0, "LB");
 
             engine.AddLHS(1.0, new VarS { S = "x" });
             engine.CreateMinimize();
@@ -140,7 +132,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
             engine.BuildBVs<VarS>(new List<string> { "x" });
 
-            // 變數已建在框架索引裡，但還沒被 extract 進 CPLEX 模型
+            // 框架已登記變數，但尚未有目標式或限制式使用它，因此 CPLEX 模型還不包含它。
             Assert.Equal(1, engine.VariableCount);
             Assert.Equal(ModelType.LP, engine.ModelType);
 
@@ -172,7 +164,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             engine.CreateMinimize();                                 // 先建目標式 min x
 
             engine.AddLHS(1.0, new VarS { S = "x" });
-            engine.CreateGeSoft(5.0, 10.0);                          // 軟性 x >= 5，penalty 10
+            engine.CreateGreaterEqualSoft(5.0, 10.0);                          // 軟性 x >= 5，penalty 10
 
             bool solved = engine.Solve();
 
@@ -224,7 +216,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
             // x >= 10 AND x <= 1 → 矛盾
             engine.AddLHS(1.0, new VarS { S = "x" });
-            engine.CreateGreatEqual(10.0, "LB");
+            engine.CreateGreaterEqual(10.0, "LB");
 
             engine.AddLHS(1.0, new VarS { S = "x" });
             engine.CreateLessEqual(1.0, "UB");
@@ -244,7 +236,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
         public void TimeLimit_Hit_StatusIsNotError()
         {
             if (!CplexAvailable) return;
-            using var engine = BuildEngine(timeLimit: 0.001);  // 1ms → 一定 timeout
+            using var engine = BuildEngine(timeLimit: 0.001);  // 時間上限設為 1 毫秒，用來測試極短時限下的處理
 
             engine.BuildBVs<VarS>(new List<string> { "x" });
             engine.AddLHS(1.0, new VarS { S = "x" });
@@ -268,7 +260,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             // a + b >= 1, min a + b
             engine.AddLHS(1.0, new VarS { S = "a" });
             engine.AddLHS(1.0, new VarS { S = "b" });
-            engine.CreateGreatEqual(1.0, "Sum");
+            engine.CreateGreaterEqual(1.0, "Sum");
 
             engine.AddLHS(1.0, new VarS { S = "a" });
             engine.AddLHS(1.0, new VarS { S = "b" });
@@ -282,7 +274,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
         }
 
         [Fact]
-        public void OptProject_OnSolved_RunsExactlyOnceAfterSuccessfulSolve()
+        public void OptProjectSolve_OnSolved_RunsExactlyOnceAfterSuccessfulSolve()
         {
             if (!CplexAvailable) return;
             int calls = 0;
@@ -294,16 +286,15 @@ namespace OptimFoundation.Cplex.Tests.Integration
                     e.CreateMinimize();
                 });
 
-            using var project = new OptProject(model, retentionDays: 0)
-                .UseConfig(() => new ProjectConfig { EnableSolverLog = false })
-                .OnSolved(_ => calls++);
+            using var project = new OptProject("on-solved-success", retentionDays: 0)
+                .LoadConfig(new ProjectConfig { EnableSolverLog = false });
 
-            Assert.True(project.Execute());
+            Assert.True(project.Solve(model, new CplexConfig(), onSolved: _ => calls++));
             Assert.Equal(1, calls);
         }
 
         [Fact]
-        public void OptProject_OnSolved_DoesNotRunAfterFailedSolve()
+        public void OptProjectSolve_OnSolved_DoesNotRunAfterFailedSolve()
         {
             if (!CplexAvailable) return;
             int calls = 0;
@@ -317,18 +308,20 @@ namespace OptimFoundation.Cplex.Tests.Integration
                 .AddConstraints(e =>
                 {
                     e.AddLHS(1.0, new VarS { S = "x" });
-                    e.CreateGreatEqual(1.0, "LB");
+                    e.CreateGreaterEqual(1.0, "LB");
                     e.AddLHS(1.0, new VarS { S = "x" });
                     e.CreateLessEqual(0.0, "UB");
                 });
 
-            using var project = new OptProject(model, retentionDays: 0)
-                .UseConfig(() => new ProjectConfig { EnableSolverLog = false })
-                .OnSolved(_ => calls++);
+            using var project = new OptProject("on-solved-failure", retentionDays: 0)
+                .LoadConfig(new ProjectConfig { EnableSolverLog = false });
 
-            Assert.False(project.Execute());
+            Assert.False(project.Solve(model, new CplexConfig(), onSolved: _ => calls++));
             Assert.Equal(SolveStatus.Infeasible, project.Engine.Status);
             Assert.Equal(0, calls);
+            // 失敗也照記一筆 Trial
+            Assert.NotNull(project.Trial);
+            Assert.Equal(SolveStatus.Infeasible, project.Trial.Metrics.Status);
         }
 
         [Fact]
@@ -336,10 +329,10 @@ namespace OptimFoundation.Cplex.Tests.Integration
         {
             if (!CplexAvailable) return;
             string tag = "empty-execute-" + Guid.NewGuid().ToString("N");
-            using var project = new OptProject(new OptModel(tag), tag, retentionDays: 0)
-                .UseConfig(() => new ProjectConfig { EnableSolverLog = false });
+            using var project = new OptProject(tag, retentionDays: 0)
+                .LoadConfig(new ProjectConfig { EnableSolverLog = false });
 
-            Assert.True(project.Execute());
+            Assert.True(project.Solve(new OptModel(tag), new CplexConfig()));
             Assert.Equal(SolveStatus.Optimal, project.Engine.Status);
             Assert.Contains("[MODEL_EMPTY]", ReadLatestLog(tag));
         }
@@ -349,23 +342,22 @@ namespace OptimFoundation.Cplex.Tests.Integration
         {
             if (!CplexAvailable) return;
             string tag = "empty-run-" + Guid.NewGuid().ToString("N");
-            Logging.SetLogFileName(tag);
 
             try
             {
-                Experiment result = new OptExperiment(tag, "empty model")
+                Experiment result = new OptProject(tag, retentionDays: 0).Experiment("exp", "empty model")
                     .AddTrial(new OptModel("Empty"), "default", new CplexConfig { TimeLimit = 30 })
                     .Run();
 
                 Trial trial = Assert.Single(result.Trials);
                 Assert.Equal(SolveStatus.Optimal, trial.Metrics.Status);
-                Assert.Contains("[MODEL_EMPTY]", ReadLatestLog(tag));
+                Assert.Contains("[MODEL_EMPTY]", ReadLatestLog($"{tag}-exp_exp"));
             }
             finally
             {
-                foreach (string suffix in new[] { ".csv", "-meta.csv", "-trajectory.csv" })
+                foreach (string kind in new[] { "trial", "meta", "summary", "trajectory" })
                 {
-                    string path = FolderDir.Experiment.GetPathFile(tag + suffix);
+                    string path = FolderDir.Experiment.GetPathFile($"{tag}-{kind}.csv");
                     if (File.Exists(path)) File.Delete(path);
                 }
             }

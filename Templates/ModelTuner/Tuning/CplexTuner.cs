@@ -6,10 +6,10 @@ using CplexParam = ILOG.CPLEX.Cplex.Param;
 namespace ModelTuner
 {
     /// <summary>
-    /// S2.5（solver-tuning-guide §3.6）：CPLEX 內建 tuning tool 直接吃 Instances/tune 的模型檔。
-    /// 框架沒有封裝 <c>TuneParam</c>（guide 附錄 B 缺口），這裡用子類別取得 protected <c>Model</c> 補上，
-    /// 好處是 productionBaseline 的全部旋鈕照樣經框架的 <c>Configuration()</c> 套進 CPLEX；框架補上 AutoTune 後改用它。
-    /// 產出只是候選來源：每個建議參數拆成獨立 variant 走 §4 驗證，NEVER 直接 promote。
+    /// 在 S2.5 階段使用 CPLEX 內建調參工具，讀取 Instances/tune 的模型檔（solver-tuning-guide §3.6）。
+    /// 框架尚未提供 <c>TuneParam</c> 入口（guide 附錄 B），所以繼承 OptEngine 來存取 protected <c>Model</c>，
+    /// 讓 productionBaseline 的全部設定仍透過 <c>LoadConfig()</c> 套用到 CPLEX；框架日後提供 AutoTune 時再改用它。
+    /// 工具建議的每個參數都要分開做比較實驗，通過 §4 驗證後才能採用為正式設定。
     /// </summary>
     internal sealed class CplexTuner : OptEngine
     {
@@ -18,7 +18,7 @@ namespace ModelTuner
             "CPXPARAM_TimeLimit", "CPXPARAM_DetTimeLimit", "CPXPARAM_Tune_",
         };
 
-        private CplexTuner(CplexConfig config, ProjectConfig project) : base(config, project) { }
+        private CplexTuner(CplexConfig config, ProjectConfig output) : base(config, output) { }
 
         public static int Run(TunerWorkspace workspace, CplexConfig productionBaseline, double budgetSeconds, int repeat)
         {
@@ -29,7 +29,7 @@ namespace ModelTuner
             }
 
             // TuneParam 把 TiLim / DetTiLim 當成「整個 tune 的總時限」，每次試跑的時限改由 Tune.TimeLimit / Tune.DetTimeLimit 管。
-            // 所以契約的時限搬到 Tune.*，其餘設定全部當 fixed set（tune 不准動）——建議值才會是「baseline + 幾顆」。
+            // 把原本每次求解的時限移到 Tune.*，其餘基準設定列入 fixed set，不准調參工具更動。
             var fixedConfig = productionBaseline.Clone();
             double? perTrialSeconds = fixedConfig.TimeLimit;
             double? perTrialTicks = fixedConfig.DeterministicTimeLimit;
@@ -41,10 +41,10 @@ namespace ModelTuner
             fixedConfig.TuningMeasure = null;
             fixedConfig.TuningDisplay = null;
 
-            var project = new ProjectConfig { EnableSolverLog = true, ExportLP = false, ExportMPS = false, ExportSol = false };
+            // TuneParam 不經過 Solve 或 Experiment，因此要在這裡設定本次調參使用的 log 檔名。
             Logging.SetLogFileName($"{workspace.ProjectName}-cplex-tune");
 
-            using var tuner = new CplexTuner(fixedConfig, project);
+            using var tuner = new CplexTuner(fixedConfig, new ProjectConfig { EnableSolverLog = true });
             tuner.SetModelName($"{workspace.ProjectName}-cplex-tune");
             tuner.Build();
             return tuner.Tune(workspace, fixedConfig, budgetSeconds, perTrialSeconds, perTrialTicks, repeat);
@@ -53,7 +53,7 @@ namespace ModelTuner
         private int Tune(TunerWorkspace workspace, CplexConfig fixedConfig, double budgetSeconds, double? perTrialSeconds, double? perTrialTicks, int repeat)
         {
             var fixedSet = Model.GetParameterSet();
-            // 值剛好等於 CPLEX 預設的旋鈕不會出現在 GetParameterSet()；停止契約的 gap 明確釘進 fixed set，tune 才不會動到終點線
+            // GetParameterSet() 不包含等於 CPLEX 預設值的設定；明確加入已指定的 gap，避免調參工具改變求解停止條件。
             if (fixedConfig.MipGap.HasValue) fixedSet.SetParam(CplexParam.MIP.Tolerances.MIPGap, fixedConfig.MipGap.Value);
             if (fixedConfig.AbsoluteMipGap.HasValue) fixedSet.SetParam(CplexParam.MIP.Tolerances.AbsMIPGap, fixedConfig.AbsoluteMipGap.Value);
 
@@ -73,9 +73,9 @@ namespace ModelTuner
             int status;
             if (files.Length == 1)
             {
-                // TuningRepeat 只在單一模型的 TuneParam 有效：CPLEX 以 permutation 人工製造多樣本，補單 instance 缺樣本的洞
+                // 單一模型才使用 TuningRepeat：CPLEX 會改變模型元素的排列，多次量測同一模型，減少單次結果的偶然性。
                 Model.SetParam(CplexParam.Tune.Repeat, repeat);
-                ImportModel(files[0]);
+                ReadModel(files[0]);
                 status = Model.TuneParam(fixedSet);
             }
             else
@@ -99,7 +99,7 @@ namespace ModelTuner
             return 0;
         }
 
-        // 建議 = tuned 參數檔裡有、但 fixed set 沒有（或值不同）的那幾行；時限與 Tune.* 是這次 tune 自己的控制參數，不算
+        // 找出調參結果相較固定設定新增或改值的參數；排除總時限和 Tune.*，因為它們只控制調參過程。
         private static List<string> DiffPrm(string fixedPath, string tunedPath)
         {
             var before = ReadPrm(fixedPath);

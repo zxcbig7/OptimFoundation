@@ -45,7 +45,7 @@ namespace RosteringProblem
         private static double Assign(Dictionary<string, double> assign, DateTime date, string employee, string group)
             => assign.TryGetValue(new VariableB_ShiftAssign { Date = date, Employee = employee, Group = group }.ToString(), out var v) ? v : 0.0;
 
-        /// <summary>逐條把解代回 Model.md 的限制式；不成立就丟例外，NEVER 只記 log 繼續。</summary>
+        /// <summary>逐條將解值代回 Model.md 的限制式；任一條不成立就丟出例外，停止後續處理。</summary>
         private static void ValidateRules(
             Dataload data,
             Dictionary<string, double> assign,

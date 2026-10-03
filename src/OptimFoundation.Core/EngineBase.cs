@@ -7,8 +7,8 @@ namespace OptimFoundation.Core
 {
     #region Interfaces and Enums
     /// <summary>
-    /// 跨引擎共通的求解設定（停止條件 / 資源 / tuning 旋鈕）；各 solver 的 config 實作此介面，
-    /// 並把這些共通項目對映到自家專屬欄位。null = 使用 solver 預設。
+    /// 各求解器共用的設定，例如時間上限、執行緒數與演算法選項。各求解器的 config 實作此介面，
+    /// 將這些設定轉成該求解器使用的參數。null 表示使用求解器預設值。
     /// </summary>
     public interface ISolverConfig
     {
@@ -24,7 +24,7 @@ namespace OptimFoundation.Core
         /// <summary>隨機種子（CPLEX randomSeed）。要重現結果就固定它。</summary>
         int? Seed { get; set; }
 
-        /// <summary>求解重點（CPLEX mipEmphasis）。只記原始整數值，各 solver 語意不同、不做正規化。</summary>
+        /// <summary>求解重點（CPLEX mipEmphasis）。整數值的意思由各求解器決定，框架不轉換。</summary>
         int? Emphasis { get; set; }
 
         /// <summary>可行性容差（CPLEX epRHS / Solver Epsilon）。</summary>
@@ -33,7 +33,7 @@ namespace OptimFoundation.Core
         /// <summary>最佳性容差（CPLEX epOpt）。</summary>
         double? OptimalityTol { get; set; }
 
-        /// <summary>根節點 LP 演算法（CPLEX algorithm）。取值語意依 solver。</summary>
+        /// <summary>根節點使用的 LP 演算法（CPLEX algorithm）。各整數值代表的演算法由求解器決定。</summary>
         int? RootAlgorithm { get; set; }
 
         /// <summary>前處理開關（CPLEX PreInd）；0 = 關閉。</summary>
@@ -45,44 +45,44 @@ namespace OptimFoundation.Core
         /// <summary>記憶體上限 MB（CPLEX workMemory）。</summary>
         double? MemoryLimitMb { get; set; }
 
-        /// <summary>Solve 前 scale guard 門檻：RegisteredVariableCount 超過此值 → PreSolveGuard 只 Warn 不阻擋。預設值 default interface member，不破壞既有實作者。</summary>
+        /// <summary>求解前的變數數量警告門檻。VariableCount 超過門檻時只記錄警告，仍會繼續求解；未覆寫時使用此預設值。</summary>
         int ScaleWarnThreshold => 10_000_000;
     }
 
 
-    /// <summary>求解引擎的統一介面：建模型 → 求解 → 取解/telemetry。EngineBase 提供泛型實作。</summary>
+    /// <summary>求解引擎共用的操作：建立模型、求解，以及讀取解值與求解紀錄。EngineBase 提供共用實作。</summary>
     public interface ISolverEngine : IDisposable
     {
-        /// <summary>本引擎使用的求解組態。</summary>
+        /// <summary>本引擎使用的求解設定。</summary>
         ISolverConfig Config { get; }
 
         /// <summary>求解狀態；未求解為 NotSolved。</summary>
         SolveStatus Status { get; }
 
-        /// <summary>最近一次 Solve() 的統一 telemetry；尚未求解為 null。</summary>
+        /// <summary>最近一次 Solve() 記錄的求解狀態、耗時與結果；尚未求解為 null。</summary>
         SolveMetrics LastMetrics { get; }
 
-        /// <summary>目前模型的問題類型（LP / MILP / IP / BP），向已組裝的 solver 模型取值判定。每次讀取都重新問一次模型，求解前即可呼叫。</summary>
+        /// <summary>目前模型的問題類型（LP / MILP / IP / BP）。每次讀取都依求解器內的變數與特殊結構重新判定，求解前即可讀取。</summary>
         ModelType ModelType { get; }
 
-        /// <summary>建立 solver 模型並套用組態；建變數 / 限制式前 MUST 先呼叫。</summary>
+        /// <summary>建立求解器模型並套用設定；建立變數或限制式前必須先呼叫。</summary>
         void Build();
 
         /// <summary>求解。回傳 true 代表取得 Optimal 或 Feasible 解。</summary>
         bool Solve();
 
-        /// <summary>目標式解值；MUST 在求解成功後呼叫。</summary>
+        /// <summary>取得目標式的解值；必須在求解成功後呼叫。</summary>
         double GetObjectiveValue();
 
-        /// <summary>依變數全名取解值（TypeName@s1@s2@…）；MUST 在求解成功後呼叫。</summary>
+        /// <summary>依變數全名取得解值（TypeName@s1@s2@…）；必須在求解成功後呼叫。</summary>
         double GetVariableValue(string name);
 
-        /// <summary>取解結果字典；varTypeName = null 回傳所有變數，否則只回該型別（前綴 "TypeName@"）。</summary>
+        /// <summary>取解結果字典；varTypeName = null 回傳所有變數，否則只回該型別（名稱為 TypeName 或以 "TypeName@" 開頭）。</summary>
         IReadOnlyDictionary<string, double> GetSolution(string varTypeName = null);
 
         /// <summary>
         /// 以「變數全名 → 值」提供一組 MIP start；名稱格式同 <see cref="GetSolution"/>，可直接把上一個 engine 的解接過來。
-        /// MUST 在模型建完、Solve() 之前呼叫。LP 模型沒有 MIP start 可用，會 warn 後略過。
+        /// 必須在模型建完、Solve() 之前呼叫。LP 模型不使用 MIP start，會記錄警告後略過。
         /// </summary>
         /// <returns>實際套用的變數數；略過時為 0。</returns>
         int AddMIPStart(IReadOnlyDictionary<string, double> values, string name = null);
@@ -194,62 +194,56 @@ namespace OptimFoundation.Core
     }
 
     /// <summary>
-    /// 所有 solver 引擎的泛型基底：把「建模」與「呼叫 solver」分離。
-    /// 泛型參數 TModel/TVar/TExpr/TConstr 是各 solver 的原生型別；子類別只需實作 Solver Contract 那組 abstract。
-    /// 提供三大共用機制：① 變數管理（Build*Vs 批次建立 + VariableSets/Variables 索引）；
-    /// ② Pool API（AddLHS/AddRHS 累積左右兩側 → Create* 送出，框架自動算 LHS−RHS，免手動移項）；
-    /// ③ 軟性限制式（penalty 法通用實作）。
+    /// 各求解器引擎共用的基底類別，負責整理變數、限制式與目標式。
+    /// TModel/TVar/TExpr/TConstr 分別是求解器的模型、變數、運算式與限制式型別；子類別實作下方的 abstract 方法來呼叫求解器。
+    /// 可批次建立變數並存入 Variables；用 AddLHS/AddRHS 暫存兩側的項，再由 Create* 移項並建立限制式。
+    /// 也支援軟性限制式，將違反量的罰分（penalty）加入目標式。
     /// </summary>
     public abstract class EngineBase<TModel, TVar, TExpr, TConstr> : ISolverEngine, ITrajectorySource
     {
-        /// <summary>各 solver 的模型物件（CPLEX->Cplex …）；Configuration() 建立、Dispose() 釋放。</summary>
+        /// <summary>各 solver 的模型物件（CPLEX->Cplex …）；LoadConfig() 建立、Dispose() 釋放。</summary>
         protected TModel Model;
 
-        /// <summary>全部變數：key = 變數名，value = solver 原生變數。含軟性限制式自動加的彈性變數。</summary>
+        /// <summary>
+        /// 變數池：key = 變數名，value = solver 原生變數。框架唯一的變數索引，含軟性限制式自動加的彈性變數。
+        /// 依型別查詢（GetSetVarNames / GetSetVarValues / GetSolution(type)）直接以型別名篩選這個池。
+        /// </summary>
         protected readonly Dictionary<string, TVar> Variables = new Dictionary<string, TVar>();
 
-        /// <summary>依變數型別分組：型別名 → (變數名 → 原生變數)。只含經 Build*Vs 建立的變數。</summary>
-        protected readonly Dictionary<string, Dictionary<string, TVar>> VariableSets = new Dictionary<string, Dictionary<string, TVar>>();
-
-        /// <summary>已建立的變數總數（Variables dict 的大小，含彈性變數）。</summary>
+        /// <summary>Variables 字典中的變數總數，包含軟性限制式自動加入的彈性變數。</summary>
         public int VariableCount => Variables.Count;
-        /// <summary>
-        /// 經 Build*Vs 登記進 VariableSets 的變數總數。
-        /// 與 <see cref="VariableCount"/> 的差別：後者算的是 Variables dict，額外含軟性限制式自動加的彈性變數（Surplus_/Deficit_/Delta_*）。
-        /// </summary>
-        public int RegisteredVariableCount => VariableSets.Values.Sum(s => s.Count);
 
         /// <summary>
         /// 目前模型的問題類型：無 Integer / Binary → LP；連續與 Integer / Binary 並存 → MILP；
         /// 全為 Binary → BP；無連續且含 Integer → IP。
-        /// 值向已組裝的 solver 模型取得（見 <see cref="ReadModelComposition"/>），不是框架這一側的記帳，
-        /// 因此自建與 ImportModel 匯入兩條路徑同一套答案；每次讀取都重新問一次模型，求解前即可呼叫。
+        /// 判定資料直接取自求解器模型（見 <see cref="ReadModelComposition"/>），不使用框架建立時累計的數量，
+        /// 因此自行建立或用 ReadModel 匯入的模型都適用；每次讀取會重新判定，求解前即可讀取。
         /// 軟性限制式的彈性變數是連續變數，因此 IP / BP 模型加了軟性限制式會判定為 MILP。
         /// </summary>
         public ModelType ModelType => ResolveModelType(ReadModelComposition());
 
-        /// <summary>建構時傳入的求解器組態；由各 engine 在 Configuration() 內逐項套用到 solver。</summary>
+        /// <summary>建構時傳入的求解器組態；由各 engine 在 LoadConfig() 內逐項套用到 solver。</summary>
         public ISolverConfig Config { get; protected set; }
 
-        /// <summary>求解狀態；由各 engine 的 SolveCore() 回填，未求解前為 NotSolved。</summary>
+        /// <summary>求解狀態；各 engine 完成 SolveCore() 後會寫入結果，未求解前為 NotSolved。</summary>
         public SolveStatus Status { get; protected set; } = SolveStatus.NotSolved;
 
-        /// <summary>求得的最佳目標值；由 SolveCore() 回填，未求解前為 0。</summary>
+        /// <summary>求得的最佳目標值；SolveCore() 完成後會寫入結果，未求解前為 0。</summary>
         public double BestObjValue { get; protected set; }
 
-        /// <summary>求解結束時的 MIP gap（相對誤差）；由 SolveCore() 回填，LP 問題為 0。</summary>
+        /// <summary>求解結束時的 MIP gap（相對誤差）；SolveCore() 完成後會寫入結果，LP 問題為 0。</summary>
         public double MIPGap { get; protected set; }
 
-        /// <summary>最近一次 Solve() 的統一 telemetry；由各 engine 的 Solve() 回填。</summary>
+        /// <summary>最近一次 Solve() 的狀態、耗時與結果，由各求解器引擎填入。</summary>
         public SolveMetrics LastMetrics { get; protected set; }
 
-        /// <summary>已建立的限制式數量；預設 0，需要的 engine override。</summary>
+        /// <summary>已建立的限制式數量；預設為 0，由需要提供此數量的引擎覆寫。</summary>
         public virtual int ConstraintCount => 0;
 
         // 建立統計的計數單位：Expected = 應該建幾個，Actual = 實際成功建了幾個（兩者不等即代表有被略過或失敗）
         private sealed class BuildCount
         {
-            /// <summary>預期建立數（變數名笛卡兒積數量 / 嘗試送出的限制式條數。</summary>
+            /// <summary>預期建立數：各維度所有組合的變數數量，或嘗試建立的限制式條數。</summary>
             public int Expected;
 
             /// <summary>實際建立數；重複名稱被略過或建立失敗都不計入。</summary>
@@ -260,37 +254,23 @@ namespace OptimFoundation.Core
         private readonly Dictionary<string, BuildCount> _constraintBuildCounts = new Dictionary<string, BuildCount>();
         private bool _buildSummaryDirty = true;
 
-        // 建模記帳的型別分布、匯入部分與目標式：與 solver 模型對帳用（見 ReconcileModelStats）。
-        // 匯入的記帳與 Build*Vs 的記帳分開放，VariableBuildCounts / ConstraintBuildCounts 維持「只記框架親手建的」語意。
-        private readonly int[] _ledgerVarTypes = new int[3];
-        private readonly int[] _importedVarTypes = new int[3];
-        private int _importedConstraints;
-        private bool _imported;
-        private ObjectiveSense? _ledgerObjective;
-
-        // 被限制式或目標式引用過的變數。solver 只收這些——宣告了卻沒用到的變數會讓框架比 solver 多，對帳時拿來點名
+        // 記錄限制式或目標式用過的變數。CPLEX 不收沒被引用的變數，也不會說是哪幾個；只有這份紀錄列得出名單。
         private readonly HashSet<TVar> _referencedVariables = new HashSet<TVar>();
 
         /// <summary>
-        /// 最近一次 <see cref="Solve"/> 前的模型統計對帳結果（框架建模記帳 vs solver 模型實際）；尚未求解為 null。
-        /// 同一份也放在 <see cref="SolveMetrics.ModelStats"/>，實驗紀錄因此帶得到。要隨時對帳改呼叫 <see cref="ReconcileModelStats"/>。
-        /// </summary>
-        public ModelStatsReport ModelStats { get; private set; }
-
-        /// <summary>
-        /// 各變數型別的「預期 / 實際」建立數——摘要 log 印的同一份資料，開發時可直接看。
-        /// 每次存取取當下的值，改動它不會影響引擎。
+        /// 各變數型別的預期與實際建立數，與摘要 log 相同。
+        /// 每次讀取都回傳當下的複本，修改複本不影響引擎。
         /// </summary>
         public IReadOnlyDictionary<string, (int Expected, int Actual)> VariableBuildCounts
             => _variableBuildCounts.ToDictionary(kv => kv.Key, kv => (kv.Value.Expected, kv.Value.Actual));
 
-        /// <summary>各限制式群組的「預期 / 實際」建立數。語意同 <see cref="VariableBuildCounts"/>。</summary>
+        /// <summary>各限制式群組的「預期 / 實際」建立數；和 <see cref="VariableBuildCounts"/> 一樣，每次讀取都回傳當下的複本。</summary>
         public IReadOnlyDictionary<string, (int Expected, int Actual)> ConstraintBuildCounts
             => _constraintBuildCounts.ToDictionary(kv => kv.Key, kv => (kv.Value.Expected, kv.Value.Actual));
 
         /// <summary>
-        /// 盡力擷取選用的整數型 telemetry（如 node 數 / iteration 數）。各 solver 方法名不一，
-        /// 依序嘗試傳入的無參數方法名，取不到回 null（不丟例外）。
+        /// 讀取求解器提供的整數統計值，例如節點數或迭代數。因為各求解器的方法名稱不同，
+        /// 會依序尋找傳入的無參數方法；找到就呼叫。都不存在或呼叫失敗時回傳 null。
         /// </summary>
         protected static long? TryInvokeLong(object target, params string[] methodNames)
         {
@@ -309,14 +289,14 @@ namespace OptimFoundation.Core
             return null;
         }
 
-        // ── ITrajectorySource 預設：不支援（CPLEX override）。未支援者呼叫端不報錯 ──
-        /// <summary>本 engine 是否能記錄求解過程的收斂軌跡。預設 false，CPLEX override 為 true。</summary>
+        // ITrajectorySource 預設不記錄求解過程；支援此功能的引擎（如 CPLEX）會覆寫。
+        /// <summary>是否能記錄求解過程中的目標值與最佳界。預設 false，CPLEX 引擎覆寫為 true。</summary>
         public virtual bool SupportsTrajectory => false;
 
-        /// <summary>開啟收斂軌跡記錄，MUST 在 Solve() 之前呼叫。不支援的 engine 為 no-op（不丟例外）。</summary>
-        public virtual void EnableTrajectory() { /* no-op；支援的 engine override */ }
+        /// <summary>開啟求解過程記錄，必須在 Solve() 之前呼叫。不支援的引擎不做任何事，也不拋例外。</summary>
+        public virtual void EnableTrajectory() { /* 預設不做任何事；支援此功能的引擎會覆寫 */ }
 
-        /// <summary>最近一次求解的收斂軌跡（時間 / incumbent / bound 序列）；未開啟或不支援時回空清單。</summary>
+        /// <summary>最近一次求解的取樣紀錄，包含時間、當時最佳可行解的目標值與最佳界；未開啟或不支援時回空清單。</summary>
         public virtual IReadOnlyList<ConvergencePoint> Trajectory =>
             LastMetrics != null ? (IReadOnlyList<ConvergencePoint>)LastMetrics.Convergence
                                 : new List<ConvergencePoint>();
@@ -330,36 +310,36 @@ namespace OptimFoundation.Core
         private readonly HashSet<string> _verifyConstraints = new HashSet<string>();
 
         // 目標式追蹤：供軟性限制式把 penalty 併入目標式。
-        // 各 engine 目標式語意不同（CPLEX 新增 / Solver 覆寫），統一由 AddObjectiveTerm 處理。
+        // 各求解器新增或取代目標式的方式不同，由 AddObjectiveTerm 統一重新設定。
         private readonly List<(double coef, TVar var)> _objectiveTerms = new List<(double, TVar)>();
         private readonly List<(double coef, TVar var)> _softPenaltyTerms = new List<(double, TVar)>();
         private double _objectiveConstant = 0;
         private ObjectiveSense _objectiveSense = ObjectiveSense.Minimize;
         private int _softCount = 0;
 
-        // ── 建模當下狀態（唯讀；開發時看得見自己組到哪）────────────────
+        // 建模進度與暫存內容（唯讀）。
 
-        /// <summary>目前 pool 累積的內容：LHS / RHS 各幾項、常數各多少。<see cref="CreateEqual(string)"/> 等會清空它。</summary>
+        /// <summary>目前暫存的式子：左側與右側各有幾個變數項、常數合計多少。<see cref="CreateEqual(string)"/> 等方法建立限制式後會清空。</summary>
         public (int LhsTerms, double LhsConst, int RhsTerms, double RhsConst) PoolState
             => (_lhsTerms.Count, _lhsConst, _rhsTerms.Count, _rhsConst);
 
         /// <summary>目標式方向（Minimize / Maximize）。</summary>
         public ObjectiveSense ObjectiveSense => _objectiveSense;
 
-        /// <summary>目標式累積的項數（不含尚未併入的 soft penalty）。</summary>
+        /// <summary>目標式的變數項數，不包含軟性限制式的罰分項。</summary>
         public int ObjectiveTermCount => _objectiveTerms.Count;
 
         /// <summary>目標式常數項，取自建目標式時 pool 的 LHS 常數（<see cref="AddLHS(double)"/>）。</summary>
         public double ObjectiveConstant => _objectiveConstant;
 
-        /// <summary>已建立的軟性限制式條數。</summary>
+        /// <summary>軟性限制式自動命名目前使用的序號；指定名稱的限制式不計入，建立失敗也不會退回序號。</summary>
         public int SoftConstraintCount => _softCount;
 
-        /// <summary>soft penalty 併入目標式的項數。</summary>
+        /// <summary>已加入目標式的軟性限制式罰分項數。</summary>
         public int SoftPenaltyTermCount => _softPenaltyTerms.Count;
 
         /// <summary>
-        /// 建立引擎，只記下組態不碰 solver；真正建立 solver 模型物件要等 <see cref="Build"/>。
+        /// 建立引擎時只保存設定；呼叫 <see cref="Build"/> 才會建立求解器模型。
         /// </summary>
         /// <param name="config">求解器組態；傳 null 時 PreSolveGuard 的規模檢查會被跳過。</param>
         protected EngineBase(ISolverConfig config)
@@ -369,31 +349,30 @@ namespace OptimFoundation.Core
 
         #region Solver Contract
         // ════════════════════════════════════════════════════════════════
-        // 新增 Solver 必須 override 的 abstract 方法：
-        //   Configuration  — 建立 Model 物件並套用所有 Config 參數
-        //   AddVariable    — 向 solver 新增單一變數，同時寫入 Variables dict
-        //   LinearExpr     — 從 (coef, var) list 建立 solver 的線性表達式物件
-        //   AddConstraint  — 新增一般限制式（<=  ==  >=）
-        //   AddRangeConstraint — 新增範圍限制式（lb <= expr <= ub）
-        //   SetObjective   — 設定目標式（含常數項）與方向（Minimize / Maximize）
-        //   SetVariableBounds — 直接修改已建立變數的 LB / UB
-        //   AddMIPStartCore — 把已解析的 (變數, 值) 交給 solver 當 MIP start
-        //   ReadModelComposition — 向 solver 模型讀變數型別組成，供 ModelType 判定問題類型
-        //   ReadSolverModelCounts — 向 solver 模型讀規模統計，供 ReconcileModelStats 與框架記帳對帳
-        //   BuildCore      — 入口：呼叫 Configuration(Config) 完成初始化（由 Build() template method 呼叫）
-        //   SolveCore      — 求解，回傳 bool（true = Optimal or Feasible）（由 Solve() template method 呼叫，前面先跑 PreSolveGuard）
-        //   GetObjectiveValue / GetVariableValue / Dispose
+        // 接入新求解器時，子類別必須實作下列 abstract 方法：
+        // LoadConfig：建立 Model 物件並套用 Config 參數
+        // AddVariable：向求解器新增單一變數，並存入 Variables 字典
+        // LinearExpr：把 (係數, 變數) 清單轉成求解器的線性運算式
+        // AddConstraint：新增一般限制式（<=、=、>=）
+        // AddRangeConstraint：新增範圍限制式（lb <= expr <= ub）
+        // SetObjective：設定目標式（含常數項）與方向（Minimize / Maximize）
+        // SetVariableBounds：修改已建立變數的上下界
+        // AddMIPStartCore：把已找到的 (變數, 值) 交給求解器作為 MIP start
+        // ReadModelComposition：讀取求解器中的變數型別數量，供 ModelType 判定問題類型
+        // BuildCore：由 Build() 呼叫，負責透過 LoadConfig(Config) 初始化模型
+        // SolveCore：由 Solve() 完成規模檢查後呼叫；找到 Optimal 或 Feasible 解時回傳 true
+        // GetObjectiveValue / GetVariableValue / Dispose：讀取解值與釋放資源
         //
-        // 可選 override 的 virtual 方法（EngineBase 有 default 實作）：
-        //   AddVariables   — 批次建立變數（solver override 用原生 batch API 提升效能）
-        //   BuildCVs / BuildIVs / BuildBVs — 批次建立變數，寫入 VariableSets
-        //   CreateLeSoft / CreateGeSoft / CreateEqSoft — 軟性限制式（penalty 法）
+        // 下列 virtual 方法已有預設實作，子類別可視需要覆寫：
+        // AddVariables：批次建立變數；可改用求解器的批次 API 加速
+        // BuildCVs / BuildIVs / BuildBVs：批次建立變數並存入 Variables
+        // CreateLessEqualSoft / CreateGreaterEqualSoft / CreateEqualSoft：建立軟性限制式並加入違反罰分
         // ════════════════════════════════════════════════════════════════
 
         /// <summary>建立 solver 原生模型物件並把 config 的每一項參數套用上去。由 BuildCore() 呼叫。</summary>
-        public abstract void Configuration(ISolverConfig config);
+        public abstract void LoadConfig(ISolverConfig config);
 
-        /// <summary>向 solver 新增單一變數，並以 name 為 key 寫入 Variables dict。</summary>
+        /// <summary>向 solver 新增單一變數，並以 name 為 key 存入 Variables 字典。</summary>
         /// <param name="name">變數全名（Build*Vs 產生的格式為 TypeName@s1@s2@…）。</param>
         /// <param name="lb">下界。</param>
         /// <param name="ub">上界。</param>
@@ -401,7 +380,7 @@ namespace OptimFoundation.Core
         /// <returns>solver 的原生變數物件。</returns>
         protected abstract TVar AddVariable(string name, double lb, double ub, VarType type);
 
-        /// <summary>把 (係數, 變數) 序列組成 solver 的線性表達式物件。terms 只會被迭代一次。</summary>
+        /// <summary>把 (係數, 變數) 序列組成求解器的線性運算式；實作應只列舉 terms 一次。</summary>
         protected abstract TExpr LinearExpr(IEnumerable<(double coef, TVar var)> terms);
 
         /// <summary>新增一般限制式 lhs (≤ | = | ≥) rhs，並把 name 設為 solver 端的限制式名稱。</summary>
@@ -411,11 +390,11 @@ namespace OptimFoundation.Core
         protected abstract TConstr AddRangeConstraint(string name, TExpr expr, double lb, double ub);
 
         /// <summary>
-        /// 設定目標式 expr + constant。實作 MUST 為「覆寫」語意——重複呼叫要換掉舊目標式而非疊加，
-        /// 否則軟性限制式的 penalty 累加（每加一項就重設一次目標式）會產生多個目標式。
+        /// 設定目標式 expr + constant。重複呼叫時必須取代舊目標式，
+        /// 因為每加入一項軟性限制式罰分，都會重新設定完整目標式；保留舊目標式會造成重複。
         /// </summary>
         /// <param name="expr">目標式的變數項。</param>
-        /// <param name="constant">目標式常數項（offset）；MUST 帶進 solver，否則求得的目標值會與 Model.md 差這個常數。</param>
+        /// <param name="constant">目標式常數項（offset）；必須傳給求解器，否則回傳目標值會與 Model.md 相差此常數。</param>
         /// <param name="sense">最小化或最大化。</param>
         protected abstract void SetObjective(TExpr expr, double constant, ObjectiveSense sense);
 
@@ -429,21 +408,14 @@ namespace OptimFoundation.Core
 
         /// <summary>
         /// 向 solver 模型讀出模型組成；<see cref="ModelType"/> 與求解前的模型類型 log 由此判定。
-        /// 實作 MUST 問模型本身（CPLEX 為 Ncols / NbinVars / NintVars / IsMIP），NEVER 改用框架的 Variables 索引——
-        /// 匯入的模型只存在於 solver 那一側，兩條路徑要同一個答案就只能問模型。模型尚未建立時回零值。
+        /// 必須讀取求解器模型（CPLEX 的 Ncols / NbinVars / NintVars / IsMIP），不能只計算 Variables 字典，
+        /// 才能同時正確處理自行建立與匯入的模型。模型尚未建立時回傳零值。
         /// </summary>
         /// <returns>
         /// 三個型別的變數數，加上模型是否含離散結構。後者涵蓋 Integer / Binary 以外的離散元素
         /// （semi-continuous、SOS），有它才能在沒有任何 Integer / Binary 變數時仍判定為 MILP。
         /// </returns>
         protected abstract (int Continuous, int Integer, int Binary, bool HasDiscreteStructure) ReadModelComposition();
-
-        /// <summary>
-        /// 向 solver 模型讀出規模統計，供 <see cref="ReconcileModelStats"/> 與框架的建模記帳對帳。
-        /// 實作 MUST 問模型本身（CPLEX 為 Ncols / Nrows / NbinVars / NintVars / NSOSs / NQCs / GetObjective…），
-        /// NEVER 用框架的 Variables 索引或建立統計湊數——那樣兩邊永遠相等，對帳就失去意義。模型尚未建立時回全零。
-        /// </summary>
-        protected abstract ModelCounts ReadSolverModelCounts();
 
         /// <summary>
         /// 建立模型的入口，由外部呼叫。先清空建立統計，再呼叫 BuildCore()（各 engine 實作）。
@@ -463,20 +435,17 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 求解入口：建模摘要 → 模型統計對帳（寫 log、存進 <see cref="ModelStats"/>）→ PreSolveGuard()（scale guard）→ SolveCore()（各 engine 實作）。
-        /// 對帳不一致只寫 <c>[MODEL_STATS_MISMATCH]</c> warn，不阻擋求解。
+        /// 開始求解：先記錄建模摘要，再點名沒被引用的變數，接著檢查變數數量門檻，最後呼叫各引擎的 SolveCore()。
+        /// 有沒被引用的變數時只記錄 <c>[UNREFERENCED_VARIABLES]</c> 警告，仍會繼續求解。
         /// </summary>
         public bool Solve()
         {
             try
             {
                 LogBuildSummary();
-                ModelStats = ReconcileModelStats();
-                LogModelStats(ModelStats);
+                WarnUnreferencedVariables();
                 PreSolveGuard();
-                bool ok = SolveCore();
-                if (LastMetrics != null) LastMetrics.ModelStats = ModelStats;
-                return ok;
+                return SolveCore();
             }
             catch (Exception ex)
             {
@@ -496,15 +465,14 @@ namespace OptimFoundation.Core
                 exception.GetBaseException().Message);
         }
 
-        /// <summary>各 engine 的建模實作；由 <see cref="Build"/> 這個 template method 呼叫，消費端不直接叫。</summary>
+        /// <summary>各引擎實作模型初始化的方法；使用者應呼叫 <see cref="Build"/>，由它清空統計後再呼叫此方法。</summary>
         protected abstract void BuildCore();
 
         /// <summary>各 engine 的求解實作；由 <see cref="Solve"/> 呼叫。回傳 true 代表取得 Optimal 或 Feasible 解。</summary>
         protected abstract bool SolveCore();
 
         // VariableCount > Config.ScaleWarnThreshold → Logging.Warn（只警告不阻擋，大但合法的模型不該被擋）。
-        // 量的是 Variables 索引而非 RegisteredVariableCount：軟性限制式的彈性變數與匯入的模型都不會登記進 VariableSets，
-        // 用後者會讓這些情況的規模恆為 0，guard 形同失效。Config 為 null 時防禦性跳過（不炸）。
+        // 量的是整個 Variables 池，含軟性限制式的彈性變數與匯入的變數。Config 為 null 時直接略過檢查。
         private void PreSolveGuard()
         {
             if (Config == null) return;
@@ -512,10 +480,10 @@ namespace OptimFoundation.Core
                 Logging.Warn($"[MODEL_SCALE_WARNING] 變數規模超過警告門檻 | count={VariableCount} threshold={Config.ScaleWarnThreshold} result=continued");
         }
 
-        /// <summary>取目標式的解值。MUST 在 Solve() 回傳 true 之後呼叫，否則各 solver 會丟自己的例外。</summary>
+        /// <summary>取得目標式解值。必須在 Solve() 回傳 true 後呼叫，否則求解器可能拋出例外。</summary>
         public abstract double GetObjectiveValue();
 
-        /// <summary>依變數全名取解值（格式 TypeName@s1@s2@…）。MUST 在求解成功後呼叫。</summary>
+        /// <summary>依變數全名取得解值（格式 TypeName@s1@s2@…），必須在求解成功後呼叫。</summary>
         public abstract double GetVariableValue(string name);
 
         /// <summary>釋放 solver 原生資源（CPLEX 的 native handle）。用 using 包住 engine，或交由 OptProject / OptExperiment 管理。</summary>
@@ -526,10 +494,10 @@ namespace OptimFoundation.Core
         #region VariableManager — 批次建立變數
 
         /// <summary>
-        /// 批次建立變數並寫入 Variables dict。
-        /// Default：逐筆呼叫 AddVariable。
-        /// Solver override 此方法可使用原生 array API（CPLEX NumVarArray）
-        /// 大幅減少 .NET ↔ native interop 次數。
+        /// 批次建立變數並存入 Variables 字典。
+        /// 預設逐筆呼叫 AddVariable。
+        /// 子類別可覆寫成求解器的陣列 API（如 CPLEX NumVarArray），
+        /// 減少 C# 與求解器原生程式之間的呼叫次數。
         /// </summary>
         protected virtual void AddVariables(IReadOnlyList<string> names, double lb, double ub, VarType type)
         {
@@ -539,11 +507,11 @@ namespace OptimFoundation.Core
             }
         }
 
-        // 批次建立某型別的所有變數：組出全部變數名 → 建到 solver → 登記進 VariableSets[型別名] 供之後查詢
+        // 批次建立某型別的所有變數：組出全部變數名 → 建到 solver 並登記進 Variables；之後依型別名篩選即可查回
         private void BatchBuild<TVariable>(double lb, double ub, VarType type, object[] sets)
             => BatchBuild(typeof(TVariable).Name, () => VariableBuilder.GetVarNames<TVariable>(sets), lb, ub, type);
 
-        // string 版：setName 直接當變數名 head，其餘流程與泛型版共用
+        // string 版以 setName 作為變數名稱的開頭，其餘流程與泛型版相同。
         private void BatchBuild(string setName, double lb, double ub, VarType type, object[] sets)
             => BatchBuild(setName, () => VariableBuilder.GetVarNames(setName, sets), lb, ub, type);
 
@@ -557,22 +525,12 @@ namespace OptimFoundation.Core
                 // 1) 由 sets 笛卡兒積組出所有變數名（TypeName@s1@s2@…）
                 names = nameFactory().ToList();
 
-                stage = "variable_set_initialization";
-                if (!VariableSets.ContainsKey(setName))
-                    VariableSets[setName] = new Dictionary<string, TVar>();
-
-                // 2) 實際在 solver 建立這些變數（子類別可用原生 batch API 加速）
+                // 2) 實際在 solver 建立這些變數並登記進 Variables（子類別可用原生 batch API 加速）
                 stage = "solver_creation";
                 AddVariables(names, lb, ub, type);
 
-                // 3) 登記到該型別的 VariableSet，供 ReadVar / GetSetVarValues 依型別查詢
-                stage = "variable_set_registration";
-                var varSet = VariableSets[setName];
-                foreach (var name in names)
-                    varSet[name] = Variables[name];
-
                 int actual = Variables.Count - before;
-                RecordVariableBuild(setName, type, names.Count, actual);
+                RecordVariableBuild(setName, names.Count, actual);
                 Logging.Info($"[變數建立完成] type={setName} count={actual}/{names.Count}");
             }
             catch (Exception ex)
@@ -580,7 +538,7 @@ namespace OptimFoundation.Core
                 int actual = Math.Max(0, Variables.Count - before);
                 string expected = names == null ? "unknown" : names.Count.ToString();
                 if (names != null)
-                    RecordVariableBuild(setName, type, names.Count, actual);
+                    RecordVariableBuild(setName, names.Count, actual);
                 Logging.ErrorOnce(
                     ex,
                     "VARIABLE_BUILD_FAILED",
@@ -639,8 +597,8 @@ namespace OptimFoundation.Core
         /// <summary>
         /// 批次建立連續變數，界限 [0, <see cref="OptBounds.Infinity"/>]（1E20 = CPLEX 的無上限）。
         /// </summary>
-        /// <typeparam name="TVariable">變數類別；其 property 宣告順序 MUST 與 sets 傳入順序一致，否則之後 AddLHS 會找不到變數。</typeparam>
-        /// <param name="sets">各維度的 set；框架取笛卡兒積產生所有變數名。</param>
+        /// <typeparam name="TVariable">變數類別；property 宣告順序必須與 sets 順序一致，否則 AddLHS 組出的名稱會查不到變數。</typeparam>
+        /// <param name="sets">各維度的集合；框架取各集合的所有組合（笛卡兒積）產生變數名稱。</param>
         public virtual void BuildCVs<TVariable>(params object[] sets)
         {
             ValidateExplicitVariableType<TVariable>(VarType.Continuous, nameof(BuildCVs));
@@ -654,7 +612,7 @@ namespace OptimFoundation.Core
             BatchBuild<TVariable>(lb, ub, VarType.Continuous, sets);
         }
 
-        /// <summary>批次建立整數變數，界限 [0, <see cref="OptBounds.Infinity"/>]。其餘語意同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
+        /// <summary>批次建立整數變數，界限 [0, <see cref="OptBounds.Infinity"/>]。維度順序要求同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
         public virtual void BuildIVs<TVariable>(params object[] sets)
         {
             ValidateExplicitVariableType<TVariable>(VarType.Integer, nameof(BuildIVs));
@@ -668,7 +626,7 @@ namespace OptimFoundation.Core
             BatchBuild<TVariable>(lb, ub, VarType.Integer, sets);
         }
 
-        /// <summary>批次建立 0/1 二元變數。其餘語意同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
+        /// <summary>批次建立 0/1 二元變數。維度順序要求同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
         public virtual void BuildBVs<TVariable>(params object[] sets)
         {
             ValidateExplicitVariableType<TVariable>(VarType.Binary, nameof(BuildBVs));
@@ -676,9 +634,9 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 命名天條路徑：變數型別由類別名前綴決定——VariableB_（Binary, [0,1]）/
+        /// 依類別名前綴決定變數型別：VariableB_（Binary，界限 [0,1]）、
         /// VariableC_（Continuous）/ VariableI_（Integer）。
-        /// 自訂 bounds 或不依天條命名的類別 → 改用 BuildCVs / BuildIVs / BuildBVs 顯式指定。
+        /// 需要自訂上下界，或類別名未使用這些前綴時，可用 BuildCVs / BuildIVs / BuildBVs 指定型別。
         /// </summary>
         public virtual void BuildVars<TVariable>(params object[] sets)
         {
@@ -714,12 +672,12 @@ namespace OptimFoundation.Core
         }
 
         // 以下是上面每個 Build*Vs 的 string 版：功能完全相同，只是用 setName 取代 TVariable。
-        // 少掉的兩項都是「靠類別才做得到」的檢查：維度數量比對，以及類別名前綴與型別的一致性驗證。
+        // 沒有類別資訊，因此不檢查維度數量，也不檢查類別名前綴與型別是否一致。
         // setName 仍會經 ModelNaming 驗證（不可空白、不可含保留字元、不可數字開頭），確保產出的名稱送得進 solver。
 
         /// <summary>批次建立連續變數的 string 版，界限 [0, <see cref="OptBounds.Infinity"/>]。</summary>
-        /// <param name="setName">變數名 head，取代泛型版的類別名；同時是 VariableSets 的 key。</param>
-        /// <param name="sets">各維度的 set；框架取笛卡兒積產生所有變數名。</param>
+        /// <param name="setName">變數名稱的開頭，取代泛型版的類別名；依型別查詢時也以它篩選變數池。</param>
+        /// <param name="sets">各維度的集合；框架取各集合的所有組合（笛卡兒積）產生變數名稱。</param>
         public virtual void BuildCVs(string setName, params object[] sets)
             => BatchBuild(setName, 0, OptBounds.Infinity, VarType.Continuous, sets);
 
@@ -764,31 +722,16 @@ namespace OptimFoundation.Core
         #region VariableManager — 查詢
 
         /// <summary>
-        /// 依變數實例查出 solver 原生變數：型別名找 VariableSet，該實例的 ToString() 找變數名。
+        /// 依變數實例查出 solver 原生變數：實例的 ToString() 就是變數全名（TypeName@…），直接查 Variables。
         /// </summary>
         /// <param name="searchData">填好各維度值的變數類別實例，例：new VariableB_Assign { EMP = "E1", DATE = "D1" }。</param>
         /// <exception cref="KeyNotFoundException">該型別未建立，或這組索引值不在建立範圍內。</exception>
         protected TVar ReadVar(object searchData)
-        {
-            string setName = searchData.GetType().Name;
-            string varName = searchData.ToString();
-
-            if (VariableSets.TryGetValue(setName, out var set) && set.TryGetValue(varName, out var v))
-                return v;
-
-            throw Logging.ErrorOnce(
-                new KeyNotFoundException($"找不到變數 '{varName}' in VariableSet '{setName}'"),
-                "VARIABLE_NOT_FOUND",
-                "變數不存在",
-                nameof(ReadVar),
-                varName,
-                "variable_not_built",
-                $"type={setName}");
-        }
+            => ReadVar(searchData.ToString());
 
         /// <summary>
-        /// 依變數全名查出 solver 原生變數。與 <see cref="ReadVar(object)"/> 等價，
-        /// 差別只在跳過「用實例反推型別與名稱」那一步，直接拿名稱查 Variables 索引。
+        /// 依變數全名查詢 Variables 字典並回傳求解器變數。相較於 <see cref="ReadVar(object)"/>，
+        /// 不需要建立變數類別實例。
         /// </summary>
         /// <param name="varName">變數全名，例：VariableB_Assign@E1@D1。import 進來、不符框架命名慣例的名稱同樣可查。</param>
         /// <exception cref="KeyNotFoundException">這個名稱的變數不存在。</exception>
@@ -806,57 +749,36 @@ namespace OptimFoundation.Core
                 "variable_not_built");
         }
 
-        /// <summary>取某變數型別的整組變數（key = 變數全名）。</summary>
-        /// <exception cref="KeyNotFoundException">該型別尚未經 Build*Vs 建立。</exception>
-        protected Dictionary<string, TVar> GetVariableSet(string setName)
+        // 依型別查詢一律篩 Variables：名稱等於型別名（0 維變數）或以「型別名@」開頭。
+        private IEnumerable<string> FilterVarNames(string typeName)
         {
-            if (VariableSets.TryGetValue(setName, out var set))
-                return set;
-            throw Logging.ErrorOnce(
-                new KeyNotFoundException($"找不到 VariableSet '{setName}'"),
-                "VARIABLE_SET_NOT_FOUND",
-                "變數集合不存在",
-                nameof(GetVariableSet),
-                setName,
-                "variable_set_not_built");
+            if (typeName == null) return Enumerable.Empty<string>();
+            string prefix = typeName + ModelNaming.Separator;
+            return Variables.Keys.Where(name => name == typeName || name.StartsWith(prefix, StringComparison.Ordinal));
         }
 
-        /// <summary>所有經 Build*Vs 建立的變數名（不含軟性限制式的彈性變數）。</summary>
+        /// <summary>變數池內的全部變數名，含軟性限制式的彈性變數與匯入的變數。</summary>
         public string[] GetAllVarNames()
-            => VariableSets.Values.SelectMany(s => s.Keys).ToArray();
+            => Variables.Keys.ToArray();
 
-        /// <summary>
-        /// 變數名清單，可選擇是否納入沒有登記在任何 VariableSet 裡的變數
-        /// （軟性限制式的彈性變數、以及不經 Build*Vs 直接建立的變數）。
-        /// </summary>
-        /// <param name="includeUnregistered">false 等同 <see cref="GetAllVarNames()"/>；true 改為列出 Variables 索引的全部變數。</param>
-        public string[] GetAllVarNames(bool includeUnregistered)
-            => includeUnregistered ? Variables.Keys.ToArray() : GetAllVarNames();
-
-        /// <summary>某變數型別的全部變數名；型別不存在回空陣列（不丟例外）。</summary>
+        /// <summary>某變數型別的全部變數名；沒有符合的變數回空陣列（不丟例外）。</summary>
         public string[] GetSetVarNames<TVariable>()
             => GetSetVarNames(typeof(TVariable).Name);
 
-        /// <summary><see cref="GetSetVarNames{TVariable}"/> 的 string 版；setName 不存在回空陣列（不丟例外）。</summary>
+        /// <summary><see cref="GetSetVarNames{TVariable}"/> 的 string 版：以 setName 篩選變數池；沒有符合的回空陣列（不丟例外）。</summary>
         public string[] GetSetVarNames(string setName)
-        {
-            return setName != null && VariableSets.TryGetValue(setName, out var set)
-                ? set.Keys.ToArray()
-                : Array.Empty<string>();
-        }
+            => FilterVarNames(setName).ToArray();
 
-        /// <summary>取某變數型別的全部解值，key = 完整變數名（TypeName@…）。求解後呼叫；型別不存在回空字典。</summary>
+        /// <summary>取某變數型別的全部解值，key = 完整變數名（TypeName@…）。求解後呼叫；沒有符合的變數回空字典。</summary>
         public Dictionary<string, double> GetSetVarValues<TVariable>()
             => GetSetVarValues(typeof(TVariable).Name);
 
-        /// <summary><see cref="GetSetVarValues{TVariable}"/> 的 string 版；setName 不存在回空字典。</summary>
+        /// <summary><see cref="GetSetVarValues{TVariable}"/> 的 string 版：以 setName 篩選變數池；沒有符合的回空字典。</summary>
         public Dictionary<string, double> GetSetVarValues(string setName)
         {
             try
             {
-                if (setName == null || !VariableSets.TryGetValue(setName, out var set))
-                    return new Dictionary<string, double>();
-                return set.ToDictionary(kvp => kvp.Key, kvp => GetVariableValue(kvp.Key));
+                return FilterVarNames(setName).ToDictionary(name => name, GetVariableValue);
             }
             catch (Exception ex)
             {
@@ -866,22 +788,13 @@ namespace OptimFoundation.Core
             }
         }
 
-        /// <summary>取解值字典；varTypeName=null 回全部變數，否則只回該型別（前綴 "TypeName@"）。</summary>
+        /// <summary>取解值字典；varTypeName=null 回全部變數，否則篩選該型別（名稱為 TypeName 或以 "TypeName@" 開頭）。</summary>
         public virtual IReadOnlyDictionary<string, double> GetSolution(string varTypeName = null)
         {
             try
             {
-                if (varTypeName != null && VariableSets.TryGetValue(varTypeName, out var set))
-                    return set.ToDictionary(kvp => kvp.Key, kvp => GetVariableValue(kvp.Key));
-
-                var result = new Dictionary<string, double>();
-                string prefix = varTypeName == null ? null : varTypeName + "@";
-                foreach (var key in Variables.Keys)
-                {
-                    if (prefix == null || key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                        result[key] = GetVariableValue(key);
-                }
-                return result;
+                var names = varTypeName == null ? Variables.Keys : FilterVarNames(varTypeName);
+                return names.ToDictionary(name => name, GetVariableValue);
             }
             catch (Exception ex)
             {
@@ -901,7 +814,7 @@ namespace OptimFoundation.Core
         /// 不必給全部變數，給部分值由 solver 自行補齊（依 solver 的 effort 設定）。
         /// </summary>
         /// <remarks>
-        /// MUST 在模型建完、Solve() 之前呼叫。LP 模型沒有 MIP start 可用 → warn 後略過；
+        /// 必須在模型建完、Solve() 之前呼叫。LP 模型不使用 MIP start，會記錄警告後略過；
         /// 模型內不存在的名稱 → warn 後略過該項（常見於前後段模型不同），其餘照常套用。
         /// </remarks>
         /// <param name="values">變數全名 → 起始值。</param>
@@ -985,29 +898,13 @@ namespace OptimFoundation.Core
 
         #endregion
 
-        #region VariableManager — 重設
-
-        /// <summary>
-        /// 清掉框架這一側的變數索引與建立統計（solver 內已建的變數不會消失）。
-        /// 用於同一個 process 重跑建模流程；跑實驗換組態時 ALWAYS 建新 engine，不要靠這個重置。
-        /// </summary>
-        public void VarSetsReset()
-        {
-            VariableSets.Clear();
-            Variables.Clear();
-            _variableBuildCounts.Clear();
-            Array.Clear(_ledgerVarTypes, 0, _ledgerVarTypes.Length);
-            Array.Clear(_importedVarTypes, 0, _importedVarTypes.Length);
-            _referencedVariables.Clear();
-            _buildSummaryDirty = true;
-        }
+        #region 重設與建立統計
 
         /// <summary>清空限制式的「已用名稱」集合與建立統計；清掉後同名限制式可再次送出（不再被當重複略過）。</summary>
         protected void ResetVerifyConstraints()
         {
             _verifyConstraints.Clear();
             _constraintBuildCounts.Clear();
-            _importedConstraints = 0;
             _buildSummaryDirty = true;
         }
 
@@ -1015,16 +912,11 @@ namespace OptimFoundation.Core
         {
             _variableBuildCounts.Clear();
             _constraintBuildCounts.Clear();
-            Array.Clear(_ledgerVarTypes, 0, _ledgerVarTypes.Length);
-            Array.Clear(_importedVarTypes, 0, _importedVarTypes.Length);
-            _importedConstraints = 0;
-            _imported = false;
-            _ledgerObjective = null;
             _referencedVariables.Clear();
             _buildSummaryDirty = true;
         }
 
-        private void RecordVariableBuild(string type, VarType varType, int expected, int actual)
+        private void RecordVariableBuild(string type, int expected, int actual)
         {
             if (!_variableBuildCounts.TryGetValue(type, out var count))
             {
@@ -1033,59 +925,45 @@ namespace OptimFoundation.Core
             }
             count.Expected += expected;
             count.Actual += actual;
-            _ledgerVarTypes[(int)varType] += actual;
             _buildSummaryDirty = true;
         }
 
         #region 建模記帳 — 給 engine 子類別的入口
 
         /// <summary>
-        /// 匯入模型檔 re-index 完成後登記記帳：匯入的內容不經 Build*Vs / Create*，由 engine 把索引到的數量報上來。
-        /// 同時以檔案裡的目標式方向同步 <see cref="ObjectiveSense"/>，否則匯入 maximize 模型會被當成 minimize，軟性 penalty 也會反號。
+        /// 匯入模型並建立查詢索引後呼叫：清掉舊模型的建立統計，並以檔案裡的目標式方向同步 <see cref="ObjectiveSense"/>，
+        /// 否則匯入 maximize 模型會被當成 minimize，軟性 penalty 也會反號。
         /// </summary>
-        /// <param name="continuous">索引到的連續變數數。</param>
-        /// <param name="integer">索引到的 Integer 變數數。</param>
-        /// <param name="binary">索引到的 Binary 變數數。</param>
-        /// <param name="constraints">索引到的線性限制式條數。</param>
         /// <param name="objective">檔案裡的目標式方向；null = 沒有目標式。</param>
-        protected void RecordImportedModel(int continuous, int integer, int binary, int constraints, ObjectiveSense? objective)
+        protected void RecordImportedModel(ObjectiveSense? objective)
         {
-            // 匯入會整個換掉 solver 模型，先前 Build*Vs 建的東西已不在模型裡，記帳跟著歸零
+            // 匯入會取代求解器模型，因此先清除舊模型的變數建立統計與引用紀錄。
             _variableBuildCounts.Clear();
-            Array.Clear(_ledgerVarTypes, 0, _ledgerVarTypes.Length);
             _referencedVariables.Clear();
-
-            _importedVarTypes[(int)VarType.Continuous] = continuous;
-            _importedVarTypes[(int)VarType.Integer] = integer;
-            _importedVarTypes[(int)VarType.Binary] = binary;
-            _importedConstraints = constraints;
-            _imported = true;
-            _ledgerObjective = objective;
             if (objective.HasValue) _objectiveSense = objective.Value;
             // 匯入的變數都來自模型本身的矩陣，本來就在 solver 模型內，視同已引用
             foreach (var v in Variables.Values) _referencedVariables.Add(v);
             _buildSummaryDirty = true;
         }
 
-        /// <summary>子類別不經 pool、直接以 primitive 建變數時登記記帳（例：OptEngine.CreateVar）。</summary>
-        protected void RecordDirectVariable(string name, VarType varType)
-            => RecordVariableBuild(VariableGroup(name), varType, 1, 1);
+        /// <summary>子類別直接呼叫求解器 API 建立變數後，用此方法補上建立統計（如 OptEngine.CreateVar）。</summary>
+        protected void RecordDirectVariable(string name)
+            => RecordVariableBuild(VariableGroup(name), 1, 1);
 
-        /// <summary>子類別不經 pool、直接以 primitive 建限制式時登記記帳（例：OptEngine.AddLE）。</summary>
+        /// <summary>子類別直接呼叫求解器 API 建立限制式後，用此方法補上建立統計（如 OptEngine.AddLE）。</summary>
         protected void RecordDirectConstraint(string name)
             => RecordConstraintBuild(name, true);
 
-        /// <summary>子類別不經 pool、直接以 primitive 設目標式時登記記帳，並同步 <see cref="ObjectiveSense"/>（例：OptEngine.Maximize）。</summary>
+        /// <summary>子類別直接設定求解器目標式後，用此方法記錄方向並更新 <see cref="ObjectiveSense"/>（如 OptEngine.Maximize）。</summary>
         protected void RecordDirectObjective(ObjectiveSense sense)
         {
             _objectiveSense = sense;
-            _ledgerObjective = sense;
             _buildSummaryDirty = true;
         }
 
         /// <summary>
         /// solver 端的限制式與目標式全部移除、變數保留時呼叫（例：OptEngine.ResetConstraint）。
-        /// 否則上一輪引用過的變數會一直算「已引用」，重建後沒用到的變數就點不出名。
+        /// 清除上一輪的變數引用紀錄，才能找出重建後未使用的變數。
         /// </summary>
         protected void ResetReferencedVariables()
         {
@@ -1139,11 +1017,11 @@ namespace OptimFoundation.Core
         {
             if (!_buildSummaryDirty) return;
 
-            // 每行刻意印兩種來源的數字，互相對帳：
-            //   已建立=實際/預期 → 建模端的記帳（RecordVariableBuild / RecordConstraintBuild 累加）
-            //   模型內合計 / solver 實際持有 → solver 手上真正的庫存
-            // 正常情況兩邊該對得上；對不上代表有建立路徑漏了記帳，或中途被 reset 過
-            // （例：再次呼叫 Configuration() 會清空 solver 的限制式，但不會清 Core 的計數器）。
+            // 同時列出建立時累計的數量與目前模型數量，方便查看差異：
+            // 已建立=實際/預期：由 RecordVariableBuild / RecordConstraintBuild 累計。
+            // 模型內合計：Variables 字典數量；solver 實際持有：ConstraintCount 提供的限制式數量。
+            // 數量不同時，可能有建立操作未更新統計，或模型在中途被重設。
+            // （例：再次呼叫 LoadConfig() 會清空 solver 的限制式，但不會清 Core 的計數器）。
             int expectedVariables = _variableBuildCounts.Values.Sum(x => x.Expected);
             int actualVariables = _variableBuildCounts.Values.Sum(x => x.Actual);
             Logging.Info($"[變數建立摘要] 已建立={actualVariables}/{expectedVariables}（實際/預期） 變數類別={_variableBuildCounts.Count} 種 模型內合計={VariableCount}");
@@ -1169,176 +1047,27 @@ namespace OptimFoundation.Core
         }
         #endregion
 
-        #region 模型統計對帳
+        #region 未引用變數
 
-        /// <summary>
-        /// 對帳框架的建模統計與 solver 模型實際持有的內容：變數總數與 Binary / Integer / Continuous 分布、限制式、
-        /// 框架不索引的特殊元素、目標式方向。變數與限制式另外比對框架索引，落差才分得出是哪一段出問題。
-        /// <see cref="Solve"/> 前會自動跑一次並寫 log；Build() 之後任何時候都能手動呼叫，不會改動模型。
-        /// </summary>
-        /// <returns>對帳結果；<see cref="ModelStatsReport.IsMatch"/> 為 false 時，Mismatches 逐項帶可能原因。</returns>
-        public ModelStatsReport ReconcileModelStats()
+        // CPLEX 不收沒被限制式或目標式引用的變數：Ncols 看得出少了幾個，看不出是哪幾個，名單只有框架列得出。
+        // 只在 CPLEX 收的比框架宣告的少時才列：OptEngine.AddLE 等直接建模入口不經 pool，用到的變數不在引用紀錄裡。
+        private void WarnUnreferencedVariables()
         {
-            var solver = ReadSolverModelCounts() ?? new ModelCounts();
-            var framework = new ModelCounts
-            {
-                Continuous = _ledgerVarTypes[(int)VarType.Continuous] + _importedVarTypes[(int)VarType.Continuous],
-                Integer = _ledgerVarTypes[(int)VarType.Integer] + _importedVarTypes[(int)VarType.Integer],
-                Binary = _ledgerVarTypes[(int)VarType.Binary] + _importedVarTypes[(int)VarType.Binary],
-                Constraints = _constraintBuildCounts.Values.Sum(c => c.Actual) + _importedConstraints,
-                Objective = _ledgerObjective,
-            };
-            framework.Variables = framework.Continuous + framework.Integer + framework.Binary;
+            var composition = ReadModelComposition();
+            if (VariableCount <= composition.Continuous + composition.Integer + composition.Binary) return;
 
-            var report = new ModelStatsReport
-            {
-                Source = !_imported ? "Authored"
-                    : _variableBuildCounts.Count + _constraintBuildCounts.Count > 0 ? "Imported+Authored"
-                    : "Imported",
-                Framework = framework,
-                IndexedVariables = VariableCount,
-                IndexedConstraints = ConstraintCount,
-                Solver = solver,
-            };
-
-            CheckVariables(report);
-            bool variablesDiffer = report.Mismatches.Count > 0;
-            CheckVariableType(report, "Binary", framework.Binary, solver.Binary, variablesDiffer);
-            CheckVariableType(report, "Integer", framework.Integer, solver.Integer, variablesDiffer);
-            CheckVariableType(report, "Continuous", framework.Continuous, solver.Continuous, variablesDiffer);
-            CheckConstraints(report);
-            CheckSpecialElements(report);
-            CheckObjective(report);
-            return report;
+            var unreferenced = Variables.Where(kv => !_referencedVariables.Contains(kv.Value)).Select(kv => kv.Key).ToList();
+            if (unreferenced.Count == 0) return;
+            Logging.Warn($"[UNREFERENCED_VARIABLES] {unreferenced.Count} 個變數已宣告但沒被任何限制式或目標式引用，CPLEX 不會收進模型 | groups={GroupSummary(unreferenced)} sample={string.Join(",", unreferenced.Take(5))} result=continued");
         }
 
-        private void CheckVariables(ModelStatsReport report)
-        {
-            int ledger = report.Framework.Variables;
-            int index = report.IndexedVariables;
-            int solver = report.Solver.Variables;
-            if (ledger == index && index == solver) return;
-
-            var reasons = new List<string>();
-            if (ledger != index)
-                reasons.Add($"框架索引比建模記帳{(index > ledger ? "多" : "少")} {Math.Abs(index - ledger)} 個：有變數沒經過 Build*Vs / 軟性限制式 / 匯入等建模入口就進出索引");
-            if (index > solver)
-            {
-                var unreferenced = Variables.Where(kv => !_referencedVariables.Contains(kv.Value)).Select(kv => kv.Key).ToList();
-                if (unreferenced.Count > 0)
-                    reasons.Add($"{unreferenced.Count} 個變數已宣告但沒被任何限制式或目標式引用，solver 不會收進模型（{GroupSummary(unreferenced)}）sample={string.Join(",", unreferenced.Take(5))}");
-                if (unreferenced.Count != index - solver)
-                    reasons.Add($"框架索引比 solver 多 {index - solver} 個、未引用 {unreferenced.Count} 個，兩者不符：另有變數被移出模型，或模型重建（再次 Configuration）後索引沒清");
-            }
-            else if (index < solver)
-            {
-                reasons.Add($"solver 模型有 {solver - index} 個框架不認得的變數：有程式繞過框架直接加進 solver 模型");
-            }
-
-            report.Mismatches.Add(new ModelStatsMismatch
-            {
-                Item = "Variables",
-                Framework = Text(ledger),
-                Index = Text(index),
-                Solver = Text(solver),
-                Reason = string.Join("；", reasons),
-            });
-        }
-
-        private static void CheckVariableType(ModelStatsReport report, string item, int framework, int solver, bool variablesDiffer)
-        {
-            if (framework == solver) return;
-            report.Mismatches.Add(new ModelStatsMismatch
-            {
-                Item = item,
-                Framework = Text(framework),
-                Solver = Text(solver),
-                Reason = variablesDiffer
-                    ? "與 Variables 列同因（該型別的變數有未引用或繞過框架的）"
-                    : "總數對得上但型別分布不同：solver 端有變數型別被改動（例：繞過框架做型別轉換）",
-            });
-        }
-
-        private static void CheckConstraints(ModelStatsReport report)
-        {
-            int ledger = report.Framework.Constraints;
-            int index = report.IndexedConstraints;
-            int solver = report.Solver.Constraints;
-            if (ledger == index && index == solver) return;
-
-            var reasons = new List<string>();
-            if (ledger != index)
-                reasons.Add($"框架索引比建模記帳{(index > ledger ? "多" : "少")} {Math.Abs(index - ledger)} 條：有限制式沒經過 Create* / 軟性限制式 / 匯入等建模入口就進出索引");
-            if (index < solver)
-                reasons.Add($"solver 模型有 {solver - index} 條框架不認得的限制式：有程式繞過框架直接加進 solver 模型");
-            else if (index > solver)
-                reasons.Add($"框架索引有 {index - solver} 條 solver 模型沒有：限制式被移出模型，或模型重建（再次 Configuration）後索引沒清");
-
-            report.Mismatches.Add(new ModelStatsMismatch
-            {
-                Item = "Constraints",
-                Framework = Text(ledger),
-                Index = Text(index),
-                Solver = Text(solver),
-                Reason = string.Join("；", reasons),
-            });
-        }
-
-        private static void CheckSpecialElements(ModelStatsReport report)
-        {
-            if (report.Framework.SpecialElements == report.Solver.SpecialElements) return;
-            report.Mismatches.Add(new ModelStatsMismatch
-            {
-                Item = "SpecialElements",
-                Framework = Text(report.Framework.SpecialElements),
-                Solver = Text(report.Solver.SpecialElements),
-                Reason = $"模型含框架不建立也不索引的元素（{report.Solver.SpecialDetail}）：框架的統計、IIS 分析與取解都不涵蓋它們",
-            });
-        }
-
-        private static void CheckObjective(ModelStatsReport report)
-        {
-            var framework = report.Framework.Objective;
-            var solver = report.Solver.Objective;
-            if (framework == solver) return;
-            report.Mismatches.Add(new ModelStatsMismatch
-            {
-                Item = "Objective",
-                Framework = SenseText(framework),
-                Solver = SenseText(solver),
-                Reason = framework == null ? $"solver 有 {solver} 目標式，但不是經 CreateMinimize / CreateMaximize 或匯入建立"
-                    : solver == null ? $"框架建過 {framework} 目標式，solver 模型卻沒有：目標式被移出模型"
-                    : $"方向不一致：框架記 {framework}、solver 是 {solver}",
-            });
-        }
-
-        private static void LogModelStats(ModelStatsReport report)
-        {
-            var f = report.Framework;
-            var s = report.Solver;
-            Logging.Info($"[模型統計對帳] 來源={report.Source} 變數 記帳={f.Variables} 索引={report.IndexedVariables} solver={s.Variables}｜binary {f.Binary}/{s.Binary}｜integer {f.Integer}/{s.Integer}｜continuous {f.Continuous}/{s.Continuous}（記帳/solver）");
-            Logging.Info($"[模型統計對帳] 限制式 記帳={f.Constraints} 索引={report.IndexedConstraints} solver={s.Constraints}｜特殊元素 {f.SpecialElements}/{s.SpecialElements}｜目標式 {SenseText(f.Objective)}/{SenseText(s.Objective)}（記帳/solver）");
-
-            if (report.IsMatch)
-            {
-                Logging.Info("[MODEL_STATS_MATCH] 框架建模統計與 solver 模型一致 | items=Variables,Binary,Integer,Continuous,Constraints,SpecialElements,Objective result=verified");
-                return;
-            }
-            foreach (var m in report.Mismatches)
-                Logging.Warn($"[MODEL_STATS_MISMATCH] 框架建模統計與 solver 模型不一致 | item={m.Item} framework={m.Framework}{(m.Index == null ? "" : $" index={m.Index}")} solver={m.Solver} reason={m.Reason} result=continued");
-        }
-
-        // 未引用變數依名稱 head 分組計數（VariableB_Pick=2, Surplus_x=1），最多列 5 組
+        // 把未使用的變數依名稱中第一個 @ 之前的部分分組（如 VariableB_Pick=2），最多列出 5 組。
         private static string GroupSummary(IEnumerable<string> names)
         {
             var groups = names.GroupBy(VariableGroup).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal).ToList();
             string shown = string.Join(", ", groups.Take(5).Select(g => $"{g.Key}={g.Count()}"));
             return groups.Count > 5 ? $"{shown}, …共 {groups.Count} 組" : shown;
         }
-
-        private static string Text(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-        private static string SenseText(ObjectiveSense? sense) => sense?.ToString() ?? "None";
 
         #endregion
 
@@ -1349,7 +1078,7 @@ namespace OptimFoundation.Core
 
         /// <summary>
         /// 丟棄 pool 內累積的所有項與常數。
-        /// 正常流程不必自己呼叫——每個 Create* 送出後都會自動清空；只有中途要放棄一條組到一半的限制式才用。
+        /// Create* 正常建立後會清空；要放棄尚未建完的式子，或丟棄提早返回、例外後留下的內容時，可自行呼叫。
         /// </summary>
         public void ClearPool()
         {
@@ -1369,7 +1098,7 @@ namespace OptimFoundation.Core
             return true;
         }
 
-        // 只吃 LHS 的出口（CreateRange / 目標式）遇到 RHS pool 有內容：照舊捨棄，但一定要留 warn，不能靜默吞掉
+        // CreateRange 與建立目標式只採用左側；右側有暫存項目時記錄警告，提醒呼叫端這些項目不會被使用。
         private void WarnIfRhsPoolIgnored(string operation, string name, string reason)
         {
             if (_rhsTerms.Count == 0 && _rhsConst == 0) return;
@@ -1379,7 +1108,7 @@ namespace OptimFoundation.Core
         private void LogDuplicateConstraint(string name)
             => Logging.Warn($"[CONSTRAINT_DUPLICATE] 略過重複限制式 | name={name} reason=duplicate_name result=kept_existing");
 
-        // LHS − RHS 的 lazy 合併，不建立新 List，LinearExpr 單次迭代即可消費
+        // 列舉時才把右側係數取負並接到左側後面，供 LinearExpr 讀取，不另建 List。
         private IEnumerable<(double coef, TVar var)> CombinedLhsMinusRhs()
             => _lhsTerms.Concat(_rhsTerms.Select(t => (-t.coef, t.var)));
 
@@ -1390,7 +1119,7 @@ namespace OptimFoundation.Core
         /// <summary>
         /// 往限制式左側累加一項 coeff·變數。連續呼叫即為求和；送出前一直留在 pool。
         /// </summary>
-        /// <param name="coeff">係數。ALWAYS 先用 LINQ 取出存成區域變數再傳進來，不要內嵌整段查詢。</param>
+        /// <param name="coeff">係數。若需查詢 Parameter，先存成區域變數再傳入，方便檢查取值是否正確。</param>
         /// <param name="varSpec">填好各維度值的變數類別實例；框架以它的 ToString() 當變數名查表。</param>
         /// <returns>true = 已加入；false = varSpec 為 null（該項被略過，只寫 warn log 不中斷建模）。</returns>
         /// <exception cref="KeyNotFoundException">變數名查不到——多半是 property 宣告順序與 Build*Vs 的 set 順序不一致。</exception>
@@ -1427,7 +1156,7 @@ namespace OptimFoundation.Core
 
         /// <summary>
         /// 往限制式右側累加一項 coeff·變數。
-        /// 有右側變數項時 ALWAYS 用這個，不要自己移項到左邊——保持與 Model.md 逐條對照的能力就是 pool 存在的理由。
+        /// Model.md 右側的變數項可直接加在這裡；框架建立限制式時會移項，讓建模程式保留原式的左右位置。
         /// </summary>
         /// <returns>true = 已加入；false = varSpec 為 null（略過該項）。</returns>
         /// <exception cref="KeyNotFoundException">變數名查不到（同 <see cref="AddLHS(double, object)"/>）。</exception>
@@ -1488,24 +1217,24 @@ namespace OptimFoundation.Core
         /// 送出 pool 為「LHS ≥ RHS」限制式，對應 Model.md 的 <c>≥</c>。
         /// 實際送進 solver 的形式是 (LHS項 − RHS項) ≥ (RHS常數 − LHS常數)，由框架自動整理，呼叫端不需要也不應該自己移項。
         /// </summary>
-        /// <param name="name">限制式名稱；同名只會建立第一條，之後的直接略過並寫 warn log。迴圈建立時 ALWAYS 把索引拼進名字（如 "Cap@TruckA"）。</param>
+        /// <param name="name">限制式名稱；同名只建立第一條，之後略過並記錄警告。迴圈建立時須在名稱包含維度值，例如 "Cap@TruckA"。</param>
         /// <returns>true = pool 有內容（含被判定重複而略過的情況）；false = pool 是空的，什麼都沒建。</returns>
-        /// <remarks>不論建立成功、重複略過或提早返回，pool 都會被清空——下一條限制式從乾淨狀態開始。</remarks>
-        public bool CreateGreatEqual(string name)
-            => CreateLinearConstraint(ValidateConstraintName(nameof(CreateGreatEqual), name), ConstraintSense.GreaterEqual);
+        /// <remarks>建立成功或因同名略過後會清空 pool；若沒有變數項而提早返回，或建立時拋出例外，pool 會保留。</remarks>
+        public bool CreateGreaterEqual(string name)
+            => CreateLinearConstraint(ValidateConstraintName(nameof(CreateGreaterEqual), name), ConstraintSense.GreaterEqual);
 
         /// <summary>以 owner 類別名與維度值自動組名，送出「LHS ≥ RHS」。</summary>
-        public bool CreateGreatEqual(ConstraintBase owner, params object[] dims)
+        public bool CreateGreaterEqual(ConstraintBase owner, params object[] dims)
             => CreateLinearConstraint(ComposeConstraintName(owner, dims), ConstraintSense.GreaterEqual);
 
         /// <summary>
         /// 送出「LHS ≥ rhs」，右側直接給常數。
-        /// 注意這個 overload 是**覆蓋**右側常數（不是累加），先前 AddRHS(常數) 加的值會被 rhs 取代；右側變數項則仍會被算進去。
+        /// rhs 會取代先前 AddRHS 累加的右側常數；右側變數項仍會保留。
         /// </summary>
         /// <returns>false = 左側沒有任何變數項，限制式未建立。</returns>
-        public bool CreateGreatEqual(double rhs, string name)
+        public bool CreateGreaterEqual(double rhs, string name)
         {
-            name = ValidateConstraintName(nameof(CreateGreatEqual), name);
+            name = ValidateConstraintName(nameof(CreateGreaterEqual), name);
             if (_lhsTerms.Count == 0)
             {
                 Logging.Warn($"[CONSTRAINT_EMPTY] 未建立限制式 | name={name} reason=lhs_empty result=skipped");
@@ -1518,7 +1247,7 @@ namespace OptimFoundation.Core
 
         /// <summary>
         /// 送出 pool 為「LHS ≤ RHS」限制式，對應 Model.md 的 <c>≤</c>。
-        /// 送出形式與清空 pool 的行為同 <see cref="CreateGreatEqual(string)"/>，只有比較方向不同。
+        /// 送出形式與清空 pool 的行為同 <see cref="CreateGreaterEqual(string)"/>，只有比較方向不同。
         /// </summary>
         /// <param name="name">限制式名稱；同名第二次起會被略過（warn log）。</param>
         /// <returns>true = pool 有內容；false = pool 是空的。</returns>
@@ -1529,7 +1258,7 @@ namespace OptimFoundation.Core
         public bool CreateLessEqual(ConstraintBase owner, params object[] dims)
             => CreateLinearConstraint(ComposeConstraintName(owner, dims), ConstraintSense.LessEqual);
 
-        /// <summary>送出「LHS ≤ rhs」。rhs 覆蓋右側常數（語意同 <see cref="CreateGreatEqual(double, string)"/>）。</summary>
+        /// <summary>送出「LHS ≤ rhs」。rhs 取代先前累加的右側常數，行為同 <see cref="CreateGreaterEqual(double, string)"/>。</summary>
         /// <returns>false = 左側沒有任何變數項，限制式未建立。</returns>
         public bool CreateLessEqual(double rhs, string name)
         {
@@ -1546,7 +1275,7 @@ namespace OptimFoundation.Core
 
         /// <summary>
         /// 送出 pool 為「LHS = RHS」限制式，對應 Model.md 的 <c>=</c>。
-        /// 送出形式與清空 pool 的行為同 <see cref="CreateGreatEqual(string)"/>。
+        /// 送出形式與清空 pool 的行為同 <see cref="CreateGreaterEqual(string)"/>。
         /// </summary>
         /// <param name="name">限制式名稱；同名第二次起會被略過（warn log）。</param>
         /// <returns>true = pool 有內容；false = pool 是空的。</returns>
@@ -1557,7 +1286,7 @@ namespace OptimFoundation.Core
         public bool CreateEqual(ConstraintBase owner, params object[] dims)
             => CreateLinearConstraint(ComposeConstraintName(owner, dims), ConstraintSense.Equal);
 
-        /// <summary>送出「LHS = rhs」。rhs 覆蓋右側常數（語意同 <see cref="CreateGreatEqual(double, string)"/>）。</summary>
+        /// <summary>送出「LHS = rhs」。rhs 取代先前累加的右側常數，行為同 <see cref="CreateGreaterEqual(double, string)"/>。</summary>
         /// <returns>false = 左側沒有任何變數項，限制式未建立。</returns>
         public bool CreateEqual(double rhs, string name)
         {
@@ -1625,7 +1354,7 @@ namespace OptimFoundation.Core
             }
 
             RecordConstraintBuild(name, created);
-            ClearPool(); // 即使 skip，也必須清空 pool，否則下一條約束的 LHS 會累積舊項目
+            ClearPool(); // 同名略過時也要清空，避免下一條限制式混入舊項目。
             return true;
         }
 
@@ -1723,20 +1452,18 @@ namespace OptimFoundation.Core
         {
             SetObjective(LinearExpr(_objectiveTerms.Concat(_softPenaltyTerms)), _objectiveConstant, _objectiveSense);
             MarkReferenced(_objectiveTerms.Concat(_softPenaltyTerms));
-            _ledgerObjective = _objectiveSense;
             _buildSummaryDirty = true;
         }
 
         /// <summary>
         /// 清掉框架這一側追蹤的目標式（變數項、常數項、soft penalty 項）。
-        /// solver 端已移除目標式時（如 OptEngine.ResetConstraint）MUST 一併呼叫，否則下一條軟性限制式會把舊目標項重新套回去。
+        /// 求解器端移除目標式時（如 OptEngine.ResetConstraint）必須一併呼叫，否則新增軟性限制式時會把舊目標項加回去。
         /// </summary>
         protected void ResetObjectiveTracking()
         {
             _objectiveTerms.Clear();
             _softPenaltyTerms.Clear();
             _objectiveConstant = 0;
-            _ledgerObjective = null;
         }
 
         #endregion
@@ -1750,44 +1477,44 @@ namespace OptimFoundation.Core
         protected double PoolLhsConst => _lhsConst;
 
         /// <summary>
-        /// 是否支援軟性限制式。通用實作放在 EngineBase（pool 加彈性變數 + 目標式加 penalty），
-        /// 只要 engine 提供 AddVariable / AddConstraint / SetObjective primitive 即可，預設 true。
+        /// 是否支援軟性限制式。EngineBase 會用額外變數表示違反量，並將罰分加入目標式，
+        /// 只需引擎實作 AddVariable / AddConstraint / SetObjective 即可使用，預設為 true。
         /// </summary>
         public virtual bool SupportsSoftConstraints => true;
 
-        /// <summary>軟性 LHS &lt;= rhs：加 surplus 變數 dp≥0，建 lhs − dp &lt;= rhs，目標式 += penalty·dp。</summary>
-        public virtual bool CreateLeSoft(double rhs, double penalty)
+        /// <summary>允許 LHS 超過 rhs：加入超出量 dp≥0，建立 lhs − dp &lt;= rhs；罰分為 penalty·dp，最小化時加到目標式，最大化時扣除。</summary>
+        public virtual bool CreateLessEqualSoft(double rhs, double penalty)
             => BuildSoft(rhs, penalty, ConstraintSense.LessEqual, null);
 
         /// <summary>具名軟性 LHS &lt;= rhs：名稱會用於限制式、彈性變數與自動 log。</summary>
-        public virtual bool CreateLeSoft(double rhs, double penalty, string name)
+        public virtual bool CreateLessEqualSoft(double rhs, double penalty, string name)
             => BuildSoft(rhs, penalty, ConstraintSense.LessEqual,
-                ValidateConstraintName(nameof(CreateLeSoft), name));
+                ValidateConstraintName(nameof(CreateLessEqualSoft), name));
 
         /// <summary>以 owner 類別名與維度值自動組名，建立軟性 LHS ≤ rhs。</summary>
-        public virtual bool CreateLeSoft(double rhs, double penalty, ConstraintBase owner, params object[] dims)
+        public virtual bool CreateLessEqualSoft(double rhs, double penalty, ConstraintBase owner, params object[] dims)
             => BuildSoft(rhs, penalty, ConstraintSense.LessEqual, ComposeConstraintName(owner, dims));
 
-        /// <summary>軟性 LHS &gt;= rhs：加 deficit 變數 dn≥0，建 lhs + dn &gt;= rhs，目標式 += penalty·dn。</summary>
-        public virtual bool CreateGeSoft(double rhs, double penalty)
+        /// <summary>允許 LHS 不足 rhs：加入不足量 dn≥0，建立 lhs + dn &gt;= rhs；罰分為 penalty·dn，最小化時加到目標式，最大化時扣除。</summary>
+        public virtual bool CreateGreaterEqualSoft(double rhs, double penalty)
             => BuildSoft(rhs, penalty, ConstraintSense.GreaterEqual, null);
 
         /// <summary>具名軟性 LHS &gt;= rhs：名稱會用於限制式、彈性變數與自動 log。</summary>
-        public virtual bool CreateGeSoft(double rhs, double penalty, string name)
+        public virtual bool CreateGreaterEqualSoft(double rhs, double penalty, string name)
             => BuildSoft(rhs, penalty, ConstraintSense.GreaterEqual,
-                ValidateConstraintName(nameof(CreateGeSoft), name));
+                ValidateConstraintName(nameof(CreateGreaterEqualSoft), name));
 
         /// <summary>以 owner 類別名與維度值自動組名，建立軟性 LHS ≥ rhs。</summary>
-        public virtual bool CreateGeSoft(double rhs, double penalty, ConstraintBase owner, params object[] dims)
+        public virtual bool CreateGreaterEqualSoft(double rhs, double penalty, ConstraintBase owner, params object[] dims)
             => BuildSoft(rhs, penalty, ConstraintSense.GreaterEqual, ComposeConstraintName(owner, dims));
 
-        /// <summary>軟性 LHS == rhs：加 dn,dp≥0，建 lhs + dn − dp == rhs，目標式 += penalty·(dn+dp)。</summary>
-        public virtual bool CreateEqSoft(double rhs, double penalty, string name)
+        /// <summary>允許 LHS 偏離 rhs：加入不足量 dn 與超出量 dp（皆≥0），建立 lhs + dn − dp == rhs；最小化加上 penalty·(dn+dp)，最大化扣除。</summary>
+        public virtual bool CreateEqualSoft(double rhs, double penalty, string name)
             => BuildSoft(rhs, penalty, ConstraintSense.Equal,
-                ValidateConstraintName(nameof(CreateEqSoft), name));
+                ValidateConstraintName(nameof(CreateEqualSoft), name));
 
         /// <summary>以 owner 類別名與維度值自動組名，建立軟性 LHS = rhs。</summary>
-        public virtual bool CreateEqSoft(double rhs, double penalty, ConstraintBase owner, params object[] dims)
+        public virtual bool CreateEqualSoft(double rhs, double penalty, ConstraintBase owner, params object[] dims)
             => BuildSoft(rhs, penalty, ConstraintSense.Equal, ComposeConstraintName(owner, dims));
 
         // 軟性限制式通用建構：彈性變數放進變數池，penalty 放進目標式。
@@ -1843,14 +1570,14 @@ namespace OptimFoundation.Core
                             break;
                         }
                 }
-                RecordVariableBuild("SoftConstraint", VarType.Continuous, expectedVariables, Variables.Count - variablesBefore);
+                RecordVariableBuild("SoftConstraint", expectedVariables, Variables.Count - variablesBefore);
                 RecordConstraintBuild(name, true);
                 MarkReferenced(terms);
                 Logging.Info($"[軟性限制式建立完成] name={name} sense={sense} rhs={rhs} penalty={penalty} result=success");
             }
             catch (Exception ex)
             {
-                RecordVariableBuild("SoftConstraint", VarType.Continuous, expectedVariables, Math.Max(0, Variables.Count - variablesBefore));
+                RecordVariableBuild("SoftConstraint", expectedVariables, Math.Max(0, Variables.Count - variablesBefore));
                 RecordConstraintBuild(name, false);
                 Logging.ErrorOnce(
                     ex,
@@ -1868,7 +1595,7 @@ namespace OptimFoundation.Core
 
         /// <summary>
         /// 往目前目標式追加一個 penalty 項（coef·var）：累積後以 SetObjective 重設整個目標式。
-        /// 要求各 engine 的 SetObjective 為「覆寫」語意（Solver 原生即是；CPLEX 在 SetObjective 內先移除舊目標式達成）。
+        /// 各引擎的 SetObjective 必須取代舊目標式；CPLEX 會先移除舊目標式，再設定新的。
         /// </summary>
         protected virtual void AddObjectiveTerm(double coef, TVar variable)
         {

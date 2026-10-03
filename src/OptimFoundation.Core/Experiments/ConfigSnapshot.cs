@@ -4,37 +4,34 @@ using System.Reflection;
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 求解設定快照：只記「真的有設」的旋鈕。
-    ///
-    /// 沒設的旋鈕值是 null，代表「不動它、用求解器自己的預設」——這是已知且固定的規則，
-    /// 所以「沒列出來」跟「列出來寫 null」帶的資訊完全一樣。以前把 183 顆全寫進去，
-    /// 其中 95% 是 null，每個 trial 重抄一次，檔案大得沒人看得下去。現在只記有值的。
+    /// 保存一次求解使用的非 null 設定。未列出的參數使用求解器預設值，
+    /// 只保留有設定的項目，方便比較並縮小實驗檔案。
     /// </summary>
     public sealed class ConfigSnapshot
     {
         /// <summary>求解器名稱，取自 config 型別的 namespace 末段（OptimFoundation.Cplex → "Cplex"）。</summary>
         public string Solver { get; set; }
 
-        /// <summary>跨 solver 的共通旋鈕（TimeLimit / MipGap / Threads / Seed / Emphasis …）。只放有設定的。</summary>
+        /// <summary>各求解器共用的參數（TimeLimit / MipGap / Threads / Seed / Emphasis 等），只保存非 null 的值。</summary>
         public Dictionary<string, object> Tunable { get; set; } = new Dictionary<string, object>();
 
-        /// <summary>該求解器全部旋鈕裡「有設定」的那些（含與 Tunable 重疊的部分）。沒列到的就是沒設。</summary>
+        /// <summary>此求解器設定物件中所有非 null 的公開欄位與屬性，包含 Tunable 已列出的參數。</summary>
         public Dictionary<string, object> SolverSpecific { get; set; } = new Dictionary<string, object>();
 
         /// <summary>
-        /// 從 ISolverConfig 建立快照：共通旋鈕直接讀介面成員，專屬欄位用 reflection 列舉 public field/property。
+        /// 複製 ISolverConfig 的共用參數，再透過 reflection 讀取實際設定類別的 public field/property。
         /// </summary>
         public static ConfigSnapshot From(ISolverConfig config)
         {
             var snapshot = new ConfigSnapshot();
             if (config == null) return snapshot;
 
-            // Solver 名 = concrete config 的 namespace 末段（OptimFoundation.Cplex → "Cplex"）
+            // 求解器名稱取設定類別 namespace 的最後一段，例如 OptimFoundation.Cplex 取 "Cplex"。
             string ns = config.GetType().Namespace ?? "";
             int dot = ns.LastIndexOf('.');
             snapshot.Solver = dot >= 0 ? ns.Substring(dot + 1) : ns;
 
-            // 共用旋鈕（null 就是沒設，不記）
+            // 保存共用參數；null 表示未設定，不寫入紀錄。
             Put(snapshot.Tunable, "TimeLimit", config.TimeLimit);
             Put(snapshot.Tunable, "MipGap", config.MipGap);
             Put(snapshot.Tunable, "Threads", config.Threads);
@@ -47,7 +44,7 @@ namespace OptimFoundation.Core
             Put(snapshot.Tunable, "HeuristicEffort", config.HeuristicEffort);
             Put(snapshot.Tunable, "MemoryLimitMb", config.MemoryLimitMb);
 
-            // Solver 專屬：reflection 列舉 public field + 可讀 property（補抓抽象面沒涵蓋的設定）
+            // 讀取設定類別的公開欄位與可讀屬性，補上 ISolverConfig 未列出的求解器參數。
             var type = config.GetType();
             foreach (var f in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
                 Put(snapshot.SolverSpecific, f.Name, f.GetValue(config));
@@ -63,7 +60,7 @@ namespace OptimFoundation.Core
             return snapshot;
         }
 
-        /// <summary>只在有值時才寫進字典。null = 沒設定 = 用求解器預設，不需要記。</summary>
+        /// <summary>只將非 null 的值寫入字典；null 代表使用求解器預設值。</summary>
         private static void Put(Dictionary<string, object> target, string key, object value)
         {
             if (value != null) target[key] = value;

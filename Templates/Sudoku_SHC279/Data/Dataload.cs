@@ -4,7 +4,7 @@ using OptimFoundation.Core.IO;
 
 namespace Sudoku_SHC279
 {
-    /// <summary>Sudoku 資料唯一入口；求解時只讀標準 CSV，import 時才展開原始矩陣。</summary>
+    /// <summary>載入 Sudoku 題盤資料；求解時讀取標準 CSV，import 時才將原始矩陣轉成集合與參數。</summary>
     public sealed partial class Dataload : DataContext
     {
         public const string PuzzleName = "Sudoku_SHC279";
@@ -20,7 +20,7 @@ namespace Sudoku_SHC279
 
         public Dataload() : this(new CsvDataSource()) { }
 
-        /// <summary>讀取已就位的 Template CSV；此建構子只做資料載入。</summary>
+        /// <summary>載入資料來源中已備妥的集合與參數，不在此產生範例資料。</summary>
         public Dataload(IDataSource source)
         {
             set_Row = source.Load<Set_Row>("Set_Row");
@@ -33,7 +33,7 @@ namespace Sudoku_SHC279
             parameter_ObjCoef = source.Load<Parameter_ObjCoef>("Parameter_ObjCoef");
         }
 
-        /// <summary>把方形原始題盤展開成 sets、givens、宮格對應與模型常數。</summary>
+        /// <summary>將方形題盤轉成列、欄、數字等集合，以及已知數字、宮與格子的對應和模型常數。</summary>
         public Dataload(string rawFile)
         {
             var rawData = new CsvDataSource().LoadData(rawFile);
@@ -76,7 +76,7 @@ namespace Sudoku_SHC279
             set_Given = givens.Select(x => new Set_Given { Row = x.Row, Column = x.Column, Digit = x.Digit }).ToList();
         }
 
-        /// <summary>把 import ctor 產生的資料輸出成求解流程使用的 Template CSV。</summary>
+        /// <summary>將 import 建構子產生的資料寫成標準 CSV，供之後求解時讀取。</summary>
         public void Export()
         {
             CsvCtrl.WriteRows(set_Row, "Set_Row");

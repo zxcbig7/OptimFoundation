@@ -75,11 +75,10 @@ var model = new OptModel("Canonical")
     .AddObjective(e =&gt; objective.Build(e))
     .AddConstraints(e =&gt; constraint.Build(e));
 
-using var project = new OptProject(model)
-    .UseConfig(() =&gt; projectConfig)
-    .UseConfig(() =&gt; solverConfig);
+using var project = new OptProject("Example")
+    .LoadConfig(projectConfig);
 
-bool solved = project.Execute();</code></pre>
+bool solved = project.Solve(model, solverConfig);</code></pre>
 
   <div class="note">完整規格請看 <code>specs/developer-guide.md</code>；可執行範例請看 <code>Templates/Tutorial/</code>。</div>
 </body>

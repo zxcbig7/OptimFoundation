@@ -7,7 +7,7 @@ namespace FJSP_BASIC_BRICK
     /// [Either-Or (Big-M)] ∀ lotA &lt; lotB, opA, opB ∈ Operation, eqp ∈ Eqp：跨批次兩作業若同機台不得重疊。
     /// Forward:  Complete_A ≤ Start_B + BigM·(ForwardOffset − Precede − Assign_A − Assign_B)
     /// Backward: Complete_B ≤ Start_A + BigM·(BackwardOffset + Precede − Assign_A − Assign_B)
-    /// ForwardOffset(=3) / BackwardOffset(=2) 為 Either-Or pattern 結構常數，經 Parameter/CSV 取得。
+    /// ForwardOffset(=3) 與 BackwardOffset(=2) 用來控制上面兩式何時生效，值從 Parameter/CSV 讀取。
     /// </summary>
     public sealed class Constraint_NoOverlap : ConstraintBase
     {

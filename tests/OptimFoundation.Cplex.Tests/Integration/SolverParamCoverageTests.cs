@@ -10,24 +10,24 @@ using Xunit;
 namespace OptimFoundation.Cplex.Tests.Integration
 {
     /// <summary>
-    /// Solver 參數全覆蓋：逐一設定 Configuration() 接線的每個 CplexConfig 旋鈕，
-    /// 用 Trial.Capture 真跑一次 CPLEX 求解（CPLEX 拒絕該參數會丟例外 → 測試失敗），
+    /// 逐一設定 LoadConfig() 支援的 CplexConfig 參數，
+    /// 透過 Trial.Capture 執行 CPLEX 求解；若 CPLEX 拒絕該參數而丟出例外，測試就失敗，
     /// 再 Save 成 Experiment CSV。每個參數一列，Label = "參數=值"。
-    /// 目的：證明遷移後每個 SetParam 路徑 runtime 可用，且反映在實驗 CSV 上。
+    /// 確認每個設定都有傳到 CPLEX 的 SetParam，求解可完成，而且設定值有寫進實驗 CSV。
     /// </summary>
-    // 每次 Solve() 都會寫 log（建模摘要、模型統計對帳）；Logging 是全域單例，與其他讀 log 斷言的測試同一 collection 才不會互相污染
+    // Solve() 會寫入共用的 Logging；加入同一個 collection 讓相關測試依序執行，避免彼此的訊息影響 log 內容檢查。
     [Collection("Logging")]
     public class SolverParamCoverageTests
     {
         private static readonly bool CplexAvailable =
             File.Exists(@"C:\IBM\ILOG\CPLEX_Studio2211\cplex\bin\x64_win64\ILOG.CPLEX.dll");
 
-        // (label, 套用單一旋鈕)；涵蓋 OptEngine.Configuration() 內每個 SetParam 路徑。
+        // (label, 套用一個參數的動作)；逐一測試 OptEngine.LoadConfig() 內的 SetParam 呼叫。
         //
-        // 演算法 / 搜尋策略選擇類（離散列舉旋鈕）→ 列舉「全部合法整數值」，每個值一列，
+        // 演算法與搜尋策略這類選項參數，逐一列出合法整數值，每個值各測一次，
         // 證明 CPLEX 對該參數的每個選項都接受並能終止求解。值域取自 CPLEX 22.1.1：
-        // 範圍弄錯（如對 fraccuts/mircuts/flowcovers 給 3，或對 NodeAlg 給 concurrent=6）
-        // CPLEX 會在 SetParam 當下丟例外 → 本測試即失敗，故下列值域為實測安全範圍。
+        // 若設定超出範圍的值，例如 fraccuts/mircuts/flowcovers 設為 3，或 NodeAlg 設為 concurrent=6，
+        // CPLEX 會在 SetParam 時丟出例外，使測試失敗；下面保留的是已實測可接受的值。
         //
         // 連續 / 純量類（容差、時限、記憶體、執行緒、種子、倍數、計數）→ 維持單一代表值，不展開。
         private static IReadOnlyList<(string Label, Action<CplexConfig> Apply)> Knobs => new (string, Action<CplexConfig>)[]
@@ -181,9 +181,10 @@ namespace OptimFoundation.Cplex.Tests.Integration
         {
             if (!CplexAvailable) return;
 
-            const string expName = "solver-param-coverage";
+            // 累積檔會保留舊結果；每次測試使用新專案名，結束後刪除，避免讀到上次資料。
+            string project = "solver-param-coverage-" + Guid.NewGuid().ToString("N").Substring(0, 8);
 
-            var exp = new Experiment(expName, "逐一套用每個 CplexConfig solver 旋鈕並記錄一次求解");
+            var exp = new Experiment(project, "coverage", "逐一套用每個 CplexConfig solver 旋鈕並記錄一次求解");
 
             var failures = new List<string>();
             var projectConfig = new ProjectConfig { EnableSolverLog = false };
@@ -194,11 +195,11 @@ namespace OptimFoundation.Cplex.Tests.Integration
                 apply(config);
 
                 using var engine = new OptEngine(config, projectConfig);
-                engine.Build();          // Build → Configuration(config)：在此套用該旋鈕的 SetParam
+                engine.Build();          // Build 會呼叫 LoadConfig，再用 SetParam 將參數值傳給 CPLEX
                 BuildKnapsack(engine);   // 小型 MILP，讓 MIP 類參數真正生效
 
                 // Capture 內部呼叫 Solve()；CPLEX 若拒絕該參數會在此丟例外 → 測試失敗
-                var trial = Trial.Capture(engine, label, () => engine.Solve(), note: label);
+                var trial = Trial.Capture(engine, label, () => engine.Solve());
                 exp.AddTrial(trial);
 
                 // 此 knapsack 在 root 即最佳；任何非終止狀態代表該參數破壞求解
@@ -210,48 +211,55 @@ namespace OptimFoundation.Cplex.Tests.Integration
             }
 
             exp.Save();
-
-            // 全部旋鈕都記成一個 Trial
-            Assert.Equal(Knobs.Count, exp.Trials.Count);
-
-            var expectedSymmetry = new Dictionary<string, int>
+            try
             {
-                ["Symmetry=-1"] = -1,
-                ["Symmetry=1"] = 1,
-                ["Symmetry=2"] = 2,
-                ["Symmetry=3"] = 3,
-            };
-            foreach (var (label, value) in expectedSymmetry)
-            {
-                var trial = Assert.Single(exp.Trials, t => t.Label == label);
-                Assert.True(trial.Metrics.Status is SolveStatus.Optimal or SolveStatus.Feasible);
-                Assert.Equal(value, Assert.IsType<int>(trial.Config.SolverSpecific["Symmetry"]));
+                // 每次參數試跑都應各留下一筆 Trial
+                Assert.Equal(Knobs.Count, exp.Trials.Count);
+
+                var expectedSymmetry = new Dictionary<string, int>
+                {
+                    ["Symmetry=-1"] = -1,
+                    ["Symmetry=1"] = 1,
+                    ["Symmetry=2"] = 2,
+                    ["Symmetry=3"] = 3,
+                };
+                foreach (var (label, value) in expectedSymmetry)
+                {
+                    var trial = Assert.Single(exp.Trials, t => t.Label == label);
+                    Assert.True(trial.Metrics.Status is SolveStatus.Optimal or SolveStatus.Feasible);
+                    Assert.Equal(value, Assert.IsType<int>(trial.Config.SolverSpecific["Symmetry"]));
+                }
+
+                // 每個參數都實際求解成功
+                Assert.True(failures.Count == 0,
+                    "以下參數求解未達終止狀態：" + Environment.NewLine + string.Join(Environment.NewLine, failures));
+
+                // 反映在 CSV：每個 label 都應出現在輸出的 CSV
+                string csvPath = FolderDir.Experiment.GetPathFile(project + "-trial.csv");
+                Assert.True(File.Exists(csvPath), $"CSV 未產出：{csvPath}");
+                string csv = File.ReadAllText(csvPath);
+                foreach (var (label, _) in Knobs)
+                    Assert.Contains(label, csv);
+
+                // 主表只記「跟基準（第一筆 Threads=4）差在哪」：每個 Symmetry trial 的 ConfigChanges 都要帶出它設的值
+                using var reader = new StringReader(csv);
+                var records = CsvCtrl.ParseCsv(reader).ToList();
+                int labelColumn = Array.IndexOf(records[0], "TrialLabel");
+                int diffColumn = Array.IndexOf(records[0], "ConfigChanges");
+                foreach (var (label, value) in expectedSymmetry)
+                {
+                    var row = Assert.Single(records, r => r[labelColumn] == label);
+                    Assert.Contains($"Symmetry={value}", row[diffColumn].Split(';'));
+                }
             }
-
-            // 每個參數都實際求解成功
-            Assert.True(failures.Count == 0,
-                "以下參數求解未達終止狀態：" + Environment.NewLine + string.Join(Environment.NewLine, failures));
-
-            // 反映在 CSV：每個 label 都應出現在輸出的 CSV
-            string csvPath = FolderDir.Experiment.GetPathFile(expName + ".csv");
-            Assert.True(File.Exists(csvPath), $"CSV 未產出：{csvPath}");
-            string csv = File.ReadAllText(csvPath);
-            foreach (var (label, _) in Knobs)
-                Assert.Contains(label, csv);
-
-            // 主表只記「跟基準（第一筆 Threads=4）差在哪」：每個 Symmetry trial 的 DiffKnobs 都要帶出它設的值
-            using var reader = new StringReader(csv);
-            var records = CsvCtrl.ParseCsv(reader).ToList();
-            int labelColumn = Array.IndexOf(records[0], "TrialLabel");
-            int diffColumn = Array.IndexOf(records[0], "DiffKnobs");
-            foreach (var (label, value) in expectedSymmetry)
+            finally
             {
-                var row = Assert.Single(records, r => r[labelColumn] == label);
-                Assert.Contains($"Symmetry={value}", row[diffColumn].Split(';'));
+                foreach (string path in Directory.GetFiles(FolderDir.Experiment.GetPath(), $"{project}-*.csv"))
+                    File.Delete(path);
             }
         }
 
-        /// <summary>3 物品 0/1 背包：max 3a+4b+5c s.t. 2a+3b+4c &lt;= 5。root 即最佳。</summary>
+        /// <summary>3 件物品的 0/1 背包問題：max 3a+4b+5c，限制為 2a+3b+4c &lt;= 5；在根節點即可求得最佳解。</summary>
         private static void BuildKnapsack(OptEngine engine)
         {
             var items = new List<string> { "a", "b", "c" };

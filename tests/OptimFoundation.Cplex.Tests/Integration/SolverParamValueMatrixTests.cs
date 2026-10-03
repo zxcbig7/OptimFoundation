@@ -9,32 +9,32 @@ using Xunit;
 namespace OptimFoundation.Cplex.Tests.Integration
 {
     /// <summary>
-    /// 旋鈕值域全覆蓋：對 CplexConfig 的每一顆旋鈕，逐一套用 IBM 官方文件列出的<b>每一個合法值</b>，
-    /// 各跑一次真實求解，確認 CPLEX 真的吃得下去。
+    /// 逐一測試 CplexConfig 參數的可選值：離散選項使用 IBM 文件列出的<b>每一個合法值</b>，
+    /// 連續數值使用範圍內的代表值，各求解一次，確認 CPLEX 接受這些設定。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 與 <see cref="SolverParamCoverageTests"/> 的差別：那支每顆旋鈕只取一個代表值，證明「這條 SetParam 路徑通」；
-    /// 本支把值域展開，證明「文件說可以設的值，實際都設得進去」。
+    /// <see cref="SolverParamCoverageTests"/> 檢查參數能套用並寫入實驗 CSV；
+    /// 本測試進一步逐值檢查 CPLEX 是否接受，也記錄本平台或模型不支援的值。
     /// </para>
     /// <para>
     /// 值的來源：本機官方文件 <c>CPLEX\Parameters\topics\&lt;ParamName&gt;.html</c> 的 Values 表格
-    /// （離散列舉逐值展開）；連續型旋鈕沒有列舉，取文件敘述範圍內的代表值。
+    /// 離散選項逐值測試；連續數值則從文件允許的範圍中選取代表值。
     /// </para>
     /// <para>
-    /// <b>判定標準是「CPLEX 有沒有拒絕」，不是「解出什麼」</b>。像 NodeLimit=0、IntegerSolutionLimit=1、
-    /// UpperCutoff 這類停止條件，求解結果本來就不會是 Optimal，那不算失敗；
+    /// <b>只要 CPLEX 接受參數且未丟出例外，就視為通過</b>。例如 NodeLimit=0、IntegerSolutionLimit=1、
+    /// UpperCutoff 等停止條件可能讓求解提早結束，未達 Optimal 也不算測試失敗；
     /// 只有 SetParam 或 Solve 丟例外才算這個值不能用。
     /// </para>
     /// </remarks>
-    // 每次 Solve() 都會寫 log（建模摘要、模型統計對帳）；Logging 是全域單例，與其他讀 log 斷言的測試同一 collection 才不會互相污染
+    // Solve() 會寫入共用的 Logging；加入同一個 collection 讓相關測試依序執行，避免彼此的訊息影響 log 內容檢查。
     [Collection("Logging")]
     public class SolverParamValueMatrixTests
     {
         private static readonly bool CplexAvailable =
             File.Exists(@"C:\IBM\ILOG\CPLEX_Studio2211\cplex\bin\x64_win64\ILOG.CPLEX.dll");
 
-        // (label, 套用單一旋鈕的單一值)。每一列都對應官方文件列出的一個合法值。
+        // (label, 套用一個參數值的動作)。每列測試一個文件允許的值。
         private static IReadOnlyList<(string Label, Action<CplexConfig> Apply)> Cases =>
             new (string, Action<CplexConfig>)[]
         {
@@ -587,7 +587,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
         };
 
         /// <summary>
-        /// 已知會被 CPLEX 拒絕的值，以及原因。這些不是接線壞掉，是本平台或本模型型態下真的不能用。
+        /// 列出 CPLEX 在目前平台或模型型態下會拒絕的值與原因，讓測試能區分已知限制與非預期錯誤。
         /// </summary>
         private static readonly IReadOnlyDictionary<string, string> ExpectedRejections =
             new Dictionary<string, string>
@@ -617,7 +617,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
                     apply(config);
 
                     using var engine = new OptEngine(config, projectConfig);
-                    engine.Build();          // Build → Configuration(config)：在此套用該值的 SetParam
+                    engine.Build();          // Build → LoadConfig(config)：在此套用該值的 SetParam
                     BuildKnapsack(engine);   // 小型 MILP，讓 MIP 類參數真正生效
                     engine.Solve();
                 }
@@ -635,7 +635,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
                 $"以下 {unexpected.Count} / {Cases.Count} 個官方合法值被 CPLEX 拒絕，且不在已知清單裡：" +
                 Environment.NewLine + string.Join(Environment.NewLine, unexpected));
 
-            // 已知會被拒絕的值若哪天變成可用（換平台、升版），清單就過期了，要主動發現
+            // 若換平台或升版後原本不支援的值變成可用，測試須提醒更新清單。
             Assert.True(expectedButAccepted.Count == 0,
                 "以下值列在 ExpectedRejections，但實際上已經可以用了，請更新清單：" +
                 Environment.NewLine +
@@ -643,7 +643,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
                     expectedButAccepted.Select(k => $"{k}（原因：{ExpectedRejections[k]}）")));
         }
 
-        /// <summary>3 物品 0/1 背包：max 3a+4b+5c s.t. 2a+3b+4c &lt;= 5。root 即最佳。</summary>
+        /// <summary>3 件物品的 0/1 背包問題：max 3a+4b+5c，限制為 2a+3b+4c &lt;= 5；在根節點即可求得最佳解。</summary>
         private static void BuildKnapsack(OptEngine engine)
         {
             var items = new List<string> { "a", "b", "c" };

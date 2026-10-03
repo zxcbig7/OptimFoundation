@@ -43,7 +43,7 @@ namespace RosteringProblem
                         engine.AddRHS(1.0, new VariableB_ShiftAssign { Date = preDate, Employee = employee, Group = rule.PreGroup });
                         engine.AddRHS(1.0, new VariableB_ShiftAssign { Date = date, Employee = employee, Group = rule.Group });
                         engine.AddRHS(-one);
-                        engine.CreateGreatEqual(this, date, employee, rule.PreGroup, rule.Group);
+                        engine.CreateGreaterEqual(this, date, employee, rule.PreGroup, rule.Group);
                     }
                 }
         }

@@ -6,24 +6,24 @@ using System.Linq;
 namespace OptimFoundation.Core.IO
 {
     /// <summary>
-    /// 資料庫資料來源（query-only）：靠 IDbCtrl 抽象（Oracle 或其他實作皆可）。
-    /// DB 讀取一律「明寫 Query SQL」——Load&lt;T&gt; 的第一引數就是 SELECT，不猜表名
-    /// （真實 DB 一定要 join / 條件 / 投影 / WHERE data_id）。
+    /// 透過 IDbCtrl 查詢資料庫，只提供資料讀取；可使用 Oracle 或其他 IDbCtrl 實作。
+    /// Load&lt;T&gt; 的第一個參數須傳入完整 SELECT SQL，不會把名稱自動補成查詢語句。
+    /// 呼叫端可自行加入 JOIN、WHERE、選取欄位或 data_id 篩選條件。
     /// 讀回按「欄名 = property 名」對位（大小寫不敏感），多餘欄忽略；欄名不符用 AS 別名對過去。
     /// </summary>
     public sealed class DbDataSource : IDataSource
     {
         private readonly IDbCtrl _db;
 
-        /// <param name="db">資料庫控制器（如 OracleDBCtrl）</param>
+        /// <param name="db">資料庫控制器（如 OracleDbCtrl）</param>
         public DbDataSource(IDbCtrl db)
             => _db = db ?? throw Logging.ErrorOnce(
                 new ArgumentNullException(nameof(db)),
                 "DB_SOURCE_INVALID", "資料庫來源不合法", nameof(DbDataSource), null, "db_is_null");
 
         /// <summary>
-        /// 用 SELECT 讀 Set 或 Parameter（欄名對 property，大小寫不敏感、多餘欄忽略）——第一引數是 SQL。
-        /// join / 條件 / view / WHERE data_id 都行，欄名不符用 AS 別名對到 property 名。
+        /// 第一個引數是完整 SELECT SQL，可包含 JOIN、條件或 view。
+        /// 依欄名填入 Set 或 Parameter 的 property，不分大小寫，多餘欄位略過；欄名不同時可用 AS 指定別名。
         /// </summary>
         public List<T> Load<T>(string sql, params (string name, object value)[] parameters)
             where T : ModelElementBase, new()

@@ -7,7 +7,7 @@ using System.Text;
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 框架統一的 log 出口：每筆同時寫 Console 與 log 檔，格式為「時間 | 等級 | 訊息」。
+    /// 提供框架共用的記錄方法，訊息同時寫到 Console 與 log 檔，格式為「時間 | 等級 | 訊息」。
     /// 檔案延遲建立（首次寫入才開檔），寫入以 lock 保護，可多執行緒呼叫。
     /// </summary>
     public static class Logging
@@ -16,7 +16,7 @@ namespace OptimFoundation.Core
         private static readonly string _logDir = FolderDir.Log.GetPath();
         private static string _logFile = FolderDir.Log.GetPathFile($"Log_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.txt");
         private static string _logFileName;
-        private static readonly object _lock = new object(); //
+        private static readonly object _lock = new object();
         private static readonly Encoding _utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         private static readonly Encoding _utf8Bom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
         private static readonly StreamWriter _consoleWriter;
@@ -29,7 +29,7 @@ namespace OptimFoundation.Core
             Console.SetOut(_consoleWriter);
         }
 
-        /// <summary>延遲開檔：首次寫入才建 log 檔，避免 SetLogFileName 換檔前留下空的孤兒 Log_*.txt。呼叫端須持有 _lock。</summary>
+        /// <summary>首次寫入才開啟 log 檔，避免 SetLogFileName 指定檔名前先產生空檔；存取時須先取得 _lock。</summary>
         private static StreamWriter FileWriter
         {
             get
@@ -119,8 +119,8 @@ namespace OptimFoundation.Core
 
         /// <summary>
         /// 印訊息並附上 Stopwatch 的經過時間。
-        /// ⚠ 有副作用：印完會 <b>Restart</b> 這個 Stopwatch，讓下一段從零開始計時（連續分段計時的慣用寫法）。
-        /// 要保留累計時間 NEVER 用這個 overload。
+        /// 印完會 <b>Restart</b> 這個 Stopwatch，讓下一段從零開始計時。
+        /// 若要保留累計時間，請自行讀取 Elapsed 並呼叫只有 message 的 overload。
         /// </summary>
         public static void Info(string message, Stopwatch sw)
         {
@@ -132,8 +132,8 @@ namespace OptimFoundation.Core
         /// <summary>
         /// 改用新的 log 檔名（實際檔名為 {name}_{時間戳}.txt，非法字元會被換成 '-'）。
         /// 會關掉目前的 log 檔並在下次寫入時開新檔；已寫入舊檔的內容留在原檔。
-        /// 以同一個 name 重複呼叫是 no-op，不會換檔。
-        /// OptProject / OptExperiment 執行時會自動以專案名呼叫，一般不需自己叫。
+        /// 若 name 與目前相同，直接返回，繼續使用同一檔案。
+        /// 框架會自動設定：OptProject 與正式求解使用 {專案名}，實驗使用 {專案名}-{實驗名}_exp；一般使用者不必自行呼叫。
         /// </summary>
         public static void SetLogFileName(string name)
         {
@@ -141,8 +141,8 @@ namespace OptimFoundation.Core
                 name = name.Replace(c, '-');
             lock (_lock)
             {
-                // 同名視為 no-op：每次呼叫都帶新時間戳，否則同一輪執行的 log 會被拆進兩個檔
-                // ——呼叫端在 Program.cs 早期先設一次涵蓋資料載入，框架之後又會設一次，這是常態。
+                // 同名時保留原檔案，避免每次呼叫產生新時間戳，把同一輪執行的紀錄拆成多個檔案。
+                // 例如 Program.cs 可能先設定檔名來記錄資料載入，框架之後再用相同名稱設定一次。
                 if (string.Equals(_logFileName, name, StringComparison.Ordinal)) return;
 
                 _logFileName = name;
@@ -160,15 +160,15 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// ⚠ 破壞性：刪掉 Logs 資料夾內的<b>所有</b>檔案（含本次執行正在寫的），不可回復。
-        /// 例行清理 ALWAYS 改用 OptProject 的 retentionDays 保留期機制，只清超過天數的舊檔。
+        /// 刪除 FolderDir.Log 內的<b>所有</b>檔案，包含本次執行的 log，刪除後無法由此方法回復。
+        /// 例行清理請用 OptProject 的 retentionDays，只刪除超過保留天數的舊檔。
         /// </summary>
         public static void ClearLogs()
         {
             lock (_lock)
             {
                 if (!Directory.Exists(_logDir)) return;
-                _fileWriter?.Dispose();   // 放掉目前 log 檔的 handle，否則刪到自己會 IOException
+                _fileWriter?.Dispose();   // 先關閉目前的 log 檔，避免刪除使用中的檔案時發生 IOException。
                 _fileWriter = null;
                 foreach (var f in Directory.GetFiles(_logDir)) File.Delete(f);
             }

@@ -3,7 +3,7 @@ using OptimFoundation.Cplex;
 
 namespace FJSP_BASIC_BRICK
 {
-    /// <summary>[Range] 規劃窗：MakespanFloor ≤ Makespan ≤ MakespanDeadline（示範 CreateRange，demo 值非綁定）</summary>
+    /// <summary>限制完工時間範圍：MakespanFloor ≤ Makespan ≤ MakespanDeadline；使用寬鬆界限示範 CreateRange，不額外排除可行排程。</summary>
     public sealed class Constraint_MakespanWindow : ConstraintBase
     {
         private readonly double _floor;

@@ -4,7 +4,7 @@ using Xunit;
 
 namespace OptimFoundation.Cplex.Tests.Unit
 {
-    /// <summary>目標式常數項、RHS pool 捨棄 warn、統一 infinity、AddMIPStart 的 solver-neutral 行為。</summary>
+    /// <summary>檢查目標式常數是否保留、忽略右側暫存算式時是否警告、無界限值的表示方式，以及 AddMIPStart 的共用處理。</summary>
     [Collection("Logging")]
     public class PoolSemanticsAndMipStartTests
     {
@@ -61,7 +61,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             engine.CreateMinimize();
 
             engine.AddLHS(1.0, new VarS { S = "x" });
-            engine.CreateGeSoft(3.0, 10.0);
+            engine.CreateGreaterEqualSoft(3.0, 10.0);
 
             Assert.Equal(4.0, engine.ObjectiveConstantResult);
         }
@@ -123,7 +123,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             engine.BuildVars<VariableC_Amt>(new[] { "A" });
             engine.BuildVars<VariableI_Cnt>(new[] { "A" });
             engine.AddLHS(1.0, new VariableC_Amt { S = "A" });
-            engine.CreateLeSoft(5.0, 1.0, "Cap@A");
+            engine.CreateLessEqualSoft(5.0, 1.0, "Cap@A");
 
             Assert.Equal(1E20, OptBounds.Infinity);
             Assert.All(engine.BuiltVars, v => Assert.True(v.Ub == OptBounds.Infinity, $"{v.Name} ub={v.Ub}"));

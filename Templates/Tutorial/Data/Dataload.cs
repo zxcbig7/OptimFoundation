@@ -4,8 +4,8 @@ using OptimFoundation.Cplex;
 
 namespace Tutorial
 {
-    // 資料層唯一入口：ctor 就是「寫讀檔的家」——每行一句、顯式讀檔。
-    // 換來源：CSV↔InMemory 只換傳入的 IDataSource（DB query-only 用型別化 DbDataSource，見 developer-guide）。
+    // 在建構子中逐一呼叫資料來源，載入模型需要的集合與參數。
+    // 切換 CSV 或記憶體資料時，只需更換傳入的 IDataSource；資料庫查詢使用型別化 DbDataSource，見 developer-guide。
     public sealed partial class Dataload : DataContext
     {
         // Set 資料列：維度型別包含 string / DateTime / int
@@ -21,7 +21,7 @@ namespace Tutorial
         public List<Parameter_Demand> parameter_Demand = new();
         public List<Parameter_Capacity> parameter_Capacity = new();
 
-        // BigM = max Capacity / min{正的 MachineHours}：單班單品產量上界，由數據推導、NEVER 寫死
+        // BigM = max Capacity / min{正的 MachineHours}：以最大可用工時除以最小正工時耗用量，計算單班單品的產量上界。
         public double BigM => parameter_Capacity.Max(c => c.QTY) /
             parameter_MachineHours.Where(h => h.QTY > 0).Min(h => h.QTY);
 
@@ -35,7 +35,7 @@ namespace Tutorial
             set_Date = source.Load<Set_Date>("Set_Date");
             set_Shift = source.Load<Set_Shift>("Set_Shift");
 
-            // Parameter：同樣走 Load<T>；差別只在生成型別最後固定多一個 QTY
+            // 參數也用 Load<T> 載入；產生的參數類別固定有 QTY 欄位，用來存放參數值。
             parameter_UnitProfit = source.Load<Parameter_UnitProfit>("Parameter_UnitProfit");
             parameter_SetupCost = source.Load<Parameter_SetupCost>("Parameter_SetupCost");
             parameter_BatchSize = source.Load<Parameter_BatchSize>("Parameter_BatchSize");

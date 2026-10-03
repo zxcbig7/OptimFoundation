@@ -4,28 +4,27 @@ using OptimFoundation.Cplex;
 
 namespace Tutorial
 {
-    // 三態 CLI：
-    //   dotnet run              -- 正式求解（預設）：讀 Data/*.csv → solve → ValidateRules → 解寫回 Solution/*.csv
-    //   dotnet run -- exp       -- 實驗模式：同一模型 × 三組 MIP emphasis 對照，Experiment/*.csv
+    // 命令列模式：
+    //   dotnet run              -- 正式求解（預設）：讀 FolderDir.Input 的 CSV → solve → ValidateRules → 解寫到 FolderDir.Output
+    //   dotnet run -- exp       -- 實驗模式：同一模型 × 三組 MIP emphasis 對照，紀錄接在 Experiment/Tutorial-trial.csv 等累積檔
     internal static class Program
     {
         private static int Main(string[] args)
         {
             bool isExperiment = args.Any(arg => string.Equals(arg, "exp", StringComparison.OrdinalIgnoreCase));
-            if (isExperiment)
-                Logging.SetLogFileName("Tutorial_exp");
+            // 由 OptProject 管理 log、資料夾與檔案保留天數；實驗和正式求解都透過它執行。
+            using var project = new OptProject("Tutorial");
 
             // ── 1. 材料 ────────────────────────────────────────────
             var data = OptData.Load(() => new Dataload());
 
             var projectConfig = new ProjectConfig
             {
-                ProjectName = "Tutorial",
                 EnableSolverLog = true,
                 ExportLP = true,
                 ExportSol = true,
             };
-            // 唯一 production baseline/champion；experiment clone 它，prod 直接使用它。
+            // 正式求解直接使用這組設定；實驗則先複製一份，再調整要比較的參數。
             var productionBaseline = new CplexConfig
             {
                 MipGap = 1e-6,
@@ -43,10 +42,10 @@ namespace Tutorial
             model.AddConstraints(engine => new Constraint_BatchDef(data.set_Product, data.set_Date, data.set_Shift, data.parameter_BatchSize).Build(engine));
             model.AddConstraints(engine => new Constraint_SetupLink(data.set_Product, data.set_Date, data.set_Shift, data.BigM).Build(engine));
 
-            var model2 = OptModel.FromFile("Model.lp", "Model2");
+            var model2 = OptModel.ReadModel("Model.lp", "Model2");
 
             // ── 3. 環境 ────────────────────────────────────────────
-            // exp：三組 MIP emphasis 對照，不做正式求解
+            // exp：用三組 MIP emphasis 分別求解，記錄結果供比較。
             if (isExperiment)
             {
                 var balanced = productionBaseline.Clone();
@@ -55,7 +54,7 @@ namespace Tutorial
                 var optimalFirst = balanced.Clone();
                 optimalFirst.Emphasis = 2;
 
-                var result = new OptExperiment("Tutorial-tuning-r1", "同一模型 × 三組 MIP emphasis 對照")
+                var result = project.Experiment("tuning-r1", "同一模型 × 三組 MIP emphasis 對照")
                     .AddModel(model)
                     .AddConfig("balanced", balanced)
                     .AddConfig("feasible-first", feasibleFirst)
@@ -63,17 +62,14 @@ namespace Tutorial
                     .Run();
 
                 foreach (var trial in result.Trials)
-                    Logging.Info($"[Experiment] {trial.Label} status={trial.Metrics.Status} runTimeMs={trial.Metrics.RunTimeMs:F0}");
+                    Logging.Info($"[Experiment] {trial.Label} status={trial.Metrics.Status} solveTimeMs={trial.Metrics.SolveTimeMs:F0}");
                 return 0;
             }
 
             // 預設：正式求解
-            using var project = new OptProject(model)
-                .UseConfig(() => projectConfig)
-                .UseConfig(() => productionBaseline)
-                .OnSolved(engine => TutorialSolution.ReadAndValidate(engine, data).Print());
-
-            bool solved = project.Execute();
+            project.LoadConfig(projectConfig);
+            bool solved = project.Solve(model, productionBaseline,
+                onSolved: engine => TutorialSolution.ReadAndValidate(engine, data).Print());
             return solved ? 0 : 1;
         }
     }

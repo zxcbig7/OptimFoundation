@@ -2,16 +2,18 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using OptimFoundation.Core;
+using OptimFoundation.Core.IO;
+using OptimFoundation.Cplex;
 
 namespace ModelTuner
 {
-    /// <summary>一份模型檔 instance。Name 是實驗紀錄裡的模型名（Trial.Model）。</summary>
+    /// <summary>一份待求解的模型檔。Name 是寫入實驗紀錄的模型名稱（Trial.Model）。</summary>
     public sealed record TuningInstance(string Name, string RelativePath, string FullPath);
 
     /// <summary>
-    /// 專案根的檔案配置與 S0 契約凍結。
-    /// 模型檔本身就是凍結的「模型 + 資料」：instances.lock 記下每個檔的 SHA-256，之後每次執行都比對，
-    /// 對不上就中止——這是 Phase 2 專案「model chain 不准出現在 diff」那條規則的檔案版。
+    /// 管理調參專案的模型檔、輸出位置，以及 S0 階段建立的 instances.lock。
+    /// 模型檔包含模型與資料；instances.lock 記錄每個檔的 SHA-256 雜湊值，之後每次執行都比對，
+    /// 檔案新增、遺失或內容變更就中止，確保各輪調參使用相同的模型與資料。
     /// </summary>
     public sealed class TunerWorkspace
     {
@@ -20,38 +22,41 @@ namespace ModelTuner
         private static readonly string[] ModelExtensions = { ".lp", ".mps", ".sav" };
         private static readonly string[] Compressions = { ".gz", ".bz2" };
 
-        // 框架匯出的檔名帶用途與時間戳（RosteringProblem_SAV_2026-08-30_17-36-04.sav），剝掉才是穩定的模型名
+        // 框架匯出的檔名帶用途與時間戳（RosteringProblem_SAV_2026-08-30_17-36-04.sav），移除這些部分，取得固定的模型名稱
         private static readonly Regex FrameworkStamp =
             new Regex(@"_(LP|MPS|SAV)_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$", RegexOptions.IgnoreCase);
 
-        private TunerWorkspace(string projectName, string root)
+        private TunerWorkspace(OptProject project, string root)
         {
-            ProjectName = projectName;
+            Project = project;
             Root = root;
             Tune = Scan("tune");
             Holdout = Scan("holdout");
         }
 
-        /// <summary>輸出檔名與 experiment 名的根。</summary>
-        public string ProjectName { get; }
+        /// <summary>管理 log、資料夾與檔案保留天數的 OptProject；每輪實驗都透過它建立。</summary>
+        public OptProject Project { get; }
+
+        /// <summary>專案名稱，作為輸出檔名與實驗名稱的前綴。</summary>
+        public string ProjectName => Project.Name;
 
         /// <summary>專案根（csproj 所在目錄）。Instances/、Experiments/、instances.lock、TuningHistory.md 都在這裡。</summary>
         public string Root { get; }
 
-        /// <summary>調參用 instance（Instances/tune）。</summary>
+        /// <summary>用來比較參數設定的模型檔，讀自 Instances/tune。</summary>
         public IReadOnlyList<TuningInstance> Tune { get; }
 
-        /// <summary>hold-out instance（Instances/holdout）；只在 holdout 模式使用，NEVER 用來選 config。</summary>
+        /// <summary>保留到最後驗證的模型檔，讀自 Instances/holdout；不參與挑選參數設定。</summary>
         public IReadOnlyList<TuningInstance> Holdout { get; }
 
-        /// <summary>每輪原始證據的永久 archive（bin 會被 clean，這裡不會）。</summary>
+        /// <summary>保存實驗原始輸出檔的目錄；清理 bin 時不會刪除這裡的檔案。</summary>
         public string ArchiveDir => Path.Combine(Root, "Experiments");
 
         public string LockPath => Path.Combine(Root, LockFileName);
 
-        public static TunerWorkspace Open(string projectName)
+        public static TunerWorkspace Open(OptProject project)
         {
-            var workspace = new TunerWorkspace(projectName, FindProjectRoot());
+            var workspace = new TunerWorkspace(project, FindProjectRoot());
             Logging.Info($"[ModelTuner] root={workspace.Root} tune={workspace.Tune.Count} holdout={workspace.Holdout.Count}");
 
             var duplicated = workspace.Tune.Concat(workspace.Holdout)
@@ -66,12 +71,17 @@ namespace ModelTuner
             return workspace;
         }
 
+        /// <summary>實驗完整名稱，與 OptExperiment.FullName 相同：{專案名}-tuning-r&lt;N&gt;[-holdout]；log 檔名與統計報告檔名使用這個名稱。</summary>
         public string ExperimentName(int round, bool holdout = false) =>
-            $"{ProjectName}-tuning-r{round}{(holdout ? "-holdout" : "")}";
+            $"{ProjectName}-{ExperimentShortName(round, holdout)}";
+
+        /// <summary>傳給 <see cref="OptProject.Experiment"/> 的實驗名（不含專案名），也是累積檔 Experiment 欄的值。</summary>
+        public static string ExperimentShortName(int round, bool holdout = false) =>
+            $"tuning-r{round}{(holdout ? "-holdout" : "")}";
 
         #region S0 契約凍結（instances.lock）
 
-        /// <summary>寫入 instances.lock。已存在且內容不同時拒絕：換模型檔 = 契約變更，要人刪 lock 並重跑 S1 / R0。</summary>
+        /// <summary>記錄模型檔雜湊到 instances.lock；既有紀錄與檔案不符時拒絕覆寫。確認更換模型後，需手動刪除 lock、重新建立，並重跑 S1 規模測試與 R0 基準量測。</summary>
         public int WriteLock()
         {
             var all = Tune.Concat(Holdout).ToList();
@@ -108,7 +118,7 @@ namespace ModelTuner
             return 0;
         }
 
-        /// <summary>比對 instances.lock。required=false 只給 production：S0 凍結前要先跑它確認正確性。</summary>
+        /// <summary>比對模型檔是否符合 instances.lock。required=false 允許尚未建立 lock 時繼續，只供正式求解模式在 S0 前先驗證模型。</summary>
         public bool VerifyLock(bool required)
         {
             if (!File.Exists(LockPath))
@@ -168,58 +178,106 @@ namespace ModelTuner
 
         #endregion
 
-        #region 每輪原始證據（bin/Experiments → Experiments/）
+        #region 原始證據（bin/Experiment → Experiments/）
 
-        private static readonly string[] ArtifactSuffixes = { ".csv", "-meta.csv", "-trajectory.csv" };
+        // 每個專案共用四個累積檔，以 Experiment（tuning-r<N>）與 RunId 區分各輪結果。
+        private static readonly string[] ArtifactKinds = { "trial", "meta", "summary", "trajectory" };
 
-        public bool IsArchived(string experimentName) =>
-            File.Exists(Path.Combine(ArchiveDir, $"{experimentName}.csv"));
+        /// <summary>累積檔名：{專案名}-trial.csv / -meta.csv / -summary.csv / -trajectory.csv。</summary>
+        public string ArtifactName(string kind) => $"{ProjectName}-{kind}.csv";
+
+        /// <summary>archive 的 -trial.csv 已有這一輪（Experiment 欄 = 實驗名）的列。</summary>
+        public bool IsArchived(string shortName)
+        {
+            string path = Path.Combine(ArchiveDir, ArtifactName("trial"));
+            return File.Exists(path) && ReadTable(path).Any(row => row.GetValueOrDefault("Experiment") == shortName);
+        }
 
         /// <summary>
-        /// 開跑前的防呆：archive 已有同名 experiment → 拒跑（archive 是不可變的證據，同名重跑的結果無處可放）；
-        /// bin 殘留同名檔（例：Phase 2 管線驗證跑過）→ 刪掉，確保之後 archive 的一定是本輪產物。
+        /// 執行前檢查：archive 已有這一輪就拒絕執行（archive 的輪次不可變）。
+        /// bin 的累積檔遺失但 archive 仍在時，先還原到 bin，讓新結果接在完整歷史之後。
         /// </summary>
-        public bool PrepareRun(string experimentName)
+        public bool PrepareRun(string shortName)
         {
-            if (IsArchived(experimentName))
+            if (IsArchived(shortName))
             {
-                Logging.Error($"[ROUND_ALREADY_ARCHIVED] 本輪已 archive，禁止重跑 | context={nameof(PrepareRun)} value={experimentName} reason=archived_round_is_immutable result=aborted");
+                Logging.Error($"[ROUND_ALREADY_ARCHIVED] 本輪已 archive，禁止重跑 | context={nameof(PrepareRun)} value={shortName} reason=archived_round_is_immutable result=aborted");
                 Logging.Error("[ROUND_ALREADY_ARCHIVED] 要重做請開新的 r<N+1>，並在 TuningHistory.md 註明是 replication");
                 return false;
             }
 
-            foreach (var suffix in ArtifactSuffixes)
+            foreach (var kind in ArtifactKinds)
             {
-                string stale = FolderDir.Experiment.GetPathFile($"{experimentName}{suffix}");
-                if (!File.Exists(stale)) continue;
-                File.Delete(stale);
-                Logging.Warn($"[ROUND_STALE_OUTPUT_REMOVED] 刪除 bin 殘留的同名實驗檔 | value={stale} reason=unarchived_leftover result=deleted");
+                string archived = Path.Combine(ArchiveDir, ArtifactName(kind));
+                string working = FolderDir.Experiment.GetPathFile(ArtifactName(kind));
+                if (!File.Exists(archived) || File.Exists(working)) continue;
+                FolderDir.Experiment.CreateFolder();
+                File.Copy(archived, working);
+                Logging.Warn($"[ROUND_HISTORY_RESTORED] bin 沒有累積檔，先從 archive 複製回來再接著寫 | value={working} source={archived} result=restored");
             }
             return true;
         }
 
-        /// <summary>把本輪 bin 產物複製到專案根 Experiments/；.csv / -meta.csv 缺一不可。</summary>
-        public IReadOnlyList<string> Archive(string experimentName)
+        /// <summary>
+        /// 把 bin 的累積檔複製到專案根目錄的 Experiments/（覆寫）。-trial / -meta / -summary 必須有本輪的列，-trajectory 有才複製。
+        /// 只允許附加紀錄：覆寫前確認 bin 檔以 archive 的完整內容開頭；不符就拒絕，保留舊結果。
+        /// </summary>
+        public IReadOnlyList<string> Archive(string shortName)
         {
             Directory.CreateDirectory(ArchiveDir);
             var copied = new List<string>();
-            foreach (var suffix in ArtifactSuffixes)
+            foreach (var kind in ArtifactKinds)
             {
-                string source = FolderDir.Experiment.GetPathFile($"{experimentName}{suffix}");
+                string source = FolderDir.Experiment.GetPathFile(ArtifactName(kind));
+                string target = Path.Combine(ArchiveDir, ArtifactName(kind));
                 if (!File.Exists(source))
                 {
-                    if (suffix == "-trajectory.csv") continue;
+                    if (kind == "trajectory") continue;
                     throw Logging.ErrorOnce(
                         new FileNotFoundException($"Experiment artifact '{source}' is missing.", source),
                         "ROUND_ARCHIVE_FAILED", "本輪 archive 失敗", nameof(Archive), source, "required_artifact_missing");
                 }
+                if (kind != "trajectory" && !ReadTable(source).Any(row => row.GetValueOrDefault("Experiment") == shortName))
+                    throw Logging.ErrorOnce(
+                        new InvalidDataException($"Experiment artifact '{source}' has no rows for '{shortName}'."),
+                        "ROUND_ARCHIVE_FAILED", "本輪 archive 失敗", nameof(Archive), source, "round_rows_missing");
+                if (File.Exists(target) && !StartsWith(source, target))
+                    throw Logging.ErrorOnce(
+                        new InvalidDataException($"Archive '{target}' is not the beginning of '{source}'."),
+                        "ROUND_ARCHIVE_FAILED", "本輪 archive 失敗", nameof(Archive), target, "archive_is_not_a_prefix_of_bin");
 
-                string target = Path.Combine(ArchiveDir, Path.GetFileName(source));
-                File.Copy(source, target, overwrite: false);
+                File.Copy(source, target, overwrite: true);
                 copied.Add(target);
                 Logging.Info($"[Archive] {target}");
             }
             return copied;
+        }
+
+        // 確認 bin 檔保留 archive 的全部內容，僅在檔尾新增資料。
+        private static bool StartsWith(string path, string prefixPath)
+        {
+            byte[] prefix = File.ReadAllBytes(prefixPath);
+            using var stream = File.OpenRead(path);
+            if (stream.Length < prefix.Length) return false;
+            var head = new byte[prefix.Length];
+            stream.ReadExactly(head);
+            return head.AsSpan().SequenceEqual(prefix);
+        }
+
+        /// <summary>依表頭讀取 CSV，不依賴欄位順序；StreamReader 會略過 UTF-8 BOM。</summary>
+        internal static List<Dictionary<string, string>> ReadTable(string path)
+        {
+            using var reader = new StreamReader(path, Encoding.UTF8);
+            var records = CsvCtrl.ParseCsv(reader).ToList();
+            if (records.Count == 0) return new List<Dictionary<string, string>>();
+
+            string[] header = records[0];
+            return records.Skip(1)
+                .Where(r => r.Length > 1 || r[0].Length > 0)
+                .Select(r => header
+                    .Select((column, i) => (column, value: i < r.Length ? r[i] : ""))
+                    .ToDictionary(c => c.column, c => c.value, StringComparer.Ordinal))
+                .ToList();
         }
 
         #endregion
@@ -250,7 +308,7 @@ namespace ModelTuner
         private static string InstanceName(string path)
         {
             string name = Path.GetFileNameWithoutExtension(path);
-            // .sav.gz 這類雙副檔名會留下一層，再剝一次
+            // .sav.gz 有兩層副檔名，需再移除一層。
             if (Path.HasExtension(name)) name = Path.GetFileNameWithoutExtension(name);
             return FrameworkStamp.Replace(name, "");
         }

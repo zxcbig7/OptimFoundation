@@ -78,15 +78,15 @@ namespace ModelInspector.Reporting
                 Line("例外", _inspection.Failure);
             Line("目標值", Num(_inspection.ObjectiveValue));
             Line("最佳界", Num(_inspection.BestBound));
-            Line("MIP gap", Pct(_inspection.MipGap));
+            Line("Gap", Pct(_inspection.Gap));
             if (_inspection.Metrics is { } m)
             {
-                Line("求解耗時", $"{m.RunTimeMs:N0} ms");
+                Line("求解耗時", $"{m.SolveTimeMs:N0} ms");
                 Line("節點數", m.NodeCount?.ToString("N0") ?? "n/a");
                 Line("迭代數", m.IterationCount?.ToString("N0") ?? "n/a");
-                Line("首次可行", m.TFeasMs.HasValue ? $"{m.TFeasMs.Value:N0} ms" : "n/a");
-                Line("界推進量", m.DeltaBound.HasValue ? Num(m.DeltaBound.Value) : "n/a");
-                Line("界停滯於", m.TStallMs.HasValue ? $"{m.TStallMs.Value:N0} ms" : "n/a");
+                Line("首次可行", m.FirstSolutionMs.HasValue ? $"{m.FirstSolutionMs.Value:N0} ms" : "n/a");
+                Line("界推進量", m.BoundChange.HasValue ? Num(m.BoundChange.Value) : "n/a");
+                Line("界停滯於", m.LastBoundChangeMs.HasValue ? $"{m.LastBoundChangeMs.Value:N0} ms" : "n/a");
             }
             Line("整趟耗時", $"{_inspection.TotalElapsed.TotalMilliseconds:N0} ms"
                 + $"（其中讀檔 + re-index {_inspection.BuildModelElapsed.TotalMilliseconds:N0} ms）");
@@ -111,8 +111,8 @@ namespace ModelInspector.Reporting
             {
                 Section($"收斂軌跡（{_inspection.Trajectory.Count:N0} 點）");
                 foreach (var p in Sample(_inspection.Trajectory, _options.MaxPrint))
-                    Console.WriteLine($"    t={p.TimeMs,8:N0} ms  obj={Num(p.Objective),14}  "
-                        + $"bound={Num(p.Bound),14}  gap={Pct(p.Gap)}");
+                    Console.WriteLine($"    t={p.ElapsedMs,8:N0} ms  obj={Num(p.ObjectiveValue),14}  "
+                        + $"bound={Num(p.BestBound),14}  gap={Pct(p.Gap)}");
             }
 
             if (_inspection.ConflictConstraints.Count > 0)
@@ -152,7 +152,7 @@ namespace ModelInspector.Reporting
             sb.AppendLine($"# 模型檢視報告 — {_inspection.Label}");
             sb.AppendLine();
             sb.AppendLine($"產生時間：{DateTime.Now:yyyy-MM-dd HH:mm:ss}　"
-                + $"引擎：OptimFoundation.Cplex　模式：ImportModel（`OptModel.FromFile`）");
+                + $"引擎：OptimFoundation.Cplex　模式：匯入模型檔（`OptModel.ReadModel`）");
             sb.AppendLine();
 
             sb.AppendLine("## 1. 來源");
@@ -167,12 +167,12 @@ namespace ModelInspector.Reporting
 
             sb.AppendLine("## 2. 執行設定");
             sb.AppendLine();
-            sb.AppendLine("### 2.1 專案層（ProjectConfig）");
+            sb.AppendLine("### 2.1 專案與輸出（OptProject / ProjectConfig）");
             sb.AppendLine();
             sb.AppendLine("| 欄位 | 值 |");
             sb.AppendLine("| --- | --- |");
-            sb.AppendLine($"| ProjectName | {_inspection.ProjectConfig.ProjectName} |");
-            sb.AppendLine($"| RetentionDays | {_inspection.ProjectConfig.RetentionDays?.ToString() ?? "30（預設）"} |");
+            sb.AppendLine($"| ProjectName | {_inspection.ProjectName} |");
+            sb.AppendLine($"| RetentionDays | {_inspection.RetentionDays} |");
             sb.AppendLine($"| EnableSolverLog | {_inspection.ProjectConfig.EnableSolverLog} |");
             sb.AppendLine($"| ExportLP | {_inspection.ProjectConfig.ExportLP} |");
             sb.AppendLine($"| ExportMPS | {_inspection.ProjectConfig.ExportMPS} |");
@@ -189,14 +189,13 @@ namespace ModelInspector.Reporting
 
             sb.AppendLine("## 3. 模型結構");
             sb.AppendLine();
-            sb.AppendLine("`ImportModel` 讀檔後由 `ReindexFromModel` 從 active model 的 `ILPMatrix` "
+            sb.AppendLine("`ReadModel` 讀檔後由 `ReindexFromModel` 從 active model 的 `ILPMatrix` "
                 + "反向取回 `INumVar` 與 `IRange`，下列前兩項即該次 re-index 的結果。");
             sb.AppendLine();
             sb.AppendLine("| 指標 | 值 | 匯入模式下是否有效 |");
             sb.AppendLine("| --- | --- | --- |");
             sb.AppendLine($"| VariableCount | {_inspection.VariableCount:N0} | 有效 |");
             sb.AppendLine($"| ConstraintCount | {_inspection.ConstraintCount:N0} | 有效 |");
-            sb.AppendLine($"| RegisteredVariableCount | {_inspection.RegisteredVariableCount:N0} | 無效（量 VariableSets） |");
             sb.AppendLine($"| ObjectiveSense | {_inspection.ObjectiveSense} | 有效（依檔案內容；.mps 的 maximize 會變成反號的 minimize） |");
             sb.AppendLine($"| ObjectiveTermCount | {_inspection.ObjectiveTermCount:N0} | 無效（量 pool 累積） |");
             sb.AppendLine($"| SoftConstraintCount | {_inspection.SoftConstraintCount:N0} | 無效（量 pool 累積） |");
@@ -226,18 +225,18 @@ namespace ModelInspector.Reporting
             sb.AppendLine($"| IsSuccess | {_inspection.IsSuccess} |");
             sb.AppendLine($"| ObjectiveValue | {Num(_inspection.ObjectiveValue)} |");
             sb.AppendLine($"| BestBound | {Num(_inspection.BestBound)} |");
-            sb.AppendLine($"| MIPGap | {Pct(_inspection.MipGap)} |");
+            sb.AppendLine($"| Gap | {Pct(_inspection.Gap)} |");
             if (_inspection.Metrics is { } metrics)
             {
-                sb.AppendLine($"| RunTimeMs | {metrics.RunTimeMs:N2} |");
+                sb.AppendLine($"| SolveTimeMs | {metrics.SolveTimeMs:N2} |");
                 sb.AppendLine($"| NodeCount | {metrics.NodeCount?.ToString("N0") ?? "n/a"} |");
                 sb.AppendLine($"| IterationCount | {metrics.IterationCount?.ToString("N0") ?? "n/a"} |");
                 sb.AppendLine($"| VarCount（metrics） | {metrics.VarCount:N0} |");
                 sb.AppendLine($"| ConstraintCount（metrics） | {metrics.ConstraintCount:N0} |");
                 sb.AppendLine($"| TrajectoryPoints | {metrics.TrajectoryPoints:N0} |");
-                sb.AppendLine($"| TFeasMs | {metrics.TFeasMs?.ToString("N2") ?? "n/a"} |");
-                sb.AppendLine($"| DeltaBound | {(metrics.DeltaBound.HasValue ? Num(metrics.DeltaBound.Value) : "n/a")} |");
-                sb.AppendLine($"| TStallMs | {metrics.TStallMs?.ToString("N2") ?? "n/a"} |");
+                sb.AppendLine($"| FirstSolutionMs | {metrics.FirstSolutionMs?.ToString("N2") ?? "n/a"} |");
+                sb.AppendLine($"| BoundChange | {(metrics.BoundChange.HasValue ? Num(metrics.BoundChange.Value) : "n/a")} |");
+                sb.AppendLine($"| LastBoundChangeMs | {metrics.LastBoundChangeMs?.ToString("N2") ?? "n/a"} |");
             }
             else
             {
@@ -261,10 +260,10 @@ namespace ModelInspector.Reporting
             {
                 sb.AppendLine($"共 {_inspection.Trajectory.Count:N0} 點，完整序列見同名 `_Trajectory_*.csv`。");
                 sb.AppendLine();
-                sb.AppendLine("| TimeMs | Objective | Bound | Gap |");
+                sb.AppendLine("| ElapsedMs | ObjectiveValue | BestBound | Gap |");
                 sb.AppendLine("| --- | --- | --- | --- |");
                 foreach (var p in Sample(_inspection.Trajectory, 30))
-                    sb.AppendLine($"| {p.TimeMs:N0} | {Num(p.Objective)} | {Num(p.Bound)} | {Pct(p.Gap)} |");
+                    sb.AppendLine($"| {p.ElapsedMs:N0} | {Num(p.ObjectiveValue)} | {Num(p.BestBound)} | {Pct(p.Gap)} |");
             }
             sb.AppendLine();
 
@@ -365,11 +364,11 @@ namespace ModelInspector.Reporting
         private string BuildTrajectoryCsv()
         {
             var sb = new StringBuilder();
-            sb.AppendLine("TimeMs,Objective,Bound,Gap");
+            sb.AppendLine("ElapsedMs,ObjectiveValue,BestBound,Gap");
             foreach (var p in _inspection.Trajectory)
-                sb.AppendLine($"{p.TimeMs.ToString("R", CultureInfo.InvariantCulture)},"
-                    + $"{p.Objective.ToString("R", CultureInfo.InvariantCulture)},"
-                    + $"{p.Bound.ToString("R", CultureInfo.InvariantCulture)},"
+                sb.AppendLine($"{p.ElapsedMs.ToString("R", CultureInfo.InvariantCulture)},"
+                    + $"{p.ObjectiveValue.ToString("R", CultureInfo.InvariantCulture)},"
+                    + $"{p.BestBound.ToString("R", CultureInfo.InvariantCulture)},"
                     + $"{p.Gap.ToString("R", CultureInfo.InvariantCulture)}");
             return sb.ToString();
         }
@@ -386,7 +385,7 @@ namespace ModelInspector.Reporting
                 .Concat(_inspection.IntegerValues)
                 .Concat(_inspection.ContinuousValues);
 
-        // 軌跡動輒上千點，等距抽樣並保證首尾都在，讓形狀看得出來又不洗版。
+        // 軌跡可能有上千點；等距取樣並保留首尾，讓摘要能看出趨勢。
         private static List<ConvergencePoint> Sample(IReadOnlyList<ConvergencePoint> points, int max)
         {
             if (points.Count <= max) return points.ToList();

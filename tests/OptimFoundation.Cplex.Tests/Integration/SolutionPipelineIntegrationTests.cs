@@ -5,7 +5,7 @@ using Xunit;
 namespace OptimFoundation.Cplex.Tests.Integration
 {
     /// <summary>
-    /// 起始解 pipeline（ExportSolution → ReadSolution / GetSolution → AddMIPStart）、目標式常數項、LP 不讀 MIP gap。
+    /// 檢查解值能否匯出、讀回並作為下一次求解的起始解（ExportSolution → ReadSolution / GetSolution → AddMIPStart），以及目標式常數與 LP 的 MIP gap 處理。
     /// 需要 CPLEX DLL 才能執行。
     /// </summary>
     [Collection("Logging")]
@@ -55,7 +55,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             engine.BuildCVs<VarS>(new[] { "x" });
             engine.AddLHS(1.0, new VarS { S = "x" });
             engine.AddRHS(3.0);
-            engine.CreateGreatEqual("LB");
+            engine.CreateGreaterEqual("LB");
             engine.AddLHS(1.0, new VarS { S = "x" });
             engine.AddLHS(5.0);
             engine.CreateMinimize();
@@ -75,7 +75,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             engine.BuildCVs<VarS>(new[] { "x" });
             engine.AddLHS(1.0, new VarS { S = "x" });
             engine.AddRHS(3.0);
-            engine.CreateGreatEqual("LB");
+            engine.CreateGreaterEqual("LB");
             engine.AddLHS(2.0, new VarS { S = "x" });
             engine.CreateMinimize();
 
@@ -152,10 +152,10 @@ namespace OptimFoundation.Cplex.Tests.Integration
                 })
                 .ReadSolution(fileName);
 
-            using var run = new OptProject(model, project)
-                .UseConfig(() => new ProjectConfig { EnableSolverLog = false });
-            Assert.True(run.Execute());
-            Assert.Equal(6.0, run.Engine.GetObjectiveValue(), precision: 6);
+            using var optProject = new OptProject(project, retentionDays: 0)
+                .LoadConfig(new ProjectConfig { EnableSolverLog = false });
+            Assert.True(optProject.Solve(model, new CplexConfig()));
+            Assert.Equal(6.0, optProject.Engine.GetObjectiveValue(), precision: 6);
             Assert.Contains("[OptEngine] Solution read:", ReadLog(project));
         }
 

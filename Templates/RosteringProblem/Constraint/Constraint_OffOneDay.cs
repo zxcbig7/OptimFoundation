@@ -45,7 +45,7 @@ namespace RosteringProblem
                     engine.AddRHS(-1.0, new VariableB_ShiftAssign { Date = prePreDate, Employee = employee, Group = "O" });
                     engine.AddRHS(-(offOneDayWindow - one));
 
-                    engine.CreateGreatEqual(this, date, employee);
+                    engine.CreateGreaterEqual(this, date, employee);
                 }
         }
     }

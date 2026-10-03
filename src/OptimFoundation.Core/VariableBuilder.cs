@@ -11,11 +11,11 @@ namespace OptimFoundation.Core
     /// <summary>
     /// 變數名稱工具：
     /// 把多個 Set 做笛卡兒積，組出變數 key（TypeName@v1@v2@…），與 ModelElementBase.ToString() 格式一致。
-    /// 這裡只做字串處理，不建立 TVariable 實例，避免每個名稱都做 InitClassBySets + ToString 的反射。
+    /// GetVarNames 直接組合字串，避免為每個名稱建立物件並反射取值；需要建立實例時另用 BuildVars。
     /// </summary>
     public static class VariableBuilder
     {
-        // 型別 → 編譯後建構委派 的快取（無參 / object[] / string[] 三種建構子擇一），避免每次反射
+        // 快取各型別的建構函式，依序選用無參數、object[] 或 string[] 建構子，避免每次建立物件都反射查找。
         private static readonly ConcurrentDictionary<Type, Func<string[], object>> _ctorCache
             = new ConcurrentDictionary<Type, Func<string[], object>>();
 
@@ -52,7 +52,7 @@ namespace OptimFoundation.Core
             return Expression.Lambda<Func<string[], object>>(Expression.New(stringArrCtor, param), param).Compile();
         });
 
-        // 0 維（scalar）→ 回空陣列；≥1 維 → 回每個組合的 string[]，供 GetVarNames/BuildVars 組 key
+        // 沒有維度時產生一組空陣列；有維度時產生各集合的所有組合，供 GetVarNames/BuildVars 組成名稱。
         private static IEnumerable<string[]> GenVarParts(List<string>[] lists)
         {
             IEnumerable<string[]> result = new[] { Array.Empty<string>() };
@@ -67,7 +67,7 @@ namespace OptimFoundation.Core
             return result;
         }
 
-        /// <summary>從多個 Set 組合出所有變數名稱（格式：TypeName@set1@set2@...）</summary>
+        /// <summary>組合各 Set 的資料列，回傳每組維度值的字串陣列；完整名稱由呼叫端組成。</summary>
         private static IEnumerable<string[]> GenVarParts(List<string[]>[] domains)
         {
             IEnumerable<string[]> result = new[] { Array.Empty<string>() };
@@ -159,10 +159,10 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 比對建構的維度與class所需維度是否匹配
+        /// 檢查各集合提供的維度總數是否等於 TVariable 的可寫 property 數；有空集合時略過檢查。
         /// </summary>
-        /// <param name="domains"></param>
-        /// <typeparam name="TVariable"></typeparam>
+        /// <param name="domains">各集合的資料列，每列以字串陣列保存維度值。</param>
+        /// <typeparam name="TVariable">要建立的變數類別。</typeparam>
         private static void ValidateVariableArity<TVariable>(List<string[]>[] domains)
         {
             if (domains.Any(domain => domain.Count == 0)) return;
@@ -187,9 +187,10 @@ namespace OptimFoundation.Core
                     "variable_property_count_mismatch", $"actual={actual} expected={expected}");
         }
 
+        /// <summary>回傳各維度值的笛卡兒積，每組組成 <c>@值1@值2…</c> 接在類別名後；沒有維度時回傳一個空字串。</summary>
         public static IEnumerable<string> GenVarCombinations(params List<string>[] lists)
         {
-            // 0 維（scalar 變數）：無 index，回空字串（呼叫端組出 TypeName，與 ModelElementBase.ToString 一致，不留 trailing @）
+            // 沒有維度的變數回傳空字串，讓呼叫端只保留類別名，不多加結尾的 @。
             foreach (var parts in GenVarParts(lists))
                 yield return parts.Length == 0
                     ? string.Empty
@@ -210,8 +211,8 @@ namespace OptimFoundation.Core
                     "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToStringLists), null,
                     "sets_array_is_null");
 
-            // 單獨傳一個 string[] 時，C# 陣列共變會把它直接 bind 成 params object[] 本身，
-            // 元素散成一條條 string；裸 string 不是合法 set，全為 string 必為此誤 bind，還原成單一 set
+            // 只傳一個 string[] 時，C# 可能把整個陣列當成 params object[]，而不是其中一個參數，
+            // 此時 lists 的每項都會是 string。把它們重新包成一個集合，才能按一個維度處理。
             if (lists.Length > 0 && lists.All(x => x is string))
                 lists = [lists.Cast<string>().ToList()];
 
@@ -236,7 +237,7 @@ namespace OptimFoundation.Core
                         new ArgumentException($"Set 不可為單一 string '{s}'——集合與裸 string 混傳，請確認每個參數都是一個 Set（IEnumerable）。"),
                         "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToStringLists), s,
                         "bare_string_is_not_a_set", $"index={i + 1}"),
-                    // enum 為 value type，無法靠 IEnumerable<Enum> 共變比對，改用非泛型 IEnumerable + 元素型別偵測
+                    // enum 是值型別，不能用 IEnumerable<Enum> 判斷任意 enum 集合，因此另外檢查集合的元素型別。
                     System.Collections.IEnumerable seq when GetEnumElementType(lists[i]) != null
                         => seq.Cast<object>().Select(value => ModelNaming.Token($"Set #{i + 1}", value)).ToList(),
                     _ => throw Logging.ErrorOnce(
@@ -275,8 +276,8 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 產生所有變數名稱的 string 版（格式：setName@val1@val2@…），語意與泛型版相同。
-        /// 差別只有：泛型版的 arity 檢查靠 TVariable 的 property 數量，string 版沒有類別可對照，故不檢查維度數量。
+        /// 以傳入的 setName 取代類別名，產生所有變數名稱（格式：setName@val1@val2@…）。
+        /// 這個版本沒有 TVariable 可對照，所以不檢查集合的維度總數是否等於變數類別的 property 數。
         /// </summary>
         public static IEnumerable<string> GetVarNames(string setName, object[] sets)
         {
@@ -285,7 +286,7 @@ namespace OptimFoundation.Core
                 yield return ModelNaming.Compose(setName, parts);
         }
 
-        /// <summary>以逐筆 callback 建立變數。</summary>
+        /// <summary>為各維度組合建立一個 TVariable 實例，逐筆傳給 createVarMethod 處理。</summary>
         public static void BuildVars<TVariable>(Action<object> createVarMethod, object[] sets)
         {
             var create = GetCtor(typeof(TVariable));

@@ -12,18 +12,18 @@ using static ILOG.CPLEX.Cplex;
 namespace OptimFoundation.Cplex
 {
     /// <summary>
-    /// <see cref="OptEngine"/> 的組態套用部分：把 <see cref="CplexConfig"/> 與 ProjectConfig 的每個設定送進 CPLEX。
+    /// 為 <see cref="OptEngine"/> 套用 <see cref="CplexConfig"/> 中有值的參數，以及 <see cref="ProjectConfig"/> 的輸出選項。
     /// </summary>
     public partial class OptEngine
     {
         #region Configuration
 
         /// <summary>
-        /// 建立 CPLEX 模型物件並逐項套用組態，每套用一項就寫一行 [Solver Setting] log。
-        /// 重複呼叫等同重新開一個空模型：限制式清單、目標式、conflict 結果、限制式名稱去重集合全部重置（變數索引不動）。
+        /// 建立空的 CPLEX 模型，套用有指定值的求解器參數，並以 [Solver Setting] 記錄每一項設定。
+        /// 再次呼叫會重建空模型，清除限制式、目標式、衝突結果與已用限制式名稱；變數索引保留。
         /// </summary>
-        /// <param name="cfg">MUST 為 <see cref="CplexConfig"/>，傳其他型別會在後續存取時 NullReferenceException。</param>
-        public override void Configuration(ISolverConfig cfg)
+        /// <param name="cfg">必須是非 null 的 <see cref="CplexConfig"/>；否則讀取設定時會拋出 NullReferenceException。</param>
+        public override void LoadConfig(ISolverConfig cfg)
         {
 
             Model = new ILOG.CPLEX.Cplex();
@@ -34,9 +34,9 @@ namespace OptimFoundation.Cplex
 
             CplexConfig config = cfg as CplexConfig;
 
-            // Solver log 路由：無論是否顯示 Console，都會捕捉並保存到 framework log。
-            //   EnableSolverLog = true  → Console + framework log
-            //   EnableSolverLog = false → framework log only
+            // CPLEX 的輸出一律先保存在記憶體，求解後寫入框架 log；是否同步顯示在 Console 由設定決定。
+            // EnableSolverLog = true：同時顯示在 Console 並保留到框架 log。
+            // EnableSolverLog = false：只保留到框架 log。
             _solverLogStream?.Dispose();
             _solverLogWriter?.Dispose();
             _solverLogStream = new MemoryStream();
@@ -45,7 +45,7 @@ namespace OptimFoundation.Cplex
             if (_projectConfig.EnableSolverLog)
             {
                 _enableLog = true;
-                // TeeWriter：即時寫 Console + 同時捕捉到 MemoryStream（供事後存 log 檔）
+                // 同時寫入 Console 與記憶體，供求解後存入 log。
                 var tee = new TeeWriter(Console.Out, _solverLogWriter);
                 Model.SetOut(tee);
                 Model.SetWarning(tee);
@@ -82,7 +82,7 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region 設定執行緒上限
-            // CPLEX求解設定 - 工作執行緒上限 (預設: 32)
+            // 指定求解可用的執行緒上限；未指定時沿用 CPLEX 預設。
             if (config.Threads.HasValue)
             {
                 Model.SetParam(Param.Threads, config.Threads.Value);
@@ -91,7 +91,7 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region 設定限制式上限
-            // CPLEX求解設定 - 限制式上限 (預設: 30,000)
+            // 指定讀取模型檔時的限制式數量上限。
             if (config.RowRead.HasValue)
             {
 #pragma warning disable CS0618 // IBM 自 V20.1.0 標為過時；RowRead 是既有公開 API，維持可用
@@ -102,8 +102,8 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region 設定工作記憶體上限
-            // CPLEX求解設定 - 工作記憶體上限: 2 GB (預設)
-            // (double)(workMemory.Value / 1024), 1) GB
+            // 指定工作記憶體大小（MB），並先停用節點檔。
+            // 若也指定 NodeFileStrategy，稍後會用該設定覆寫這裡的節點檔選項。
             if (config.MemoryLimitMb.HasValue)
             {
                 Model.SetParam(IntParam.WorkMem, config.MemoryLimitMb.Value);
@@ -113,7 +113,7 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region 設定求解下限
-            // CPLEX求解設定 - 求解下限: epGap.Value * 100 % (預設: 1e-4 %)
+            // 設定相對 MIP gap 的停止門檻；數值是比例，例如 1e-4 表示 0.01%。
             if (config.MipGap.HasValue)
             {
                 Model.SetParam(Param.MIP.Tolerances.MIPGap, config.MipGap.Value);
@@ -122,7 +122,7 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region node 選擇策略
-            // CPLEX求解設定 - node選擇策略: (預設)
+            // 設定接下來要搜尋哪個節點。
             if (config.NodeSelect.HasValue)
             {
                 Model.SetParam(Param.MIP.Strategy.NodeSelect, config.NodeSelect.Value);
@@ -139,7 +139,7 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region 設定 Random Seed
-            // CPLEX求解設定 - 隨機種子 (預設: 0)
+            // 設定隨機種子，供重複實驗時控制隨機選擇。
             if (config.Seed.HasValue)
             {
                 Model.SetParam(Param.RandomSeed, config.Seed.Value);
@@ -156,7 +156,7 @@ namespace OptimFoundation.Cplex
             }
 
             #region 設定容忍區間(Optimality tolerance)
-            // "CPLEX求解設定 - Optimality tolerance (預設: 1e-06 )
+            // 設定 simplex 判定解已達最佳時允許的數值誤差。
             if (config.OptimalityTol.HasValue)
             {
                 Model.SetParam(Param.Simplex.Tolerances.Optimality, config.OptimalityTol.Value);
@@ -165,7 +165,7 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region 設定容忍區間(Feasibility tolerance)
-            // CPLEX求解設定 - Feasibility tolerance (預設: 1e-06)
+            // 設定 simplex 判定限制式成立時允許的數值誤差。
             if (config.FeasibilityTol.HasValue)
             {
                 Model.SetParam(Param.Simplex.Tolerances.Feasibility, config.FeasibilityTol.Value);
@@ -174,7 +174,7 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region 設定逾時秒數
-            // CPLEX求解設定 - 逾時秒數: (預設: 無限制)
+            // 指定求解時間上限，單位為秒。
             if (config.TimeLimit.HasValue)
             {
                 Model.SetParam(Param.TimeLimit, config.TimeLimit.Value);
@@ -183,7 +183,7 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region 設定 Solution Polishing 秒數
-            // CPLEX求解設定 - Solution Polishing秒數: (預設: 無)
+            // 指定求解經過幾秒後，改為集中改善已找到的可行解。
             if (config.PolishAfterTime.HasValue)
             {
                 Model.SetParam(Param.MIP.PolishAfter.Time, config.PolishAfterTime.Value);
@@ -192,7 +192,7 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region 設定解析模式
-            // CPLEX求解設定 - 解析模式: 平衡最佳可行解 (預設)
+            // 設定搜尋重點，例如先找可行解、改善最佳界限，或優先證明最佳性。
             if (config.Emphasis.HasValue)
             {
                 Model.SetParam(Param.Emphasis.MIP, config.Emphasis.Value);
@@ -210,7 +210,7 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region 設定分支模式
-            // CPLEX求解設定 - 分支模式: 自動選擇變數分支 (預設)
+            // 設定用哪種方式選擇要分支的變數。
             if (config.VariableSelect.HasValue)
             {
                 Model.SetParam(Param.MIP.Strategy.VariableSelect, config.VariableSelect.Value);
@@ -229,7 +229,7 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region 設定演算法
-            // CPLEX求解設定 - 演算法: 自動選擇 (預設)
+            // 設定根節點鬆弛問題使用的演算法。
             if (config.RootAlgorithm.HasValue)
             {
                 Model.SetParam(IntParam.RootAlgorithm, config.RootAlgorithm.Value);
@@ -264,7 +264,7 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region 設定節點資訊儲存模式
-            // CPLEX求解設定 - 節點資訊: 節點資訊壓縮存放於記憶體 (預設)
+            // 設定節點資料保留在記憶體或寫入磁碟，以及是否壓縮。
             if (config.NodeFileStrategy.HasValue)
             {
                 Model.SetParam(Param.MIP.Strategy.File, config.NodeFileStrategy.Value);
@@ -290,7 +290,7 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region 前處理 / Presolve
-            // 先前已宣告於 CplexConfig（ISolverConfig.Presolve ↔ PreIndicator）卻未套用 → 此處接線
+            // 套用前處理開關；ISolverConfig.Presolve 與 PreIndicator 對應同一項設定。
             if (config.PreIndicator.HasValue)
             {
                 Model.SetParam(Param.Preprocessing.Presolve, config.PreIndicator.Value);
@@ -305,7 +305,7 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region 子問題（節點）演算法
-            // 先前已宣告於 CplexConfig（NodeAlgorithm）卻未套用 → 此處接線
+            // 設定非根節點的連續鬆弛問題使用哪個演算法。
             if (config.NodeAlgorithm.HasValue)
             {
                 Model.SetParam(Param.NodeAlgorithm, config.NodeAlgorithm.Value);
@@ -314,7 +314,7 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region 啟發式投入程度（HeuristicEffort）
-            // 先前已宣告於 CplexConfig（ISolverConfig.HeuristicEffort）卻未套用 → 此處接線
+            // 設定 CPLEX 要投入多少計算在尋找可行解的啟發式方法上。
             if (config.HeuristicEffort.HasValue)
             {
                 Model.SetParam(Param.MIP.Strategy.HeuristicEffort, config.HeuristicEffort.Value);
@@ -323,7 +323,7 @@ namespace OptimFoundation.Cplex
             #endregion
 
             #region 決定論 / 計時
-            // 平行模式：-1 機會式, 0 自動, 1 決定論（實驗可重現首選）
+            // 平行模式：-1 允許執行緒時序影響搜尋順序，0 自動選擇，1 使用可重現的搜尋順序。
             if (config.ParallelMode.HasValue)
             {
                 Model.SetParam(Param.Parallel, config.ParallelMode.Value);
@@ -335,13 +335,13 @@ namespace OptimFoundation.Cplex
                 };
                 Logging.Info($"[Solver Setting] Parallel={config.ParallelMode.Value} ({parallelDescription})");
             }
-            // 決定論時間上限（ticks）
+            // 以 CPLEX 計算工作量的 ticks 設定上限，與實際經過秒數不同。
             if (config.DeterministicTimeLimit.HasValue)
             {
                 Model.SetParam(Param.DetTimeLimit, config.DeterministicTimeLimit.Value);
                 Logging.Info($"[Solver Setting] DetTimeLimit={config.DeterministicTimeLimit.Value} ticks");
             }
-            // 計時方式：1 CPU, 2 wall-clock
+            // 計時方式：1 使用 CPU 時間，2 使用實際經過時間。
             if (config.ClockType.HasValue)
             {
                 Model.SetParam(Param.ClockType, config.ClockType.Value);

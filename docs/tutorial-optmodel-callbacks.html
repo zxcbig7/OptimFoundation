@@ -20,27 +20,27 @@ var model = new OptModel("Canonical")
         engine.BuildVars&lt;VariableB_Assign&gt;(
             data.set_Lot, data.set_Operation, data.set_Eqp))
     .AddObjective(engine =&gt;
-        new ObjectiveFunction(/* only required dependencies */).Build(engine))
+        new ObjectiveFunction(/* 僅傳入需要的資料 */).Build(engine))
     .AddConstraints(engine =&gt;
-        new Constraint_AssignOne(/* only required dependencies */).Build(engine));</code></pre>
+        new Constraint_AssignOne(/* 僅傳入需要的資料 */).Build(engine));</code></pre>
 
   <h2>為什麼用 lambda</h2>
-  <p>lambda 把資料依賴固定在組裝點，同時讓 Objective/Constraint 類別只接收實際材料。它不是立即求解；真正執行發生在 OptProject.Execute。</p>
+  <p>lambda 把資料依賴固定在組裝點，同時讓 Objective/Constraint 類別只接收實際材料。它不是立即求解；真正執行發生在 OptProject.Solve。</p>
 
-  <pre><code class="language-csharp">using var project = new OptProject(model)
-    .UseConfig(() =&gt; projectConfig)
-    .UseConfig(() =&gt; solverConfig)
-    .OnSolved(engine =&gt; sink.WriteSolution&lt;VariableB_Assign&gt;(engine));
+  <pre><code class="language-csharp">using var project = new OptProject("Example")
+    .LoadConfig(projectConfig);
 
-bool solved = project.Execute();</code></pre>
+bool solved = project.Solve(model, solverConfig,
+    onSolved: engine =&gt; sink.WriteSolution&lt;VariableB_Assign&gt;(engine));</code></pre>
 
   <h2>順序</h2>
   <ol>
     <li>AddVariables</li>
     <li>AddObjective</li>
     <li>AddConstraints</li>
-    <li>OptProject.Execute</li>
-    <li>OnSolved</li>
+    <li>beforeSolve</li>
+    <li>OptProject.Solve 求解</li>
+    <li>onSolved</li>
   </ol>
 
   <p>Objective 先於 constraints，讓 soft penalty 能依正確的目標方向加入。</p>

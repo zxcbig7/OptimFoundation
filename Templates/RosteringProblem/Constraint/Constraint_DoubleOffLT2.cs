@@ -59,7 +59,7 @@ namespace RosteringProblem
                         engine.AddRHS(-(window.Count - one));
                     }
 
-                    engine.CreateGreatEqual(this, "a", date, employee);
+                    engine.CreateGreaterEqual(this, "a", date, employee);
                 }
             }
 
@@ -70,7 +70,7 @@ namespace RosteringProblem
 
                 engine.AddLHS(doubleOffThreshold, new VariableB_DoubleOffLT2 { Employee = employee });
                 engine.AddRHS(doubleOffThreshold);
-                engine.CreateGreatEqual(this, "b", employee);
+                engine.CreateGreaterEqual(this, "b", employee);
             }
         }
     }

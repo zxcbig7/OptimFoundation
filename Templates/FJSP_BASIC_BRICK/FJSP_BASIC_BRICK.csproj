@@ -32,8 +32,4 @@
     </Reference>
   </ItemGroup>
 
-  <ItemGroup>
-    <None Update="Data\**\*.csv" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
 </Project>

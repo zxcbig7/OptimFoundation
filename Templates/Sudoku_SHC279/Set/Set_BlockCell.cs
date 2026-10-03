@@ -2,7 +2,7 @@ using OptimFoundation.Modeling;
 
 namespace Sudoku_SHC279
 {
-    /// <summary>每個宮涵蓋的（宮, 列, 欄）組合；宮的劃分規則資料化。</summary>
+    /// <summary>列出每個宮包含哪些格子，每列記錄（宮, 列, 欄）；模型依這份資料判斷格子屬於哪個宮。</summary>
     [OptSet]
     [OptDim<int>("Block")]
     [OptDim<int>("Row")]

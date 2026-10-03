@@ -63,7 +63,7 @@ modules: [core, cplex, generators, tests, templates]
 - [ ] **AC2 命名層可獨立測試**：新增的命名層單元測試在不建立任何 engine、不需要 CPLEX DLL 的情況下通過。
 - [ ] **AC3 池的單一建構點**：寫入 `Variables` 的位置收斂成單一方法，`grep` 得出來只有一處；其餘位置一律唯讀。
 - [ ] **AC4 限制池同樣收斂**：`_verifyConstraints` 與 `_constraints` 的寫入點同樣收斂成單一入口。
-- [ ] **AC5 兩種來源共用路徑**：自建模型與 `OptModel.FromFile()` 匯入模型走同一個池建構方法；`ReindexFromModel` 不再是獨立的特例實作。
+- [ ] **AC5 兩種來源共用路徑**：自建模型與 `OptModel.ReadModel()` 匯入模型走同一個池建構方法；`ReindexFromModel` 不再是獨立的特例實作。
 - [ ] **AC6 `VariableSets` 已移除**：`grep -rn "VariableSets" src/` 零結果（含註解），且不留任何等價的常駐分組結構。
 - [ ] **AC7 型別化查詢改為篩選**：`GetSetVarValues<T>()`、`GetSetVarValues(setName)`、`GetSetVarNames<T>()`、`GetSolution(varTypeName)`、`GetVariableSet(setName)` 全部改由命名層產生字串集合後篩選 `Variables` 實作，對外簽名與回傳語意不變。
 - [ ] **AC8 消費端零改動**：`Templates/` 五個專案與 `ModelInspector` 一行不改即可 build；特別是 Tutorial、RosteringProblem、FJSP_BASIC_BRICK 的 Solution 層共 16 處 `GetSetVarValues<T>()` 呼叫結果與改動前逐值相同。

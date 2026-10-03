@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace ModelInspector
 {
-    /// <summary>命令列參數。模型檔路徑為必填，其餘旋鈕都有預設值。</summary>
+    /// <summary>模型檢視工具的命令列參數；模型檔路徑必填，其餘設定都有預設值。</summary>
     public sealed class InspectionOptions
     {
         /// <summary>模型檔絕對路徑（.lp / .mps / .sav，含各自的 .gz / .bz2）。</summary>
@@ -121,8 +121,8 @@ namespace ModelInspector
                 return false;
             }
 
-            // ImportModel 對相對路徑的基準是執行檔的 Models/ 資料夾，跟使用者打指令時的位置不同；
-            // 這裡先相對 CWD 展開成絕對路徑，讓「跨專案指向另一個 bin 目錄」這個主要用法能直接work。
+            // ReadModel 對相對路徑的基準是 FolderDir.Model，跟使用者打指令時的位置不同；
+            // 這裡先以目前工作目錄為基準轉成絕對路徑，讓使用者能直接指定其他專案 bin 目錄裡的模型檔。
             options.ModelFile = Path.GetFullPath(positional[0]);
 
             if (!File.Exists(options.ModelFile))
@@ -145,7 +145,7 @@ namespace ModelInspector
         private static string DefaultLabel(string modelFile)
         {
             string name = Path.GetFileNameWithoutExtension(modelFile);
-            // .lp.gz 這類雙副檔名會留下一層，再剝一次
+            // .lp.gz 有兩層副檔名，需再移除一層。
             if (Path.HasExtension(name)) name = Path.GetFileNameWithoutExtension(name);
             return FrameworkStamp.Replace(name, "");
         }

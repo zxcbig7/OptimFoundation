@@ -5,13 +5,13 @@ using OptimFoundation.Core;
 namespace OptimFoundation.Cplex
 {
     /// <summary>
-    /// 定義模型的建模步驟，並提供 ApplyTo() 方法套用到 OptEngine。
-    /// 這個類別本身不持有任何狀態，所有操作都是服務於 <see cref="OptProject"/> 或者 <see cref="OptExperiment"/>。
-    /// 有也有設計吃檔案的建模方式（.lp / .mps / .sav），用於在既有模型上追加內容。
+    /// 保存建立變數、目標式與限制式的步驟，由 ApplyTo() 依序套用到 OptEngine。
+    /// 本身不執行求解；由 <see cref="OptProject"/> 或 <see cref="OptExperiment"/> 建立引擎並執行這些步驟。
+    /// 也可先讀入 .lp / .mps / .sav 模型檔，再執行額外的建模步驟。
     /// </summary>
     public sealed class OptModel
     {
-        /// <summary> 模型名稱可以 </summary>
+        /// <summary>模型名稱，用來區分求解與實驗紀錄。</summary>
         public string Name { get; }
         private readonly string _sourceFile;
 
@@ -22,13 +22,13 @@ namespace OptimFoundation.Cplex
         private readonly List<Action<OptEngine>> _constraintSteps = new List<Action<OptEngine>>();
         private readonly List<Action<OptEngine>> _startSteps = new List<Action<OptEngine>>();
 
-        /// <summary>Creates an empty model definition.</summary>
+        /// <summary>建立尚未加入任何建模步驟的模型定義；名稱空白時使用 Model。</summary>
         public OptModel(string name = "Model")
         {
             Name = string.IsNullOrWhiteSpace(name) ? "Model" : name;
         }
 
-        /// <summary>Adds a variable-building step.</summary>
+        /// <summary>加入一個建立變數的步驟。</summary>
         public OptModel AddVariables(Action<OptEngine> build)
         {
             _variableSteps.Add(build ?? throw Logging.ErrorOnce(
@@ -37,7 +37,7 @@ namespace OptimFoundation.Cplex
             return this;
         }
 
-        /// <summary>Adds an objective-building step.</summary>
+        /// <summary>加入一個建立目標式的步驟。</summary>
         public OptModel AddObjective(Action<OptEngine> build)
         {
             _objectiveSteps.Add(build ?? throw Logging.ErrorOnce(
@@ -46,7 +46,7 @@ namespace OptimFoundation.Cplex
             return this;
         }
 
-        /// <summary>Adds a constraint-building step.</summary>
+        /// <summary>加入一個建立限制式的步驟。</summary>
         public OptModel AddConstraints(Action<OptEngine> build)
         {
             _constraintSteps.Add(build ?? throw Logging.ErrorOnce(
@@ -59,26 +59,26 @@ namespace OptimFoundation.Cplex
 
 
         #region Read Existing Model
-        /// <summary>匯入來源檔（<see cref="FromFile"/> 建立時才有值）；以 code 建模時為 null。</summary>
+        /// <summary>匯入來源檔（<see cref="ReadModel"/> 建立時才有值）；以 code 建模時為 null。</summary>
         public string SourceFile => _sourceFile;
 
         /// <summary>
         /// 以既有模型檔（.lp / .mps / .sav）定義模型，取代逐步建模。
-        /// 套用時走 <see cref="OptEngine.ImportModel"/>：讀檔後自動 re-index，
-        /// 因此 metrics、IIS 分析與以名稱取解都照常運作；型別化取解不適用（匯入的模型沒有 C# 變數類別）。
+        /// 套用時呼叫 <see cref="OptEngine.ReadModel"/>，讀檔後自動建立變數與限制式的查找索引，
+        /// 因此仍可記錄求解統計、分析衝突限制式（IIS）或依名稱取解；無法依 C# 變數類別取解，因為匯入模型沒有這些類別。
         /// </summary>
-        /// <param name="fileName">檔名或相對路徑，以 Models 資料夾為基準；絕對路徑原樣使用。</param>
+        /// <param name="fileName">檔名或相對路徑，以 FolderDir.Model 為基準；絕對路徑原樣使用。</param>
         /// <param name="name">實驗紀錄用的模型名；省略時取檔名（不含副檔名）。</param>
         /// <remarks>
         /// 仍可再串 <see cref="AddVariables"/> / <see cref="AddObjective"/> / <see cref="AddConstraints"/>：
         /// 匯入先執行，之後才依序套用這些步驟，用於在既有模型上追加內容。
         /// </remarks>
-        public static OptModel FromFile(string fileName, string name = null)
+        public static OptModel ReadModel(string fileName, string name = null)
         {
             if (string.IsNullOrWhiteSpace(fileName))
                 throw Logging.ErrorOnce(
                     new ArgumentException("Model file name is required.", nameof(fileName)),
-                    "MODEL_DEFINITION_INVALID", "模型定義不合法", nameof(FromFile), fileName, "file_name_is_empty");
+                    "MODEL_DEFINITION_INVALID", "模型定義不合法", nameof(ReadModel), fileName, "file_name_is_empty");
 
             string modelName = string.IsNullOrWhiteSpace(name)
                 ? System.IO.Path.GetFileNameWithoutExtension(fileName)
@@ -95,10 +95,10 @@ namespace OptimFoundation.Cplex
 
         #region Read Existing Solution (MIP start)
         /// <summary>
-        /// 求解前讀入起始解檔（.sol / .mst），與 <see cref="FromFile"/> 對稱：那個讀模型，這個讀起點。
+        /// 指定求解前要讀入的起始解檔（.sol / .mst），供 CPLEX 從已有的解開始搜尋。
         /// 套用時走 <see cref="OptEngine.ReadSolution"/>，在所有建模步驟之後執行（變數要先存在）。
         /// </summary>
-        /// <param name="fileName">檔名或相對路徑，以 Sols 資料夾為基準；絕對路徑原樣使用。</param>
+        /// <param name="fileName">檔名或相對路徑，以 FolderDir.Solution 為基準；絕對路徑原樣使用。</param>
         public OptModel ReadSolution(string fileName)
         {
             if (string.IsNullOrWhiteSpace(fileName))
@@ -111,8 +111,8 @@ namespace OptimFoundation.Cplex
         }
 
         /// <summary>
-        /// 求解前以「變數全名 → 值」加一組 MIP start，在所有建模步驟之後執行。
-        /// values 延遲到套用時才取值，前段的解可以等前段跑完再接：<c>.AddMIPStart(() => stage1.Engine.GetSolution())</c>。
+        /// 指定一組起始解（MIP start），內容為「變數全名 → 值」；建模完成後、求解前才加入引擎。
+        /// 套用模型時才呼叫 values，因此可讀取前一次求解的結果，例如 <c>.AddMIPStart(() => stage1.Engine.GetSolution())</c>。
         /// </summary>
         /// <param name="values">套用時呼叫，回傳 MIP start 內容；回傳 null 會在套用時丟例外。</param>
         /// <param name="name">MIP start 名稱；null 由 solver 自動命名。</param>
@@ -129,7 +129,7 @@ namespace OptimFoundation.Cplex
         #endregion
 
 
-        /// <summary>Applies all recorded phases in variables, objective, constraints, MIP start order.</summary>
+        /// <summary>先讀入模型檔（如有），再依變數、目標式、限制式、起始解的順序執行已保存的步驟。</summary>
         internal void ApplyTo(OptEngine engine)
         {
             if (engine == null)
@@ -138,7 +138,7 @@ namespace OptimFoundation.Cplex
                     "MODEL_APPLY_INVALID", "模型套用失敗", nameof(ApplyTo), Name, "engine_is_null");
 
             if (_sourceFile != null)
-                engine.ImportModel(_sourceFile);
+                engine.ReadModel(_sourceFile);
             else if (_variableSteps.Count == 0 && _objectiveSteps.Count == 0 && _constraintSteps.Count == 0)
                 Logging.Warn($"[MODEL_EMPTY] OptModel '{Name}' has no build phases; solving the empty model unchanged");
 

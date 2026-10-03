@@ -99,9 +99,9 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         [Fact]
-        public void ReadVar_ByName_FindsVarOutsideAnyVariableSet()
+        public void ReadVar_ByName_FindsVarNotBuiltByBuildVars()
         {
-            // import 情境：名稱不符框架命名慣例，也沒有登記在任何 VariableSet 裡
+            // import 情境：名稱不符框架命名慣例，也不是經 Build*Vs 建立
             var engine = NewEngine();
             engine.AddUnregisteredVar("x1");
 
@@ -140,18 +140,33 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Empty(engine.GetSetVarValues(null));
         }
 
-        // ── GetAllVarNames：未登記變數只在 includeUnregistered 時出現 ────
+        // ── 單一變數池：型別查詢以型別名篩選，GetAllVarNames 列出整個池 ────
 
         [Fact]
-        public void GetAllVarNames_IncludeUnregistered_CoversVarsOutsideVariableSets()
+        public void GetSetVarNames_FiltersPoolByTypeName()
+        {
+            var engine = NewEngine();
+            engine.BuildBVs<VarS>(new List<string> { "A", "B" });
+            // 型別名以 VarS 開頭但不是 VarS，不能被篩進來
+            engine.BuildBVs("VarSX", new List<string> { "A" });
+            // 0 維變數：名稱就是型別名
+            engine.BuildCVs("Makespan");
+            // 不經 Build*Vs，但名稱符合 VarS@… 也屬於 VarS
+            engine.AddUnregisteredVar("VarS@C");
+
+            Assert.Equal(new[] { "VarS@A", "VarS@B", "VarS@C" }, engine.GetSetVarNames<VarS>());
+            Assert.Equal(new[] { "Makespan" }, engine.GetSetVarNames("Makespan"));
+            Assert.Equal(engine.GetSetVarNames<VarS>(), engine.GetSolution("VarS").Keys);
+        }
+
+        [Fact]
+        public void GetAllVarNames_ListsWholePool()
         {
             var engine = NewEngine();
             engine.BuildBVs<VarS>(new List<string> { "A" });
             engine.AddUnregisteredVar("x1");
 
-            Assert.Equal(new[] { "VarS@A" }, engine.GetAllVarNames());
-            Assert.Equal(engine.GetAllVarNames(), engine.GetAllVarNames(false));
-            Assert.Equal(new[] { "VarS@A", "x1" }, engine.GetAllVarNames(true));
+            Assert.Equal(new[] { "VarS@A", "x1" }, engine.GetAllVarNames());
         }
 
         // ── 命名驗證：string 版仍受 ModelNaming 約束 ─────────────────────

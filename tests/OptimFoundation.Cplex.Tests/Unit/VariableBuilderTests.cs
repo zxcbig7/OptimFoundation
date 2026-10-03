@@ -92,12 +92,12 @@ namespace OptimFoundation.Cplex.Tests.Unit
                     [new List<DateTime> { new(2026, 1, 1) }, new List<string> { "D@N" }]).ToList());
         }
 
-        // ── Array 支援（含 string[] 共變誤 bind 還原）──────────────────────
+        // ── 陣列支援：直接傳入 string[] 時仍視為一個集合 ──────────────────────
 
         [Fact]
         public void ConvertSets_BareStringArray_TreatedAsSingleSet()
         {
-            // string[] 共變成 object[] 本身，元素散成裸 string → 應還原成單一 set
+            // string[] 可直接當成 params object[] 傳入，導致成員被拆開；框架應將它們還原成同一個集合。
             var lists = VariableBuilder.ConvertSetsToStringLists(new[] { "A", "B", "C" });
             Assert.Single(lists);
             Assert.Equal(new List<string> { "A", "B", "C" }, lists[0]);

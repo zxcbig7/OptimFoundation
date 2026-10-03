@@ -4,9 +4,9 @@ using OptimFoundation.Cplex;
 namespace FJSP_BASIC_BRICK
 {
     /// <summary>
-    /// [UB] Phase 3 demo variant 專用：Makespan ≤ InfeasibleMakespanCap（= 理論下界 − 1）。
+    /// 示範無可行解時使用的完工上限：Makespan ≤ InfeasibleMakespanCap（= 理論下界 − 1）。
     /// 上限嚴格低於任何可行 makespan，保證 Infeasible，用來觸發 CPLEX conflict 分析並輸出 IIS（IISs/*.ilp）。
-    /// 非業務限制，NEVER 進 canonical production 組裝。
+    /// 這條限制只供 Phase 3 實驗示範，不加入正式求解模型。
     /// </summary>
     public sealed class Constraint_MakespanInfeasibleCap : ConstraintBase
     {

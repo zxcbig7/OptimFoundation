@@ -10,13 +10,32 @@ namespace OptimFoundation.Core
 
     #region Data 驗證
 
-    public enum DataIssueKind { DuplicateKey, Numeric, InvalidKey }
+    /// <summary>資料驗證發現的問題種類。</summary>
+    public enum DataIssueKind
+    {
+        /// <summary>Set 或 Parameter 的 key 重複。</summary>
+        DuplicateKey,
 
+        /// <summary>Parameter 數值是 NaN、無限大，或絕對值超過 <see cref="DataValidator.MaxMagnitude"/>。</summary>
+        Numeric,
+
+        /// <summary>key 值不符合模型命名規則。</summary>
+        InvalidKey
+    }
+
+    /// <summary>一筆資料驗證問題。</summary>
     public sealed class DataIssue
     {
+        /// <summary>問題種類。</summary>
         public DataIssueKind Kind { get; }
+
+        /// <summary>出問題的 Set 或 Parameter 類別名稱。</summary>
         public string Parameter { get; }
+
+        /// <summary>問題細節：第幾列、哪個欄位、什麼值。</summary>
         public string Detail { get; }
+
+        /// <summary>建立一筆資料驗證問題。</summary>
         public DataIssue(DataIssueKind kind, string parameter, string detail)
             => (Kind, Parameter, Detail) = (kind, parameter, detail);
     }
@@ -24,6 +43,7 @@ namespace OptimFoundation.Core
     /// <summary>驗證已載入的 Set 與 Parameter 資料列。</summary>
     public static class DataValidator
     {
+        /// <summary>Parameter 數值的絕對值上限；超過就記 <see cref="DataIssueKind.Numeric"/>。</summary>
         public const double MaxMagnitude = 1e15;
 
         /// <summary>驗證 Set／Parameter key 重複與 Parameter 數值合理性。</summary>
@@ -110,9 +130,10 @@ namespace OptimFoundation.Core
     #endregion
 
     #region Data 內容
-    /// <summary>Creates a data context through the project's chosen constructor.</summary>
+    /// <summary>呼叫專案提供的 factory 載入資料；若結果是 DataContext，會驗證資料並禁止再透過框架方法修改。</summary>
     public static class OptData
     {
+        /// <summary>呼叫 factory 取得資料；結果是 <see cref="DataContext"/> 時先登記並驗證資料，再凍結。</summary>
         public static T Load<T>(System.Func<T> factory)
         {
             if (factory == null)
@@ -140,11 +161,16 @@ namespace OptimFoundation.Core
         }
     }
 
-    /// <summary>Flattened generated Parameter row used by validation and diagnostics.</summary>
+    /// <summary>把一筆 Parameter 的維度值與數值欄位分開保存，供資料驗證與問題回報使用。</summary>
     public sealed class ParamRow
     {
+        /// <summary>依維度順序排列的 key 值。</summary>
         public object[] Index { get; }
+
+        /// <summary>數值欄位的名稱與值。</summary>
         public (string Name, double Value)[] Numbers { get; }
+
+        /// <summary>建立一筆 Parameter 資料列。</summary>
         public ParamRow(object[] index, (string Name, double Value)[] numbers)
         {
             Index = index;
@@ -152,7 +178,7 @@ namespace OptimFoundation.Core
         }
     }
 
-    /// <summary>供資料驗證使用的 Set schema 與 key 列。</summary>
+    /// <summary>保存 Set 的維度欄名與各列的維度值，供資料驗證使用。</summary>
     public sealed class SetRegistration
     {
         /// <summary>Set row 類別名稱。</summary>
@@ -173,12 +199,19 @@ namespace OptimFoundation.Core
         }
     }
 
+    /// <summary>保存 Parameter 的維度欄名與各列資料，供資料驗證使用。</summary>
     public sealed class ParamRegistration
     {
+        /// <summary>Parameter row 類別名稱。</summary>
         public string Name { get; }
+        /// <summary>依宣告順序排列的維度欄名。</summary>
         public string[] IndexFields { get; }
+        /// <summary>每一列的維度值與數值欄位。</summary>
         public IReadOnlyList<ParamRow> Rows { get; }
+        /// <summary>資料列數。</summary>
         public int RowCount => Rows.Count;
+
+        /// <summary>建立供 validator 使用的 Parameter 註冊資料。</summary>
         public ParamRegistration(string name, string[] indexFields, IReadOnlyList<ParamRow> rows)
         {
             Name = name;
@@ -187,7 +220,7 @@ namespace OptimFoundation.Core
         }
     }
 
-    /// <summary>Base class for Dataload. Set and Parameter rows are owned by the project as List&lt;T&gt;.</summary>
+    /// <summary>Dataload 的基底類別，負責登記與驗證資料；Set 和 Parameter 清單由專案以 List&lt;T&gt; 保存。</summary>
     public abstract class DataContext
     {
         private bool _isFrozen;
@@ -197,7 +230,7 @@ namespace OptimFoundation.Core
         /// <summary>載入時資料驗證發現的問題；每筆都已寫成 Warning，不阻擋後續建模。</summary>
         public IReadOnlyList<DataIssue> DataIssues { get; private set; } = Array.Empty<DataIssue>();
 
-        /// <summary>註冊一份 Set 資料及其 key schema，供重複 key 驗證與摘要輸出。</summary>
+        /// <summary>登記 Set 資料與維度欄名，用來檢查重複維度組合並輸出資料摘要。</summary>
         protected void RegisterSet<T>(
             IReadOnlyList<T> rows,
             string[] indexFields,
@@ -211,6 +244,7 @@ namespace OptimFoundation.Core
                 rows.Select(indexOf).ToArray()));
         }
 
+        /// <summary>登記 Parameter 資料、維度欄名與數值欄位，用來檢查重複 key、數值合理性並輸出資料摘要。</summary>
         protected void RegisterParam<T>(
             IReadOnlyList<T> rows,
             string[] indexFields,
@@ -225,6 +259,7 @@ namespace OptimFoundation.Core
                 rows.Select(row => new ParamRow(indexOf(row), numbersOf(row))).ToArray()));
         }
 
+        /// <summary>由 Generator 產生的覆寫逐一呼叫 RegisterSet / RegisterParam；<see cref="OptData.Load{T}"/> 載入資料時呼叫。</summary>
         protected virtual void RegisterAll() { }
 
         internal void Initialize()
@@ -235,6 +270,7 @@ namespace OptimFoundation.Core
 
         internal void Freeze() => _isFrozen = true;
 
+        /// <summary>資料已凍結時拋例外，防止建模階段修改資料。</summary>
         protected void GuardMutation(string member)
         {
             if (_isFrozen)
@@ -243,6 +279,7 @@ namespace OptimFoundation.Core
                     "DATA_CONTEXT_FROZEN", "資料內容不可修改", nameof(GuardMutation), member, "context_is_frozen");
         }
 
+        /// <summary>驗證已登記的資料：問題逐筆寫 Warning、不阻擋建模，最後印資料摘要。</summary>
         protected void ValidateData()
         {
             DataIssues = DataValidator.Validate(_sets, _params);
@@ -262,7 +299,7 @@ namespace OptimFoundation.Core
         }
     }
 
-    /// <summary>由開發者明確指定條件的 Parameter 查找；缺值只記錄 Warning，不推導 Set 關聯。</summary>
+    /// <summary>依呼叫端提供的條件查找 Parameter；找不到時只記錄警告，不會自行推測與 Set 的對應關係。</summary>
     public static class ParameterLookupExtensions
     {
         /// <summary>

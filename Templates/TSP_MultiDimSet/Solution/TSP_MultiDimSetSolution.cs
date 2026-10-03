@@ -45,7 +45,7 @@ namespace TSP_MultiDimSet
             return new TSP_MultiDimSetSolution(tour, totalCost, data);
         }
 
-        /// <summary>逐條把解代回 Model.md 的限制式；不成立就丟例外，NEVER 只記 log 繼續。</summary>
+        /// <summary>逐條將解值代回 Model.md 的限制式；任一條不成立就丟出例外，停止後續處理。</summary>
         private static void ValidateRules(
             IReadOnlyList<(string From, string To)> selected,
             Dataload data)

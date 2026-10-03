@@ -6,7 +6,7 @@ using System.Reflection;
 
 namespace OptimFoundation.Core
 {
-    /// <summary>Common base for generated Set, Parameter, and Variable rows.</summary>
+    /// <summary>Generator 產生的 Set、Parameter 與 Variable 資料列共用的基底類別，提供欄位初始化與名稱組合。</summary>
     public abstract class ModelElementBase
     {
         internal const char KeySeparator = ModelNaming.Separator;
@@ -17,9 +17,10 @@ namespace OptimFoundation.Core
              .Where(p => p.CanRead && p.CanWrite && p.GetIndexParameters().Length == 0)
              .ToArray());
 
+        /// <summary>依 public 可寫屬性的宣告順序轉型並填入維度值，同時檢查命名 token；數量不符、無法轉型或 token 不合法都會拋例外。</summary>
         public void InitClassBySets(params object[] values) => Init(values, validateTokens: true);
 
-        // 資料來源載入走這條：只有 index 欄位的 key 合法性有意義，交給 DataContext 驗證以 Warning 回報，
+        // 載入資料時先轉換欄位值；只有維度欄位會組成名稱，命名檢查交由 DataContext 記錄警告，
         // 值欄位（QTY 等）本來就不進名稱，負數或科學記號不該被當成命名錯誤擋下
         internal void InitFromDataRow(object[] values) => Init(values, validateTokens: false);
 
@@ -40,7 +41,7 @@ namespace OptimFoundation.Core
                 string context = $"{GetType().Name}.{properties[index].Name}";
                 try
                 {
-                    object? converted = ConvertValue(values[index], properties[index].PropertyType);
+                    object converted = ConvertValue(values[index], properties[index].PropertyType);
                     if (validateTokens)
                         ModelNaming.Token(context, converted);
                     properties[index].SetValue(this, converted);
@@ -55,7 +56,7 @@ namespace OptimFoundation.Core
             }
         }
 
-        private static object? ConvertValue(object? value, Type targetType)
+        private static object ConvertValue(object value, Type targetType)
         {
             if (value == null) return null;
             if (targetType.IsInstanceOfType(value)) return value;
@@ -74,25 +75,30 @@ namespace OptimFoundation.Core
                 .Select(property => ModelNaming.Token($"{GetType().Name}.{property.Name}", property.GetValue(this)))
                 .ToArray();
 
+        /// <summary>回傳類別名加維度值組成的完整名稱（如 <c>VariableB_Pick@A</c>），供變數、限制式查找與輸出使用。</summary>
         public override string ToString()
             => ModelNaming.Compose(GetType().Name, KeyParts());
     }
 
-    /// <summary>A Set row: an existing dimensional combination with no QTY.</summary>
+    /// <summary>一筆 Set 資料代表一組有效的維度值，不包含 QTY。</summary>
     public abstract class SetRowBase : ModelElementBase
     {
-        // Set row 的字串形式＝它在變數 key 裡佔的那幾段，不含類別名 —— Why: 使用者會把 set row 直接內插進
-        // constraint 名與解答查詢 key，帶上類別名就與 BuildVars 反射屬性組出來的變數名對不起來，而那種錯只會
-        // 讓 TryGetValue 回 false、解答靜默變 0，不會報錯。
+        // Set 只用 @ 串接維度值，供限制式命名與查解。加上類別名會與 BuildVars 的名稱不符，
+        // 導致 TryGetValue 查不到；呼叫端若將缺值當成 0，便會誤讀解答。
+        /// <summary>只用 @ 串接維度值，不含類別名。</summary>
         public override string ToString() => string.Join(KeySeparator, KeyParts());
     }
 
-    /// <summary>A Parameter row: a dimensional combination with generated QTY.</summary>
+    /// <summary>一筆 Parameter 資料包含維度值，以及 Generator 產生的數值欄位 QTY。</summary>
     public abstract class ParameterBase : ModelElementBase { }
 
+    /// <summary>Generator 產生的 Variable 類別基底；屬性就是維度，名稱由 <see cref="ModelElementBase.ToString"/> 組出。</summary>
     public abstract class VariableBase : ModelElementBase { }
+
+    /// <summary>限制式類別基底。</summary>
     public abstract class ConstraintBase : ModelElementBase
     {
+        /// <summary>限制式群組名，即類別名。</summary>
         protected string ConstraintName => GetType().Name;
     }
 }

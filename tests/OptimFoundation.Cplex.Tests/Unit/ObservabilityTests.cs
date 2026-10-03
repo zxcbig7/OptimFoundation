@@ -132,7 +132,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             engine.BuildCVs<VarS>(new[] { "X" });
             engine.AddLHS(1.0, new VarS { S = "X" });
 
-            bool created = engine.CreateLeSoft(12.5, 3.0, "SetupBudget");
+            bool created = engine.CreateLessEqualSoft(12.5, 3.0, "SetupBudget");
 
             Assert.True(created);
             string log = ReadLog(tag);
@@ -466,7 +466,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
         public void OracleConversion_InvalidValue_ThrowsInsteadOfWritingNull()
         {
             string tag = StartLog("OracleConversion");
-            MethodInfo method = typeof(OracleDBCtrl).GetMethod(
+            MethodInfo method = typeof(OracleDbCtrl).GetMethod(
                 "ConvertToDbType",
                 BindingFlags.Static | BindingFlags.NonPublic)!;
 

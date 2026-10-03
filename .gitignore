@@ -107,7 +107,7 @@ output/
 result/
 *.dll
 
-# Source generator 落地檔（EmitCompilerGeneratedFiles，供本地檢視，build 會重生）
+# Source generator 輸出（EmitCompilerGeneratedFiles）；供本機檢視，build 時重新產生。
 Generated/
 
 ############################################

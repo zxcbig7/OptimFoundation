@@ -3,7 +3,7 @@ using OptimFoundation.Cplex;
 
 namespace RosteringProblem
 {
-    /// <summary>RosteringProblem 的三態入口：import、experiment 與正式求解。</summary>
+    /// <summary>RosteringProblem 的程式入口，提供範例資料產生、參數比較實驗與正式求解三種模式。</summary>
     internal static class Program
     {
         private static int Main(string[] args)
@@ -16,10 +16,9 @@ namespace RosteringProblem
                 return 0;
             }
 
-            // exp 的 log 檔名 MUST 在第一次寫入前設定，整次執行才收在同一包
             bool isExperiment = args.Any(arg => string.Equals(arg, "exp", StringComparison.OrdinalIgnoreCase));
-            if (isExperiment)
-                Logging.SetLogFileName("RosteringProblem_exp");
+            // 由 OptProject 管理 log、資料夾與檔案保留天數；實驗和正式求解都透過它執行。
+            using var project = new OptProject("RosteringProblem");
 
             // ── 1. 材料 ────────────────────────────────────────────
             var data = OptData.Load(() => new Dataload());
@@ -42,15 +41,14 @@ namespace RosteringProblem
 
             var projectConfig = new ProjectConfig
             {
-                ProjectName = "RosteringProblem",
                 EnableSolverLog = true,
                 ExportSol = true,
                 ExportLP = true,
                 ExportMPS = true,
             };
-            // 唯一 production baseline/champion；experiment clone 它，prod 直接使用它。
-            // Provenance：沿用原始 Template_CPLEX 的手動設定（MipGap=0.03, TimeLimit=100, Threads=10），
-            // 尚未經過 §8 Tuning 流程重新驗證；日後 promotion 時同步更新本註解與 TuningHistory.md。
+            // 正式求解直接使用這組設定；實驗則先複製一份，再調整要比較的參數。
+            // 設定來源：沿用原始 Template_CPLEX 的手動設定（MipGap=0.03, TimeLimit=100, Threads=10），
+            // 尚未依 §8 調參流程重新驗證；日後採用新設定時，同步更新本註解與 TuningHistory.md。
             var productionBaseline = new CplexConfig
             {
                 MipGap = 0.03,
@@ -101,11 +99,11 @@ namespace RosteringProblem
                     data.set_Date, data.set_Employee, doubleOffWindow, doubleOffThreshold, one).Build(engine));
 
             // ── 3. 環境 ────────────────────────────────────────────
-            // 模式 2：exp——掃 solver 設定，不做正式求解
+            // 模式 2：exp，使用不同 solver 設定重複求解，記錄比較結果。
             if (isExperiment)
             {
-                // S2 R0 校準：環境已定版（Threads=10, ParallelMode=1），baseline × 5 tuning seeds 量 θ 與剖面。
-                // seeds 6/7/8 保留為 holdout，全程不參與調參。
+                // S2 R0 基準量測：固定 Threads=10、ParallelMode=1，用基準設定跑 5 個 seed 當對照組，並觀察耗時原因。
+                // seed 6、7、8 留到最後驗證已選設定，不參與調參比較。
                 var warmup = productionBaseline.Clone();
                 warmup.ParallelMode = 1;
 
@@ -117,7 +115,7 @@ namespace RosteringProblem
                     return config;
                 }
 
-                // S3 R3：剖面 Dual-bound → 候選 Symmetry=3（同質員工的對稱性消除）。一輪一顆，seed 為共同因子。
+                // S3 R3：針對最佳界改善較慢的情況，測試 Symmetry=3 能否減少同質員工的重複排班搜尋；只改這個參數，使用相同 seed 比較。
                 CplexConfig SymmetryBreaking(int seed)
                 {
                     var config = Seeded(seed);
@@ -125,8 +123,8 @@ namespace RosteringProblem
                     return config;
                 }
 
-                var result = new OptExperiment(
-                        "RosteringProblem-tuning-r3",
+                var result = project.Experiment(
+                        "tuning-r3",
                         "S3 R3: baseline vs Symmetry=3 x 5 seeds, rotated order")
                     .AddModel(model)
                     .AddConfig("warmup-exclude", warmup)
@@ -144,23 +142,20 @@ namespace RosteringProblem
 
                 foreach (var trial in result.Trials)
                     Logging.Info($"[Experiment] {trial.Label} status={trial.Metrics.Status} " +
-                                 $"obj={trial.Metrics.ObjectiveValue:G6} gap={trial.Metrics.MipGap:P2} runTimeMs={trial.Metrics.RunTimeMs:F0}");
+                                 $"obj={trial.Metrics.ObjectiveValue:G6} gap={trial.Metrics.Gap:P2} solveTimeMs={trial.Metrics.SolveTimeMs:F0}");
                 return 0;
             }
 
             // 模式 3（預設）：正式求解
             // 模型建完後存一份 .sav 供 Templates/ModelInspector 匯入檢視。
             // 用 .sav 而非既有的 LP/MPS：後兩者是文字格式、係數經十進位截斷，讀回來無法精確重現本次求解。
-            // 掛在 constraint step 尾端而非 OnSolved，infeasible 時才也留得下來——那正是最需要拿去檢視的情況。
+            // 在限制式建立完後、求解前就匯出，讓無可行解時也有模型檔可供檢查。
             model.AddConstraints(engine =>
-                engine.ExportModelFile($"{engine.ModelName}_SAV_{engine.StartTime}.sav"));
+                engine.ExportModel($"{engine.ModelName}_SAV_{engine.StartTime}.sav"));
 
-            using var project = new OptProject(model)
-                .UseConfig(() => projectConfig)
-                .UseConfig(() => productionBaseline)
-                .OnSolved(engine => RosteringProblemSolution.ReadAndValidate(engine, data).Print());
-
-            bool solved = project.Execute();
+            project.LoadConfig(projectConfig);
+            bool solved = project.Solve(model, productionBaseline,
+                onSolved: engine => RosteringProblemSolution.ReadAndValidate(engine, data).Print());
             return solved ? 0 : 1;
         }
     }

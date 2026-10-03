@@ -26,7 +26,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
         [Fact]
         public void BuildBVs_1D_BareStringArray_CreatesCorrectCount()
         {
-            // 單獨傳 string[]：共變誤 bind 成 params 陣列本身，framework 應還原成單一 set
+            // 直接傳入 string[] 時，C# 會把它當成 params 陣列本身；框架應將字串成員視為同一個集合。
             var engine = NewEngine();
             engine.BuildBVs<VarS>(new[] { "E1", "E2", "E3" });
             Assert.Equal(3, engine.VariableCount);
@@ -73,11 +73,27 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         [Fact]
+        public void BuildVars_LegacyPrefixX_CreatesContinuous()
+        {
+            var engine = NewEngine();
+            engine.BuildVars<VariableX_LegacyAmt>(new List<string> { "A" });
+            Assert.Equal(VarType.Continuous, Assert.Single(engine.BuiltVars).Type);
+        }
+
+        [Fact]
+        public void BuildVars_LegacyPrefixY_CreatesInteger()
+        {
+            var engine = NewEngine();
+            engine.BuildVars<VariableY_LegacyCnt>(new List<string> { "A" });
+            Assert.Equal(VarType.Integer, Assert.Single(engine.BuiltVars).Type);
+        }
+
+        [Fact]
         public void BuildVars_InvalidPrefix_ThrowsWithNamingGuide()
         {
             var engine = NewEngine();
             var ex = Assert.Throws<ArgumentException>(() => engine.BuildVars<VarS>(new List<string> { "A" }));
-            // 錯誤訊息必須教完整的三種合法前綴。
+            // 錯誤訊息須列出三種合法前綴。
             Assert.Contains("VariableB_", ex.Message);
             Assert.Contains("VariableC_", ex.Message);
             Assert.Contains("VariableI_", ex.Message);
@@ -238,7 +254,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             var engine = NewEngine();
             engine.BuildVars<VariableC_Amt>(new List<string> { "A" });
             engine.AddLHS(1.0, new VariableC_Amt { S = "A" });
-            engine.CreateLeSoft(5.0, 1.0);
+            engine.CreateLessEqualSoft(5.0, 1.0);
             Assert.Equal(ModelType.LP, engine.ModelType);
         }
 
@@ -249,7 +265,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             var engine = NewEngine();
             engine.BuildVars<VariableB_Pick>(new List<string> { "A" });
             engine.AddLHS(1.0, new VariableB_Pick { S = "A" });
-            engine.CreateLeSoft(0.0, 1.0);
+            engine.CreateLessEqualSoft(0.0, 1.0);
             Assert.Equal(ModelType.MILP, engine.ModelType);
         }
 
@@ -343,7 +359,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             engine.AddLHS(1.0, new VarS { S = "X" });
             engine.CreateEqual("DupCon");
 
-            // 第二條：相同 name → 應該 skip
+            // 名稱重複，應略過。
             engine.AddLHS(1.0, new VarS { S = "X" });
             engine.CreateEqual("DupCon");
 
@@ -414,19 +430,19 @@ namespace OptimFoundation.Cplex.Tests.Unit
         [Fact]
         public void SupportsSoftConstraints_MockEngine_IsTrue()
         {
-            // 通用軟性限制式實作已上移 EngineBase，任何提供 primitive 的 engine 預設皆支援
+            // 軟性限制式由 EngineBase 建立；只要 engine 實作底層建模方法，就能使用這項功能。
             var engine = NewEngine();
             Assert.True(engine.SupportsSoftConstraints);
         }
 
         [Fact]
-        public void CreateLeSoft_AddsElasticVarAndConstraint()
+        public void CreateLessEqualSoft_AddsElasticVarAndConstraint()
         {
             var engine = NewEngine();
             engine.BuildCVs<VarS>(new List<string> { "x" });
             engine.AddLHS(1.0, new VarS { S = "x" });
 
-            bool ok = engine.CreateLeSoft(5.0, 1.0);
+            bool ok = engine.CreateLessEqualSoft(5.0, 1.0);
 
             Assert.True(ok);
             Assert.Single(engine.BuiltConstraints);                  // 建立一條軟性限制式
@@ -435,13 +451,13 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         [Fact]
-        public void CreateLeSoft_WithName_UsesProvidedName()
+        public void CreateLessEqualSoft_WithName_UsesProvidedName()
         {
             var engine = NewEngine();
             engine.BuildCVs<VarS>(new List<string> { "x" });
             engine.AddLHS(1.0, new VarS { S = "x" });
 
-            bool ok = engine.CreateLeSoft(5.0, 1.0, "CapacitySoft");
+            bool ok = engine.CreateLessEqualSoft(5.0, 1.0, "CapacitySoft");
 
             Assert.True(ok);
             Assert.Single(engine.BuiltConstraints);
@@ -450,13 +466,13 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         [Fact]
-        public void CreateGeSoft_WithName_UsesProvidedName()
+        public void CreateGreaterEqualSoft_WithName_UsesProvidedName()
         {
             var engine = NewEngine();
             engine.BuildCVs<VarS>(new List<string> { "x" });
             engine.AddLHS(1.0, new VarS { S = "x" });
 
-            bool ok = engine.CreateGeSoft(5.0, 1.0, "DemandSoft");
+            bool ok = engine.CreateGreaterEqualSoft(5.0, 1.0, "DemandSoft");
 
             Assert.True(ok);
             Assert.Single(engine.BuiltConstraints);
@@ -465,13 +481,13 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         [Fact]
-        public void CreateEqSoft_AddsTwoElasticVars()
+        public void CreateEqualSoft_AddsTwoElasticVars()
         {
             var engine = NewEngine();
             engine.BuildCVs<VarS>(new List<string> { "x" });
             engine.AddLHS(1.0, new VarS { S = "x" });
 
-            bool ok = engine.CreateEqSoft(5.0, 1.0, "Demand");
+            bool ok = engine.CreateEqualSoft(5.0, 1.0, "Demand");
 
             Assert.True(ok);
             Assert.Single(engine.BuiltConstraints);
@@ -494,9 +510,9 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             bool created = sense switch
             {
-                ConstraintSense.LessEqual => engine.CreateLeSoft(5.0, 1.0, owner, "X"),
-                ConstraintSense.GreaterEqual => engine.CreateGeSoft(5.0, 1.0, owner, "X"),
-                _ => engine.CreateEqSoft(5.0, 1.0, owner, "X")
+                ConstraintSense.LessEqual => engine.CreateLessEqualSoft(5.0, 1.0, owner, "X"),
+                ConstraintSense.GreaterEqual => engine.CreateGreaterEqualSoft(5.0, 1.0, owner, "X"),
+                _ => engine.CreateEqualSoft(5.0, 1.0, owner, "X")
             };
 
             Assert.True(created);

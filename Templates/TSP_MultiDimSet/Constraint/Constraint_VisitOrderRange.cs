@@ -6,7 +6,7 @@ namespace TSP_MultiDimSet
     /// <summary>
     /// [C6] VisitOrderRange ∀ node ∈ CUSTOMER：
     /// 1 ≤ VisitOrder[node] ≤ |NODE| − 1
-    /// 界限寫成獨立限制式，不藏進變數 builder 的 bounds 參數。
+    /// 用獨立限制式表示拜訪次序的上下限，讓匯出的模型也能看到這條範圍限制。
     /// </summary>
     public sealed class Constraint_VisitOrderRange : ConstraintBase
     {

@@ -3,7 +3,7 @@ using OptimFoundation.Cplex;
 
 namespace FJSP_BASIC_BRICK
 {
-    /// <summary>[max→輔助變數] ∀ lot ∈ Lot：Makespan ≥ Complete_{lot,LastOperation}</summary>
+    /// <summary>整體完工時間不能早於任何批次的最後一道作業完成時間：∀ lot ∈ Lot，Makespan ≥ Complete_{lot,LastOperation}。</summary>
     public sealed class Constraint_MakespanDef : ConstraintBase
     {
         private readonly List<Set_Lot> _lots;
@@ -23,7 +23,7 @@ namespace FJSP_BASIC_BRICK
             {
                 engine.AddLHS(1.0, new VariableC_Makespan());
                 engine.AddRHS(1.0, new VariableC_Complete { Lot = lot, Operation = lastOp });
-                engine.CreateGreatEqual(this, lot);
+                engine.CreateGreaterEqual(this, lot);
             }
         }
     }

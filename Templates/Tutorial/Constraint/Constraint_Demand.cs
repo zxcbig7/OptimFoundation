@@ -5,7 +5,7 @@ namespace Tutorial
 {
     /// <summary>
     /// [≥] ∀ product, date：Σ_shift Produce_{p,d,s} ≥ Demand_{p,d}
-    /// 展示 CreateGreatEqual + 2D 參數（Demand，含 DateTime 維度）。
+    /// 展示 CreateGreaterEqual + 2D 參數（Demand，含 DateTime 維度）。
     /// </summary>
     public sealed class Constraint_Demand : ConstraintBase
     {
@@ -36,7 +36,7 @@ namespace Tutorial
                         d => d.Product == product && d.Date == date,
                         product, date)?.QTY ?? 0.0;
                     engine.AddRHS(req);
-                    engine.CreateGreatEqual(this, product, date);
+                    engine.CreateGreaterEqual(this, product, date);
                 }
         }
     }

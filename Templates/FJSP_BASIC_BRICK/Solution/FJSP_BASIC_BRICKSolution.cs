@@ -70,7 +70,7 @@ namespace FJSP_BASIC_BRICK
             return solution;
         }
 
-        /// <summary>逐條把解代回 Model.md 的限制式；不成立就丟例外，NEVER 只記 log 繼續。</summary>
+        /// <summary>逐條將解值代回 Model.md 的限制式；任一條不成立就丟出例外，停止後續處理。</summary>
         private void ValidateRules()
         {
             const double eps = 1e-6;

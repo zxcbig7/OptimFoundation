@@ -7,7 +7,7 @@ using System.Linq;
 
 namespace OptimFoundation.Core.IO
 {
-    /// <summary>在含 schema 的 CSV 資料列與中立的 <see cref="DataTable"/> 間轉換。</summary>
+    /// <summary>在第一列為欄名的 CSV 資料與 <see cref="DataTable"/> 之間轉換。</summary>
     internal static class TabularData
     {
         internal static DataTable ToDataTable(IEnumerable<string[]> records, string sourceDescription)

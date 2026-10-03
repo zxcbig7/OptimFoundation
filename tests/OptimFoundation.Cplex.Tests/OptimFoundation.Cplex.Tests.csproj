@@ -23,8 +23,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\OptimFoundation.Core\OptimFoundation.Core.csproj" />
     <ProjectReference Include="..\..\src\OptimFoundation.Cplex\OptimFoundation.Cplex.csproj" />
-    <!-- 掛成 Analyzer：讓測試專案內宣告的 [OptSet]/[OptParam]/DataContext 類別真的走 AutoSetsGenerator，
-         而非只手動塞 ParamRegistration——用於鎖住 generator 端的數值涵蓋範圍（見 GeneratorNumericCoverageTests）。 -->
+    <!-- 以 Analyzer 引用，讓測試中的 [OptSet]/[OptParam]/DataContext 經過 AutoSetsGenerator，
+         驗證產生的註冊碼涵蓋所有數值欄位，見 GeneratorNumericCoverageTests。 -->
     <ProjectReference Include="..\..\src\OptimFoundation.Generators\OptimFoundation.Generators.csproj"
                        OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>

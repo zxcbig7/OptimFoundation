@@ -3,28 +3,27 @@ using OptimFoundation.Cplex;
 
 namespace TSP_MultiDimSet
 {
-    /// <summary>TSP template 的入口：experiment 與正式求解兩態（資料為手維護 CSV，不需 import 模式）。</summary>
+    /// <summary>TSP 範例的程式入口，提供參數比較實驗與正式求解；資料直接維護在 CSV，不需 import 模式。</summary>
     internal static class Program
     {
         private static int Main(string[] args)
         {
             bool isExperiment = args.Any(
                 arg => string.Equals(arg, "exp", StringComparison.OrdinalIgnoreCase));
-            if (isExperiment)
-                Logging.SetLogFileName($"{Dataload.InstanceName}_exp");
+            // 由 OptProject 管理 log、資料夾與檔案保留天數；實驗和正式求解都透過它執行。
+            using var project = new OptProject(Dataload.InstanceName);
 
             // 1. 材料
             var data = OptData.Load(() => new Dataload());
 
             var projectConfig = new ProjectConfig
             {
-                ProjectName = Dataload.InstanceName,
                 EnableSolverLog = false,
                 ExportLP = true,
             };
-            // Production baseline/champion：tuning promotion 只更新這一個設定來源。
-            // Provenance：initial baseline，尚未執行 Phase 3 tuning。
-            // Experiment 從它 clone variants；正式求解直接使用它。
+            // 正式求解使用這組設定；調參結果確認較好後，統一更新在這裡。
+            // 設定來源：最初的基準設定，尚未執行 Phase 3 調參流程。
+            // 實驗先複製這組設定，再調整要比較的參數；正式求解直接使用這組設定。
             var productionBaseline = new CplexConfig
             {
                 TimeLimit = 30,
@@ -63,8 +62,8 @@ namespace TSP_MultiDimSet
             // 3. 環境
             if (isExperiment)
             {
-                // S2 R0 校準：環境已定版（Threads=1），只跑 baseline × 5 tuning seeds 量 θ 與剖面。
-                // seeds 6/7/8 保留為 holdout，全程不參與調參。
+                // S2 R0 基準量測：固定 Threads=1，用基準設定跑 5 個 seed 當對照組，並觀察耗時原因。
+                // seed 6、7、8 留到最後驗證已選設定，不參與調參比較。
                 var warmup = productionBaseline.Clone();
 
                 CplexConfig Seeded(int seed)
@@ -74,12 +73,12 @@ namespace TSP_MultiDimSet
                     return config;
                 }
 
-                // 契約健檢探針：MipGap = 0，只當 finding，不進排名。
+                // 另外測試 MipGap = 0，觀察求到最佳解的結果；停止條件不同，因此不加入參數設定的排名。
                 var probe = productionBaseline.Clone();
                 probe.MipGap = 0.0;
 
-                var result = new OptExperiment(
-                        $"{Dataload.InstanceName}-R0",
+                var result = project.Experiment(
+                        "R0",
                         "S2 R0 calibration: baseline x 5 tuning seeds + MipGap=0 contract probe")
                     .AddModel(model)
                     .AddConfig("warmup-exclude", warmup)
@@ -95,17 +94,15 @@ namespace TSP_MultiDimSet
                     Logging.Info(
                         $"[Experiment] {trial.Label} status={trial.Metrics.Status} " +
                         $"obj={trial.Metrics.ObjectiveValue:F4} " +
-                        $"runTimeMs={trial.Metrics.RunTimeMs:F0}");
+                        $"solveTimeMs={trial.Metrics.SolveTimeMs:F0}");
                 return 0;
             }
 
             // 4. 正式求解
-            using var project = new OptProject(model)
-                .UseConfig(() => projectConfig)
-                .UseConfig(() => productionBaseline)
-                .OnSolved(engine => TSP_MultiDimSetSolution.ReadAndValidate(engine, data).Print());
-
-            return project.Execute() ? 0 : 1;
+            project.LoadConfig(projectConfig);
+            bool solved = project.Solve(model, productionBaseline,
+                onSolved: engine => TSP_MultiDimSetSolution.ReadAndValidate(engine, data).Print());
+            return solved ? 0 : 1;
         }
     }
 }

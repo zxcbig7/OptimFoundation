@@ -35,6 +35,17 @@ namespace OptimFoundation.Cplex.Tests.Mocks
         public string S { get; set; } = "";
     }
 
+    // 舊前綴相容：X → Continuous；Y → Integer
+    internal class VariableX_LegacyAmt : VariableBase
+    {
+        public string S { get; set; } = "";
+    }
+
+    internal class VariableY_LegacyCnt : VariableBase
+    {
+        public string S { get; set; } = "";
+    }
+
     internal class VariableC_ArcFlow : VariableBase
     {
         public string NodeFrom { get; set; } = "";

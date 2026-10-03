@@ -33,7 +33,7 @@ namespace RosteringProblem
                 engine.AddRHS(weekendOffThreshold);
                 foreach (var date in weekends)
                     engine.AddRHS(-1.0, new VariableB_ShiftAssign { Date = date, Employee = employee, Group = "O" });
-                engine.CreateGreatEqual(this, employee);
+                engine.CreateGreaterEqual(this, employee);
             }
         }
     }

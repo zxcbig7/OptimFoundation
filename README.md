@@ -39,11 +39,10 @@ var model = new OptModel("Canonical")
     .AddObjective(engine => new ObjectiveFunction(/* dependencies */).Build(engine))
     .AddConstraints(engine => new Constraint_Assign(/* dependencies */).Build(engine));
 
-using var project = new OptProject(model)
-    .UseConfig(() => new ProjectConfig { ProjectName = "Example" })
-    .UseConfig(() => new CplexConfig());
+using var project = new OptProject("Example")
+    .LoadConfig(new ProjectConfig { ExportLP = true });
 
-bool solved = project.Execute();
+bool solved = project.Solve(model, new CplexConfig());
 ```
 
 資料載入對 Set 與 Parameter 使用同一個入口：

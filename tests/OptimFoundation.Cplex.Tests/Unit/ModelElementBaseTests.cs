@@ -97,7 +97,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
         [Fact]
         public void InitClassBySets_SeparatorInLaterProperty_ThrowsArgumentException()
         {
-            // 沒擋的話 ("A@B","N") 與 ("A","B@N") 會組出同一把 key
+            // 禁止維度含 @，否則 ("A@B","N") 與 ("A","B@N") 會產生相同 key。
             var v = new VarDG();
             Assert.Throws<ArgumentException>(() => v.InitClassBySets("2026-01-15", "B@N"));
         }

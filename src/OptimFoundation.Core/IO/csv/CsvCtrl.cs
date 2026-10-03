@@ -8,7 +8,7 @@ using System.Text;
 namespace OptimFoundation.Core.IO
 {
     /// <summary>
-    /// CSV 格式與寫出控制器：讀取端只負責 RFC4180 文字解析，位址與 schema 由資料來源層處理。
+    /// 解析與寫出 CSV 文字；讀取檔案路徑由 CsvDataSource 處理，欄名與模型 property 的對應由 ModelRowMapper 處理。
     /// </summary>
     public static class CsvCtrl
     {
@@ -20,7 +20,7 @@ namespace OptimFoundation.Core.IO
 
         /// <summary>
         /// 依 RFC4180 規則解析輸入資料。引號內換行保留為 <c>\n</c>、逸出引號會解碼，
-        /// 每次產出的是完整的邏輯資料列，而非實體文字行。
+        /// 即使引號內有換行，也會先讀完整筆資料，再回傳各欄的字串陣列。
         /// </summary>
         public static IEnumerable<string[]> ParseCsv(TextReader reader)
         {
@@ -113,7 +113,7 @@ namespace OptimFoundation.Core.IO
         }
 
         /// <summary>
-        /// 把某變數型別的解值匯出到 Solution/{型別名}.csv（表頭：VAR_TYPE,set…,QTY）。
+        /// 把某變數型別的解值寫到 FolderDir.Output 下的 {型別名}.csv（表頭：VAR_TYPE,set…,QTY）。
         /// 表頭欄名 = property 名；欄位相容時可被 IDataSource.Load&lt;T&gt; 讀回（按名對位、多餘欄自動忽略）。
         /// dataId / userId 僅供 DB sink 用；CSV 不輸出這兩欄。
         /// </summary>
@@ -154,11 +154,11 @@ namespace OptimFoundation.Core.IO
         }
 
         /// <summary>
-        /// 把 Set / Parameter row 寫成 Data/{fileName}.csv（第一列表頭 = property 名大寫，其後每列一筆）——即 Load&lt;T&gt; 讀得回的格式。
-        /// 輸出位置就是既有的讀取位置：import 階段解析完不規則來源後寫回 Data/，求解階段 new CsvDataSource() 原封不動就讀得到。
+        /// 把 Set/Parameter 寫到 FolderDir.Input 下的 {fileName}.csv；第一列為大寫 property 名稱，後續每列一筆，可由 Load&lt;T&gt; 讀回。
+        /// 可在 import 階段先把原始資料轉成這種格式；求解時 CsvDataSource 會從同一輸入資料夾讀取。
         /// fileName 省略時用型別名，與 Load&lt;T&gt; 的預設一致。
-        /// 欄位來源 MUST 是 typeof(T).GetProperties()（與 Load&lt;T&gt; / InitClassBySets 同一來源）——
-        /// NEVER 用 ReflectionHelper.GetMemberNames，它會撈進 field 與 static member，round-trip 會對不上欄。
+        /// 欄位取自 typeof(T).GetProperties()，與 Load&lt;T&gt; / InitClassBySets 使用同一份 property 清單。
+        /// 不能改用 ReflectionHelper.GetMemberNames，因為它還會列出 field 與 static member，導致寫出後無法按原欄位讀回。
         /// </summary>
         public static void WriteRows<T>(IReadOnlyList<T> rows, string fileName = null)
             where T : ModelElementBase
@@ -208,7 +208,7 @@ namespace OptimFoundation.Core.IO
                 case null:
                     return "";
                 case DateTime d when d.Ticks % TimeSpan.TicksPerSecond != 0:
-                    // index set 的粒度到秒；靜默截掉秒以下會讓資料與模型名稱的 round-trip 悄悄失真
+                    // 模型名稱的日期只接受到秒；不能捨去秒以下的值，否則 CSV 讀回後會與原資料不同。
                     throw Logging.ErrorOnce(
                         new NotSupportedException($"[CsvCtrl] 不支援秒以下精度的 DateTime：{d:O}——index 粒度只到秒。"),
                         "CSV_DATETIME_INVALID", "CSV 日期輸出失敗", nameof(FormatValue), d.ToString("O", CultureInfo.InvariantCulture),
@@ -228,7 +228,7 @@ namespace OptimFoundation.Core.IO
             }
         }
 
-        // 與 SplitLine 對稱的 quoting：含逗號 / 引號 / 前後空白才包引號，內含的 " 跳脫成 ""
+        // 欄位含逗號、雙引號或前後空白時加上雙引號，並把欄位內的 " 寫成 ""。
         private static string Quote(string field)
             => field.IndexOf(',') >= 0 || field.IndexOf('"') >= 0 || field != field.Trim()
                 ? "\"" + field.Replace("\"", "\"\"") + "\""

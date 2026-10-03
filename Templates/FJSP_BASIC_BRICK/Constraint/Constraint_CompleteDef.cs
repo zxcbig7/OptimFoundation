@@ -3,7 +3,7 @@ using OptimFoundation.Cplex;
 
 namespace FJSP_BASIC_BRICK
 {
-    /// <summary>[Balance] ∀ lot ∈ Lot, op ∈ Operation：Complete = Start + Σ_eqp ProcessTime·Assign</summary>
+    /// <summary>完成時間等於開始時間加上指派機台的加工時間：∀ lot ∈ Lot, op ∈ Operation，Complete = Start + Σ_eqp ProcessTime·Assign。</summary>
     public sealed class Constraint_CompleteDef : ConstraintBase
     {
         private readonly List<Set_Lot> _lots;
