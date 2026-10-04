@@ -102,33 +102,89 @@ namespace OptimFoundation.Core
             return null;
         }
 
+        // 與 ConvertSetsToTokens 支援的元素型別相同（enum 另外判斷）
+        private static readonly HashSet<Type> TokenTypes =
+            [typeof(DateTime), typeof(int), typeof(long), typeof(double), typeof(decimal), typeof(string)];
+
         /// <summary>
-        /// 檢查各集合提供的維度總數是否等於 TVariable 的可寫 property 數；有空集合時略過檢查。
+        /// 依位置逐維比對各集合的維度型別與 TVariable 維度 property 的型別，數量或型別不同就丟例外；型別必須完全相同。
+        /// 維度型別取自集合的宣告型別，空集合也能比對；判斷不出維度型別的集合（null、裸 string、不支援的型別）
+        /// 不在這裡處理，留給組名時的既有檢查回報。
         /// </summary>
-        /// <param name="setRows">各集合的資料列，每列以字串陣列保存維度值。</param>
+        /// <param name="sets">BuildVars 收到的各維度集合。</param>
         /// <typeparam name="TVariable">要建立的變數類別。</typeparam>
-        private static void ValidateVariableArity<TVariable>(List<string[]>[] setRows)
+        internal static void ValidateVariableDimensions<TVariable>(object[] sets)
         {
-            if (setRows.Any(rows => rows.Count == 0)) return;
-            int actual = setRows.Sum(rows =>
+            if (sets == null) return;
+            if (sets.Length > 0 && sets.All(x => x is string))
+                sets = [sets.Cast<string>().ToList()];
+
+            var supplied = new List<(int SetNumber, Type Type)>();
+            for (int i = 0; i < sets.Length; i++)
             {
-                int width = rows[0].Length;
-                if (rows.Any(row => row.Length != width))
-                    throw Logging.ErrorOnce(
-                        new ArgumentException("多維集合的每個資料列維度數量必須一致"),
-                        "變數維度數量不一致", null, nameof(ValidateVariableArity), typeof(TVariable).Name,
-                        "多維集合的資料列維度數量不一致");
-                return width;
-            });
-            int expected = typeof(TVariable).GetProperties(BindingFlags.Instance | BindingFlags.Public)
-                .Count(property => property.CanWrite && property.GetIndexParameters().Length == 0
+                var types = GetDimensionTypes(sets[i]);
+                if (types == null) return;
+                int setNumber = i + 1;
+                supplied.AddRange(types.Select(type => (setNumber, type)));
+            }
+
+            string className = typeof(TVariable).Name;
+            var properties = typeof(TVariable).GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                .Where(property => property.CanWrite && property.GetIndexParameters().Length == 0
                     && property.DeclaringType != typeof(ModelElementBase)
-                    && property.DeclaringType != typeof(VariableBase));
-            if (actual != expected)
+                    && property.DeclaringType != typeof(VariableBase))
+                .ToArray();
+            if (supplied.Count != properties.Length)
                 throw Logging.ErrorOnce(
-                    new ArgumentException($"BuildVars 維度數量不一致：{typeof(TVariable).Name} 傳入 {actual}，變數屬性 {expected}"),
-                    "變數維度數量不一致", null, nameof(ValidateVariableArity), typeof(TVariable).Name,
-                    "變數屬性數量不一致", $"數量={actual}/{expected}");
+                    new ArgumentException($"BuildVars 維度數量不一致：{className} 傳入 {supplied.Count}，變數屬性 {properties.Length}"),
+                    "變數維度數量不一致", null, nameof(ValidateVariableDimensions), className,
+                    "變數屬性數量不一致", $"數量={supplied.Count}/{properties.Length}");
+
+            for (int index = 0; index < properties.Length; index++)
+            {
+                var (setNumber, actualType) = supplied[index];
+                var expectedType = properties[index].PropertyType;
+                if (actualType == expectedType) continue;
+                throw Logging.ErrorOnce(
+                    new ArgumentException($"BuildVars 維度型別不一致：{className}.{properties[index].Name} 預期 {expectedType.Name}，集合 #{setNumber} 傳入 {actualType.Name}"),
+                    "變數維度型別不一致", null, nameof(ValidateVariableDimensions), className,
+                    "集合與變數屬性型別不一致",
+                    $"屬性={properties[index].Name} 序號={setNumber} 預期型別={expectedType.Name} 實際型別={actualType.Name}");
+            }
+        }
+
+        // 集合每列各維的型別：集合資料列取屬性型別、ValueTuple 取各欄型別、primitive 取元素型別；判斷不出來回 null。
+        // 宣告型別看不出來（object、抽象型別）時改看第一筆資料的實際型別。
+        private static Type[] GetDimensionTypes(object set)
+        {
+            if (set == null || set is string || set is not System.Collections.IEnumerable sequence) return null;
+
+            var tupleType = GetValueTupleElementType(set);
+            if (tupleType != null) return FlattenTupleTypes(tupleType);
+
+            var elementType = set.GetType().GetInterfaces()
+                .FirstOrDefault(type => type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IEnumerable<>))
+                ?.GetGenericArguments()[0];
+            if (elementType == null || elementType == typeof(object) || elementType.IsAbstract || elementType.IsInterface)
+                elementType = sequence.Cast<object>().FirstOrDefault()?.GetType();
+            if (elementType == null) return null;
+
+            if (typeof(SetRowBase).IsAssignableFrom(elementType))
+                return elementType.GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                    .Where(property => property.CanRead && property.GetIndexParameters().Length == 0)
+                    .Select(property => property.PropertyType)
+                    .ToArray();
+            if (elementType.IsEnum || TokenTypes.Contains(elementType)) return [elementType];
+            return null;
+        }
+
+        // ValueTuple 超過 7 欄時第 8 個型別參數是巢狀的 TRest；攤平後與 ITuple 的索引順序一致
+        private static Type[] FlattenTupleTypes(Type tupleType)
+        {
+            var arguments = tupleType.GetGenericArguments();
+            return arguments.Length == 8
+                ? arguments.Take(7).Concat(FlattenTupleTypes(arguments[7])).ToArray()
+                : arguments;
         }
 
         /// <summary>
@@ -193,19 +249,8 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 直接組成 TypeName@維度值名稱，不建立實例或逐筆反射。
-        /// </summary>
-        public static IEnumerable<string> ComposeNames<TVariable>(object[] sets)
-        {
-            string typeName = typeof(TVariable).Name;
-            var setRows = ConvertSetsToRows(sets);
-            ValidateVariableArity<TVariable>(setRows);
-            foreach (var parts in CombineRows(setRows))
-                yield return ModelNaming.Compose(typeName, parts);
-        }
-
-        /// <summary>
-        /// 以指定 typeName 組成名稱；無變數類別可對照，不檢查維度數。
+        /// 直接組成 typeName@維度值名稱，不建立實例或逐筆反射；不檢查維度數量與型別。
+        /// 泛型 Build*Vs 先以 <see cref="ValidateVariableDimensions{TVariable}"/> 檢查，再以類別名當 typeName 走到這裡。
         /// </summary>
         public static IEnumerable<string> ComposeNames(string typeName, object[] sets)
         {

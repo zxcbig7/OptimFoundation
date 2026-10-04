@@ -98,6 +98,68 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Equal(0, engine.VariableCount);
         }
 
+        // ── BuildVars：依位置逐維比對維度數量與型別 ───────────────
+
+        [Fact]
+        public void BuildVars_SetRowsAndTuples_MatchingTypes_CreatesSameNames()
+        {
+            var date = new DateTime(2026, 1, 1);
+            var fromRows = NewEngine();
+            fromRows.BuildVars<VariableC_ArcFlowByDate>(
+                new List<Set_Arc> { new() { NodeFrom = "A", NodeTo = "B" } },
+                new List<DateTime> { date });
+            var fromTuples = NewEngine();
+            fromTuples.BuildVars<VariableC_ArcFlowByDate>(
+                new List<(string, string)> { ("A", "B") },
+                new List<DateTime> { date });
+
+            Assert.Equal("VariableC_ArcFlowByDate@A@B@2026_01_01", Assert.Single(fromRows.BuiltVars).Name);
+            Assert.Equal(fromRows.BuiltVars, fromTuples.BuiltVars);
+        }
+
+        [Fact]
+        public void BuildVars_SwappedDimensionTypes_ThrowsBeforeCreatingVars()
+        {
+            var engine = NewEngine();
+            var ex = Assert.Throws<ArgumentException>(() => engine.BuildVars<VariableC_ArcFlowByDate>(
+                new List<DateTime> { new(2026, 1, 1) },
+                new List<string> { "A" },
+                new List<string> { "B" }));
+            Assert.Contains("維度型別不一致", ex.Message);
+            Assert.Contains("NodeFrom", ex.Message);
+            Assert.Equal(0, engine.VariableCount);
+        }
+
+        [Fact]
+        public void BuildVars_IntSetForStringDimension_Throws()
+        {
+            var engine = NewEngine();
+            var ex = Assert.Throws<ArgumentException>(() => engine.BuildVars<VariableC_Amt>(new List<int> { 1 }));
+            Assert.Contains("維度型別不一致", ex.Message);
+            Assert.Equal(0, engine.VariableCount);
+        }
+
+        [Fact]
+        public void BuildVars_EmptySetWithWrongType_StillThrows()
+        {
+            // 型別取自宣告型別，空集合也會比對
+            var engine = NewEngine();
+            var ex = Assert.Throws<ArgumentException>(() => engine.BuildVars<VariableC_ArcFlowByDate>(
+                new List<Set_Arc>(),
+                new List<string>()));
+            Assert.Contains("維度型別不一致", ex.Message);
+        }
+
+        [Fact]
+        public void BuildVars_DimensionCountMismatch_Throws()
+        {
+            var engine = NewEngine();
+            var ex = Assert.Throws<ArgumentException>(() => engine.BuildVars<VariableC_ArcFlowWrongArity>(
+                new List<Set_Arc> { new() { NodeFrom = "A", NodeTo = "B" } }));
+            Assert.Contains("維度數量不一致", ex.Message);
+            Assert.Equal(0, engine.VariableCount);
+        }
+
         [Fact]
         public void BuildBVs_ContinuousPrefix_ThrowsTypeMismatch()
         {

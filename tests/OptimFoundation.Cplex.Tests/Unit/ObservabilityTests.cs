@@ -327,7 +327,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             var engine = new MockEngine();
             engine.Build();
 
-            Assert.Throws<ArgumentException>(() => engine.BuildCVs<VariableC_Amt>(new[] { -5 }));
+            Assert.Throws<ArgumentException>(() => engine.BuildCVs<VarInt>(new[] { -5 }));
 
             AssertOneNamingError(ReadLog(tag), "集合 #1", "-5", "含保留字元");
         }

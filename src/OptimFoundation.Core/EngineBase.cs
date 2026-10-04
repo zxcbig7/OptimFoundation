@@ -470,9 +470,6 @@ namespace OptimFoundation.Core
             }
         }
 
-        private void BatchBuild<TVariable>(double lb, double ub, VarType type, object[] sets)
-            => BatchBuild(typeof(TVariable).Name, () => VariableManager.ComposeNames<TVariable>(sets), lb, ub, type);
-
         private void BatchBuild(string setName, double lb, double ub, VarType type, object[] sets)
             => BatchBuild(setName, () => VariableManager.ComposeNames(setName, sets), lb, ub, type);
 
@@ -577,79 +574,50 @@ namespace OptimFoundation.Core
 
         /// <summary>
         /// 批次建立連續變數，界限 [0, <see cref="OptBounds.Infinity"/>]（1E20 = CPLEX 的無上限）。
+        /// 先依位置逐維比對 sets 與 TVariable 維度 property 的數量與型別（不符拋例外），再以類別名轉呼叫 string 版。
         /// </summary>
         /// <typeparam name="TVariable">變數類別；property 宣告順序必須與 sets 順序一致，否則 AddLHS 組出的名稱會查不到變數。</typeparam>
         /// <param name="sets">各維度的集合；框架取各集合的所有組合（笛卡兒積）產生變數名稱。</param>
         public virtual void BuildCVs<TVariable>(params object[] sets)
         {
             ValidateExplicitVariableType<TVariable>(VarType.Continuous, nameof(BuildCVs));
-            BatchBuild<TVariable>(0, OptBounds.Infinity, VarType.Continuous, sets);
+            VariableManager.ValidateVariableDimensions<TVariable>(sets);
+            BuildCVs(typeof(TVariable).Name, sets);
         }
 
-        /// <summary>批次建立連續變數並指定界限 [lb, ub]。</summary>
+        /// <summary>批次建立連續變數並指定界限 [lb, ub]。維度檢查同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
         public virtual void BuildCVs<TVariable>(double lb, double ub, params object[] sets)
         {
             ValidateExplicitVariableType<TVariable>(VarType.Continuous, nameof(BuildCVs));
-            BatchBuild<TVariable>(lb, ub, VarType.Continuous, sets);
+            VariableManager.ValidateVariableDimensions<TVariable>(sets);
+            BuildCVs(typeof(TVariable).Name, lb, ub, sets);
         }
 
-        /// <summary>批次建立整數變數，界限 [0, <see cref="OptBounds.Infinity"/>]。維度順序要求同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
+        /// <summary>批次建立整數變數，界限 [0, <see cref="OptBounds.Infinity"/>]。維度順序與檢查同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
         public virtual void BuildIVs<TVariable>(params object[] sets)
         {
             ValidateExplicitVariableType<TVariable>(VarType.Integer, nameof(BuildIVs));
-            BatchBuild<TVariable>(0, OptBounds.Infinity, VarType.Integer, sets);
+            VariableManager.ValidateVariableDimensions<TVariable>(sets);
+            BuildIVs(typeof(TVariable).Name, sets);
         }
 
-        /// <summary>批次建立整數變數並指定界限 [lb, ub]。</summary>
+        /// <summary>批次建立整數變數並指定界限 [lb, ub]。維度檢查同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
         public virtual void BuildIVs<TVariable>(double lb, double ub, params object[] sets)
         {
             ValidateExplicitVariableType<TVariable>(VarType.Integer, nameof(BuildIVs));
-            BatchBuild<TVariable>(lb, ub, VarType.Integer, sets);
+            VariableManager.ValidateVariableDimensions<TVariable>(sets);
+            BuildIVs(typeof(TVariable).Name, lb, ub, sets);
         }
 
-        /// <summary>批次建立 0/1 二元變數。維度順序要求同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
+        /// <summary>批次建立 0/1 二元變數。維度順序與檢查同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
         public virtual void BuildBVs<TVariable>(params object[] sets)
         {
             ValidateExplicitVariableType<TVariable>(VarType.Binary, nameof(BuildBVs));
-            BatchBuild<TVariable>(0, 1, VarType.Binary, sets);
+            VariableManager.ValidateVariableDimensions<TVariable>(sets);
+            BuildBVs(typeof(TVariable).Name, sets);
         }
 
-        /// <summary>
-        /// 依類別名前綴決定變數型別：VariableB_（Binary，界限 [0,1]）、
-        /// VariableC_（Continuous）/ VariableI_（Integer）。
-        /// 需要自訂上下界，或類別名未使用這些前綴時，可用 BuildCVs / BuildIVs / BuildBVs 指定型別。
-        /// </summary>
-        public virtual void BuildVars<TVariable>(params object[] sets)
-        {
-            string name = typeof(TVariable).Name;
-            if (!TryResolveVariableType(name, out var type))
-            {
-                string msg = $"BuildVars<{name}> 無法從類別名前綴判定變數型別；" +
-                    $"命名天條：{VariablePrefixNaming.NamingGuide}，例：VariableC_Start；" +
-                    "不依天條命名請改用 BuildCVs / BuildIVs / BuildBVs";
-                throw Logging.ErrorOnce(
-                    new ArgumentException(msg),
-                    "變數型別不合法",
-                    "無法從名稱前綴判定變數型別",
-                    nameof(BuildVars),
-                    name,
-                    "前綴不合法",
-                    $"變數類別={name}");
-            }
 
-            switch (type)
-            {
-                case VarType.Binary:
-                    BuildBVs<TVariable>(sets);
-                    break;
-                case VarType.Integer:
-                    BuildIVs<TVariable>(sets);
-                    break;
-                default:
-                    BuildCVs<TVariable>(sets);
-                    break;
-            }
-        }
 
         // string overload 只驗證 setName，不檢查類別前綴與維度數。
 
@@ -693,6 +661,36 @@ namespace OptimFoundation.Core
                     BuildCVs(setName, sets);
                     break;
             }
+        }
+
+        /// <summary>
+        /// 依類別名前綴決定變數型別：VariableB_（Binary，界限 [0,1]）、
+        /// VariableC_（Continuous）/ VariableI_（Integer）。
+        /// 先依位置逐維比對 sets 與 TVariable 維度 property 的數量與型別（型別必須完全相同，int 與 long 視為不同），
+        /// 再以類別名當變數名稱開頭，交給 string 版 <see cref="BuildVars(string, VarType, object[])"/> 建立。
+        /// 需要自訂上下界，或類別名未使用這些前綴時，可用 BuildCVs / BuildIVs / BuildBVs 指定型別。
+        /// </summary>
+        /// <exception cref="ArgumentException">前綴無法判定型別，或 sets 的維度數量、型別與 TVariable 不一致。</exception>
+        public virtual void BuildVars<TVariable>(params object[] sets)
+        {
+            string name = typeof(TVariable).Name;
+            if (!TryResolveVariableType(name, out var type))
+            {
+                string msg = $"BuildVars<{name}> 無法從類別名前綴判定變數型別；" +
+                    $"命名天條：{VariablePrefixNaming.NamingGuide}，例：VariableC_Start；" +
+                    "不依天條命名請改用 BuildCVs / BuildIVs / BuildBVs";
+                throw Logging.ErrorOnce(
+                    new ArgumentException(msg),
+                    "變數型別不合法",
+                    "無法從名稱前綴判定變數型別",
+                    nameof(BuildVars),
+                    name,
+                    "前綴不合法",
+                    $"變數類別={name}");
+            }
+
+            VariableManager.ValidateVariableDimensions<TVariable>(sets);
+            BuildVars(name, type, sets);
         }
 
         #endregion

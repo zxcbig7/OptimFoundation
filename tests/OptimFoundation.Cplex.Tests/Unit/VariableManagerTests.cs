@@ -10,7 +10,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
         [Fact]
         public void ComposeNames_1D_String_GeneratesCorrectKeys()
         {
-            var names = VariableManager.ComposeNames<VarS>(
+            var names = VariableManager.ComposeNames("VarS",
                 [new List<string> { "A", "B", "C" }]).ToList();
 
             Assert.Equal(3, names.Count);
@@ -25,7 +25,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             var dates  = new List<DateTime> { new(2026, 1, 1), new(2026, 1, 2) };
             var groups = new List<string> { "D", "N" };
 
-            var names = VariableManager.ComposeNames<VarDG>([dates, groups]).ToList();
+            var names = VariableManager.ComposeNames("VarDG", [dates, groups]).ToList();
 
             Assert.Equal(4, names.Count);
             Assert.Equal("VarDG@2026_01_01@D", names[0]);
@@ -37,14 +37,14 @@ namespace OptimFoundation.Cplex.Tests.Unit
         [Fact]
         public void ComposeNames_EmptySet_ReturnsEmpty()
         {
-            var names = VariableManager.ComposeNames<VarS>([new List<string>()]).ToList();
+            var names = VariableManager.ComposeNames("VarS", [new List<string>()]).ToList();
             Assert.Empty(names);
         }
 
         [Fact]
         public void ComposeNames_IntSet_UsesDefaultToString()
         {
-            var names = VariableManager.ComposeNames<VarInt>([new List<int> { 1, 2 }]).ToList();
+            var names = VariableManager.ComposeNames("VarInt", [new List<int> { 1, 2 }]).ToList();
             Assert.Equal("VarInt@1", names[0]);
             Assert.Equal("VarInt@2", names[1]);
         }
@@ -86,7 +86,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
         public void ComposeNames_MemberContainsKeySeparator_Throws()
         {
             Assert.Throws<ArgumentException>(() =>
-                VariableManager.ComposeNames<VarDG>(
+                VariableManager.ComposeNames("VarDG",
                     [new List<DateTime> { new(2026, 1, 1) }, new List<string> { "D@N" }]).ToList());
         }
 
@@ -121,7 +121,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
         [Fact]
         public void ComposeNames_1D_StringArray_GeneratesCorrectKeys()
         {
-            var names = VariableManager.ComposeNames<VarS>(new[] { "A", "B" }).ToList();
+            var names = VariableManager.ComposeNames("VarS", new[] { "A", "B" }).ToList();
             Assert.Equal(2, names.Count);
             Assert.Equal("VarS@A", names[0]);
             Assert.Equal("VarS@B", names[1]);

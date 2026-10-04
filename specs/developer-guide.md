@@ -979,6 +979,8 @@ engine.BuildVars<VariableC_Produce>(data.set_Product, data.set_Date, data.set_Sh
 
 domain 也可以是一個多維 Set：`BuildVars<VariableB_UseArc>(data.set_Arc)` 只在存在的弧上建變數。傳入 domain 的維度總寬度必須等於 Variable 的維度數。
 
+`BuildVars<T>` 依位置逐維比對 domain 與 Variable 維度的型別，型別必須完全相同：`OptDim<DateTime>` 的 Set 只能接 `OptDim<DateTime>` 的維度，`int` 與 `long` 也算不同。數量不符丟 `[變數維度數量不一致]`，型別不符丟 `[變數維度型別不一致]`，都在建立任何變數之前。框架只比對數量與型別，不比對維度名稱，也不管 domain 順序在模型上是否合理。型別取自宣告型別，空的 Set 也會比對。
+
 零維 Variable 使用 `BuildVars<T>()`。
 
 不要為了零維 Variable 建一個虛構的一元素 Set。
@@ -1970,7 +1972,7 @@ canonical hard model 不使用 soft constraint API。
 
 - [ ] Variable 使用合法 B/C/I 前綴。
 - [ ] 一般建立使用 `BuildVars<T>`。
-- [ ] Variable 維度總寬度與 `BuildVars` 傳入的 domain 一致。
+- [ ] Variable 維度總寬度與 `BuildVars` 傳入的 domain 一致，逐維型別相同。
 - [ ] Objective 在 Constraints 前加入。
 - [ ] 左式使用 `AddLHS`。
 - [ ] 右式使用 `AddRHS`。
@@ -2086,7 +2088,7 @@ dotnet run -- read-model <file> exp # 讀模型檔做實驗；不加 exp 就是�
 ### 24.2 事件名
 
 - 寫成「對象 + 狀態」，例如 `變數建立完成`、`限制式為空`、`實驗設定不合法`、`模型匯出失敗`。
-- 狀態詞優先用：開始、完成、摘要、設定、取得、初始化、略過、覆寫、重複、為空、已存在、找不到、不合法、失敗、未引用、已停用、過大、被占用。都不適用時用最短的描述詞，並補進這張清單。
+- 狀態詞優先用：開始、完成、摘要、設定、取得、初始化、略過、覆寫、重複、為空、已存在、找不到、不合法、不一致、失敗、未引用、已停用、過大、被占用。都不適用時用最短的描述詞，並補進這張清單。
 - 不合法 = 呼叫端給的輸入不符合規則；失敗 = 輸入合法、執行時出錯。
 - 同一件事只用一個事件名；不拿 C# 類別名當事件名（不寫 `[OptEngine]`），需要時把類別或方法放進 `位置=`。
 
@@ -2417,18 +2419,18 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 - `public abstract double GetObjectiveValue();` | `OptimFoundation.Core/EngineBase.cs:516` | 用途：讀取解；solve 成功或 solution 已載入後呼叫，不會修改模型。
 - `public abstract double GetVariableValue(string name);` | `OptimFoundation.Core/EngineBase.cs:519` | 用途：讀取解；solve 成功或 solution 已載入後呼叫，不會修改模型。
 - `public abstract void Dispose();` | `OptimFoundation.Core/EngineBase.cs:522` | 用途：釋放 native/IO resources；scope 結束時呼叫，之後不可再使用 instance。
-- `public virtual void BuildCVs<TVariable>(params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:644` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫，dimensions 與 bounds 必須合法。
-- `public virtual void BuildCVs<TVariable>(double lb, double ub, params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:651` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫，dimensions 與 bounds 必須合法。
-- `public virtual void BuildIVs<TVariable>(params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:658` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫，dimensions 與 bounds 必須合法。
-- `public virtual void BuildIVs<TVariable>(double lb, double ub, params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:665` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫，dimensions 與 bounds 必須合法。
-- `public virtual void BuildBVs<TVariable>(params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:672` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫，dimensions 與 bounds 必須合法。
-- `public virtual void BuildVars<TVariable>(params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:683` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫，dimensions 與 bounds 必須合法。
-- `public virtual void BuildCVs(string setName, params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:723` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫，dimensions 與 bounds 必須合法。
-- `public virtual void BuildCVs(string setName, double lb, double ub, params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:727` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫，dimensions 與 bounds 必須合法。
-- `public virtual void BuildIVs(string setName, params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:731` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫，dimensions 與 bounds 必須合法。
-- `public virtual void BuildIVs(string setName, double lb, double ub, params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:735` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫，dimensions 與 bounds 必須合法。
-- `public virtual void BuildBVs(string setName, params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:739` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫，dimensions 與 bounds 必須合法。
-- `public virtual void BuildVars(string setName, VarType type, params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:746` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫，dimensions 與 bounds 必須合法。
+- `public virtual void BuildCVs<TVariable>(params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:581` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫。依位置逐維比對 sets 與變數維度的數量與型別（不符拋例外），再以類別名轉呼叫同名 string 版。
+- `public virtual void BuildCVs<TVariable>(double lb, double ub, params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:589` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫。依位置逐維比對 sets 與變數維度的數量與型別（不符拋例外），再以類別名轉呼叫同名 string 版。
+- `public virtual void BuildIVs<TVariable>(params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:597` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫。依位置逐維比對 sets 與變數維度的數量與型別（不符拋例外），再以類別名轉呼叫同名 string 版。
+- `public virtual void BuildIVs<TVariable>(double lb, double ub, params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:605` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫。依位置逐維比對 sets 與變數維度的數量與型別（不符拋例外），再以類別名轉呼叫同名 string 版。
+- `public virtual void BuildBVs<TVariable>(params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:613` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫。依位置逐維比對 sets 與變數維度的數量與型別（不符拋例外），再以類別名轉呼叫同名 string 版。
+- `public virtual void BuildVars<TVariable>(params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:674` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫。先由類別名前綴判型、依位置逐維比對 sets 與變數維度的數量與型別（不符拋例外），再以類別名轉呼叫 string 版 `BuildVars`。
+- `public virtual void BuildCVs(string setName, params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:627` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫，dimensions 與 bounds 必須合法。
+- `public virtual void BuildCVs(string setName, double lb, double ub, params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:631` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫，dimensions 與 bounds 必須合法。
+- `public virtual void BuildIVs(string setName, params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:635` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫，dimensions 與 bounds 必須合法。
+- `public virtual void BuildIVs(string setName, double lb, double ub, params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:639` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫，dimensions 與 bounds 必須合法。
+- `public virtual void BuildBVs(string setName, params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:643` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫，dimensions 與 bounds 必須合法。
+- `public virtual void BuildVars(string setName, VarType type, params object[] sets)` | `OptimFoundation.Core/EngineBase.cs:650` | 用途：建立決策變數；在 objective/constraint/solve 前呼叫，dimensions 與 bounds 必須合法。
 - `public string[] GetAllVarNames()` | `OptimFoundation.Core/EngineBase.cs:825` | 用途：列出變數池全部變數名（含軟性限制式彈性變數與匯入變數）；variables 建立或模型匯入後呼叫。
 - `public string[] GetSetVarNames<TVariable>()` | `OptimFoundation.Core/EngineBase.cs:837` | 用途：查詢 canonical variable names；variables 建立或模型匯入後呼叫。
 - `public string[] GetSetVarNames(string setName)` | `OptimFoundation.Core/EngineBase.cs:841` | 用途：查詢 canonical variable names；variables 建立或模型匯入後呼叫。
@@ -2712,10 +2714,9 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 
 ### `OptimFoundation.Core/VariableManager.cs`
 
-- `public static class VariableManager` | `OptimFoundation.Core/VariableManager.cs:14`
-- `public static List<string>[] ConvertSetsToTokens(params object[] sets)` | `OptimFoundation.Core/VariableManager.cs:142` | 把 DateTime/int/long/double/decimal/string/enum enumerable 轉成 invariant tokens；null、裸 string 或不支援型別會拋例外。
-- `public static IEnumerable<string> ComposeNames<TVariable>(object[] sets)` | `OptimFoundation.Core/VariableManager.cs:204` | 將 sets 轉成 canonical names；typed overload 驗證 arity，string overload 以 typeName 命名且不驗證 variable properties。
-- `public static IEnumerable<string> ComposeNames(string typeName, object[] sets)` | `OptimFoundation.Core/VariableManager.cs:218` | 將 sets 轉成 canonical names；typed overload 驗證 arity，string overload 以 typeName 命名且不驗證 variable properties。
+- `public static class VariableManager` | `OptimFoundation.Core/VariableManager.cs:12`
+- `public static List<string>[] ConvertSetsToTokens(params object[] sets)` | `OptimFoundation.Core/VariableManager.cs:194` | 把 DateTime/int/long/double/decimal/string/enum enumerable 轉成 invariant tokens；null、裸 string 或不支援型別會拋例外。
+- `public static IEnumerable<string> ComposeNames(string typeName, object[] sets)` | `OptimFoundation.Core/VariableManager.cs:255` | 將 sets 轉成 canonical names（typeName@v1@v2…）；不檢查維度數量與型別，泛型 Build*Vs 先檢查再以類別名呼叫這裡。
 
 ### `OptimFoundation.Cplex/CplexConfig.cs`
 

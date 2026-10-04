@@ -85,8 +85,8 @@ modules: [core, cplex, tests]
 // Model 層（Core，static、無狀態）
 public static class VariableManager
 {
-    // 組名：sets 笛卡兒積 → TypeName@v1@v2…；泛型版檢查維度數量
-    public static IReadOnlyList<string> ComposeNames<TVariable>(object[] sets);
+    // 組名：sets 笛卡兒積 → typeName@v1@v2…；只有 string 版（2026-10-04 移除泛型版），
+    // 泛型 Build*Vs 先以 ValidateVariableDimensions<TVariable> 比對維度數量與型別，再以類別名呼叫這裡
     public static IReadOnlyList<string> ComposeNames(string typeName, object[] sets);
 
     // 變數實例 → 名稱（實例的 ToString()）
