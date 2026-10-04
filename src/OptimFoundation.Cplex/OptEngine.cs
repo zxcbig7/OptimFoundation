@@ -129,7 +129,7 @@ namespace OptimFoundation.Cplex
         public override bool SupportsTrajectory => true;
 
         /// <summary>
-        /// 開始記錄求解期間的目標值、Best Bound限與 MIP gap；必須在 Solve() 前呼叫。
+        /// 開始記錄求解期間的目標值、best bound 與 MIP gap；必須在 Solve() 前呼叫。
         /// 記錄用的 MIPInfoCallback 不會關閉 dynamic search，但會改變搜尋路徑、通常讓求解變慢，因此預設不開啟。
         /// 只記 CPLEX 實際呼叫 callback 時觀察到的點；presolve 或 root 就解完時 callback 不會被呼叫，軌跡為空。
         /// </summary>
@@ -737,7 +737,7 @@ namespace OptimFoundation.Cplex
                 _conflictConstraints = RunConflictAnalysis();
 
             if (ok)
-                Logging.Info($"[求解完成] 狀態={Status} 目標值={Model.GetObjValue()} Best Bound={BestObjValue} MIPGap={MIPGap}");
+                Logging.Info($"[求解完成] 狀態={Status} 目標值={Model.GetObjValue()} BestBound={BestObjValue} MIPGap={MIPGap}");
             else
                 Logging.Info($"[求解完成] 狀態={Status}");
 
@@ -766,13 +766,13 @@ namespace OptimFoundation.Cplex
             {
                 BestObjValue = Model.GetBestObjValue();
                 MIPGap = Model.GetMIPRelativeGap();
-                Logging.Info($"[Bound And Gap] 模型類型={ModelType} Best Bound={BestObjValue} MIPGap={MIPGap}");
+                Logging.Info($"[Bound And Gap] 模型類型={ModelType} BestBound={BestObjValue} MIPGap={MIPGap}");
                 return;
             }
 
             BestObjValue = Model.GetObjValue();
             MIPGap = 0;
-            Logging.Info($"[Bound And Gap] 模型類型={ModelType} Best Bound={BestObjValue} MIPGap=Na (非 MILP)");
+            Logging.Info($"[Bound And Gap] 模型類型={ModelType} BestBound={BestObjValue} MIPGap=NA 原因=非MILP");
         }
 
         /// <summary>

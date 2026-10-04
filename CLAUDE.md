@@ -13,7 +13,7 @@ OptimFoundation 是 C# / .NET 8 的 solver-agnostic MILP framework。Core 不引
 - 資料讀寫一律以 `FolderDir`（`FolderDir.Input.GetPathFile(...)` 等）決定位置，NEVER 在 code 或文件裡 hardcode 資料夾字串；csproj 不做資料複製，輸入由使用者放進 `FolderDir.Input`。
 - 不覆寫或還原 workspace 中不屬於目前任務的既有變更。
 - 所有主動錯誤在 throw 前用 `Logging.ErrorOnce` 留下包含事件名、位置、值、原因、`結果=中止` 的錯誤 log。
-- log 與例外訊息一律中文，格式、欄位名、結果值、用詞照 `specs/developer-guide.md` 第 24 章；新增 log 前先對照。
+- log 與例外訊息一律中文（求解器指標 Bound / Gap 沿用英文，見 24.2），格式、欄位名、結果值、用詞照 `specs/developer-guide.md` 第 24 章；新增 log 前先對照。
 - public API boundary 記錄未預期例外後原樣 rethrow；同一 exception 只記一次。
 - 命名規則（使用者定案，新增 API 前先對照）：
   - 設定類別一律 `XxxConfig`（`CplexConfig`、`ProjectConfig`），吃設定的方法一律 `LoadConfig`；NEVER 新增 `XxxOptions` / `UseXxx` / `Configuration(...)` 這類變體

@@ -82,7 +82,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.True(engine.Solve());
             Assert.Equal(0.0, engine.MIPGap);
             Assert.Equal(6.0, engine.BestObjValue, precision: 6);
-            Assert.Contains("[間隙略過] 模型類型=LP", ReadLog(tag));
+            Assert.Contains("[Bound And Gap] 模型類型=LP BestBound=6 MIPGap=NA 原因=非MILP", ReadLog(tag));
         }
 
         [Fact(DisplayName = "MILP 讀 MIP gap 並留 log")]
@@ -96,7 +96,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
             Assert.True(engine.Solve());
             Assert.Equal(16.0, engine.GetObjectiveValue(), precision: 6);
-            Assert.Contains("[間隙取得] 模型類型=BP", ReadLog(tag));
+            Assert.Contains("[Bound And Gap] 模型類型=BP", ReadLog(tag));
         }
 
         [Fact(DisplayName = "檔案 pipeline：ExportSolution(.sol) → 下一個 engine ReadSolution 成為 MIP start")]
