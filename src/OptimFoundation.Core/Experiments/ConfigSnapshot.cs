@@ -50,7 +50,7 @@ namespace OptimFoundation.Core
                 try { Put(snapshot.SolverSpecific, p.Name, p.GetValue(config)); }
                 catch (System.Exception ex)
                 {
-                    Logging.Warn($"[CONFIG_SNAPSHOT_SKIPPED] 設定快照略過屬性 | property={p.Name} type={type.FullName} reason={ex.GetBaseException().Message} result=omitted");
+                    Logging.Warn($"[設定快照屬性略過] 屬性={p.Name} 型別={type.FullName} 原因={ex.GetBaseException().Message} 結果=略過");
                 }
             }
             return snapshot;

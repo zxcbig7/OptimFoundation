@@ -16,8 +16,8 @@ namespace OptimFoundation.Core.IO
         /// <param name="db">資料庫控制器（如 OracleDbCtrl）</param>
         public DbDataSource(IDbCtrl db)
             => _db = db ?? throw Logging.ErrorOnce(
-                new ArgumentNullException(nameof(db)),
-                "DB_SOURCE_INVALID", "資料庫來源不合法", nameof(DbDataSource), null, "db_is_null");
+                new ArgumentNullException(nameof(db), "db 不得為 null"),
+                "資料庫來源不合法", null, nameof(DbDataSource), null, "資料庫為空");
 
         /// <summary>
         /// 執行完整 SELECT SQL，依欄名映射 property；不分大小寫，多餘欄略過。
@@ -27,8 +27,8 @@ namespace OptimFoundation.Core.IO
         {
             if (string.IsNullOrWhiteSpace(sql))
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(sql)),
-                    "DB_QUERY_INVALID", "資料庫查詢不合法", nameof(Load), sql, "sql_is_empty");
+                    new ArgumentNullException(nameof(sql), "sql 不得為空"),
+                    "資料庫查詢不合法", null, nameof(Load), sql, "SQL 為空");
             return ModelRowMapper.MapTable<T>(LoadData(sql, parameters), sql);
         }
 
@@ -41,15 +41,15 @@ namespace OptimFoundation.Core.IO
         {
             if (string.IsNullOrWhiteSpace(sql))
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(sql)),
-                    "DB_QUERY_INVALID", "資料庫查詢不合法", nameof(LoadData), sql, "sql_is_empty");
+                    new ArgumentNullException(nameof(sql), "sql 不得為空"),
+                    "資料庫查詢不合法", null, nameof(LoadData), sql, "SQL 為空");
             try
             {
                 return _db.Query(sql, parameters);
             }
             catch (Exception ex)
             {
-                Logging.ErrorOnce(ex, "DB_QUERY_FAILED", "公開 API 執行失敗", nameof(LoadData), sql,
+                Logging.ErrorOnce(ex, "資料庫查詢失敗", null, nameof(LoadData), sql,
                     ex.GetBaseException().Message);
                 throw;
             }

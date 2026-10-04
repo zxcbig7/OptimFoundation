@@ -38,20 +38,20 @@ namespace OptimFoundation.Core
         {
             if (string.IsNullOrWhiteSpace(project))
                 throw Logging.ErrorOnce(
-                    new ArgumentException("Experiment project is required.", nameof(project)),
-                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(Experiment), project, "project_is_empty");
+                    new ArgumentException("實驗的 project 不得為空", nameof(project)),
+                    "實驗設定不合法", null, nameof(Experiment), project, "專案名稱為空");
             if (project.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
                 throw Logging.ErrorOnce(
-                    new ArgumentException($"Experiment project '{project}' contains invalid file name characters.", nameof(project)),
-                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(Experiment), project, "invalid_file_name_char");
+                    new ArgumentException($"實驗的 project 含不合法的檔名字元：{project}", nameof(project)),
+                    "實驗設定不合法", null, nameof(Experiment), project, "檔名含不合法字元");
             if (string.IsNullOrWhiteSpace(name))
                 throw Logging.ErrorOnce(
-                    new ArgumentException("Experiment name is required.", nameof(name)),
-                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(Experiment), name, "name_is_empty");
+                    new ArgumentException("實驗的 name 不得為空", nameof(name)),
+                    "實驗設定不合法", null, nameof(Experiment), name, "名稱為空");
             if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
                 throw Logging.ErrorOnce(
-                    new ArgumentException($"Experiment name '{name}' contains invalid file name characters.", nameof(name)),
-                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(Experiment), name, "invalid_file_name_char");
+                    new ArgumentException($"實驗的 name 含不合法的檔名字元：{name}", nameof(name)),
+                    "實驗設定不合法", null, nameof(Experiment), name, "檔名含不合法字元");
             Project = project;
             Name = name;
             Description = description;
@@ -64,32 +64,32 @@ namespace OptimFoundation.Core
         {
             if (trial == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(trial)),
-                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(AddTrial), Name, "trial_is_null");
+                    new ArgumentNullException(nameof(trial), "trial 不得為 null"),
+                    "實驗設定不合法", null, nameof(AddTrial), Name, "試跑為空");
             Trials.Add(trial);
         }
 
         /// <summary>
         /// 寫出 FolderDir.Experiment 下的 {Project}-{Name}-trial.csv、-meta.csv，依設定加寫 -summary.csv，有軌跡才寫 -trajectory.csv。
-        /// 同名整組覆寫，未再產出的舊檔刪除；覆寫或改寫 -locked-&lt;時間&gt; 備援檔時記 WARN。
+        /// 同名整組覆寫，未再產出的舊檔刪除；覆寫或改寫 -locked-&lt;時間&gt; 備援檔時記警告。
         /// </summary>
         public void Save()
         {
             if (string.IsNullOrWhiteSpace(Project))
                 throw Logging.ErrorOnce(
-                    new InvalidOperationException("Experiment project is required before Save."),
-                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(Save), Name, "project_is_empty");
+                    new InvalidOperationException("寫出前實驗的 project 不得為空"),
+                    "實驗設定不合法", null, nameof(Save), Name, "專案名稱為空");
             if (string.IsNullOrWhiteSpace(Name))
                 throw Logging.ErrorOnce(
-                    new InvalidOperationException("Experiment name is required before Save."),
-                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(Save), Name, "name_is_empty");
+                    new InvalidOperationException("寫出前實驗的 name 不得為空"),
+                    "實驗設定不合法", null, nameof(Save), Name, "名稱為空");
             try
             {
                 SaveCore();
             }
             catch (Exception ex)
             {
-                Logging.ErrorOnce(ex, "EXPERIMENT_SAVE_FAILED", "公開 API 執行失敗", nameof(Save), Name,
+                Logging.ErrorOnce(ex, "實驗紀錄寫出失敗", null, nameof(Save), Name,
                     ex.GetBaseException().Message);
                 throw;
             }
@@ -101,13 +101,13 @@ namespace OptimFoundation.Core
             Trials ??= new List<Trial>();
             if (Trials.Count == 0)
             {
-                Logging.Warn($"[EXPERIMENT_EMPTY] 實驗沒有任何 trial，不寫入 | value={Project}/{Name} result=skipped");
+                Logging.Warn($"[實驗為空] 沒有任何試跑，不寫出 | 名稱={Project}/{Name} 結果=略過");
                 return;
             }
 
             var existing = FileKinds.Select(PathOf).Where(File.Exists).Select(Path.GetFileName).ToList();
             if (existing.Count > 0)
-                Logging.Warn($"[EXPERIMENT_OVERWRITTEN] 同名實驗已有紀錄，整組覆寫 | value={Project}-{Name} files={string.Join("|", existing)} result=overwritten");
+                Logging.Warn($"[實驗紀錄覆寫] 同名實驗已有紀錄 | 名稱={Project}-{Name} 檔案={string.Join("|", existing)} 結果=覆寫");
 
             new CsvExperimentWriter().Write(this, PathOf("trial"));
             new MetaCsvWriter().Write(this, PathOf("meta"));
@@ -117,7 +117,7 @@ namespace OptimFoundation.Core
                 ExperimentCsv.Delete(PathOf("summary"));
             new TrajectoryCsvWriter().Write(this, PathOf("trajectory"));
 
-            Logging.Info($"[Experiment] Saved '{Name}' ({Trials.Count} trials) → {PathOf("trial")}");
+            Logging.Info($"[實驗紀錄寫出完成] 名稱={Name} 數量={Trials.Count} 路徑={PathOf("trial")}");
         }
 
         private static readonly string[] FileKinds = { "trial", "meta", "summary", "trajectory" };
@@ -180,12 +180,12 @@ namespace OptimFoundation.Core
         {
             if (engine == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(engine)),
-                    "TRIAL_CAPTURE_INVALID", "實驗紀錄擷取失敗", nameof(Capture), label, "engine_is_null");
+                    new ArgumentNullException(nameof(engine), "engine 不得為 null"),
+                    "試跑擷取不合法", null, nameof(Capture), label, "引擎為空");
             if (solveAction == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(solveAction)),
-                    "TRIAL_CAPTURE_INVALID", "實驗紀錄擷取失敗", nameof(Capture), label, "solve_action_is_null");
+                    new ArgumentNullException(nameof(solveAction), "solveAction 不得為 null"),
+                    "試跑擷取不合法", null, nameof(Capture), label, "求解動作為空");
 
             try
             {
@@ -193,7 +193,7 @@ namespace OptimFoundation.Core
             }
             catch (Exception ex)
             {
-                Logging.ErrorOnce(ex, "TRIAL_CAPTURE_FAILED", "公開 API 執行失敗", nameof(Capture), label,
+                Logging.ErrorOnce(ex, "試跑擷取失敗", null, nameof(Capture), label,
                     ex.GetBaseException().Message);
                 throw;
             }

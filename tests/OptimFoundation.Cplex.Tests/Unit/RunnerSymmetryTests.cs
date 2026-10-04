@@ -96,7 +96,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             InvalidOperationException error = Assert.Throws<InvalidOperationException>(
                 () => data.FrameworkMutation("Items"));
             Assert.Contains("Items", error.Message);
-            Assert.Contains("模型建構階段不得修改資料", error.Message);
+            Assert.Contains("建立模型階段不得修改資料", error.Message);
 
             // 載入後的保護只限制框架提供的修改方法；直接公開的欄位仍可賦值。
             data.PublicValue = 7;

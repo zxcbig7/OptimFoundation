@@ -64,7 +64,7 @@ modules: [core, cplex, tests]
 - [ ] **AC3 Engine 不含變數命名知識**：`EngineBase.cs` 內 grep `VariablePrefixNaming`、`FilterVarNames`、`SkipDuplicateVariableNames`、`VariableGroup` 為零，改為呼叫 Model 層。
 - [ ] **AC4 批次讀值**：`ISolverEngine` 新增 `GetVariableValues(IReadOnlyList<string> names)`；`EngineBase` 預設逐個呼叫 `GetVariableValue`；`OptEngine` 覆寫為單次 `Model.GetValues`。`GetSetVarValues`、`GetSolution()`、`GetSolution(type)` 一律經由它，並以 MockEngine 計數驗證每次取解只呼叫一次。
 - [ ] **AC5 消費端零改動**：`Templates/` 與 AI-Modeling 專案不改一行即可 build；`GetSetVarValues<T>()` 結果與改動前逐值相同。
-- [ ] **AC6 行為不變**：`[VARIABLE_DUPLICATE]`、`[UNREFERENCED_VARIABLES]` 的 log 格式與建立統計不變；`dotnet build OptimFoundation.sln` 與 `dotnet test` 全綠。
+- [ ] **AC6 行為不變**：`[變數重複]`、`[變數未引用]` 的 log 事件名與建立統計不變；`dotnet build OptimFoundation.sln` 與 `dotnet test` 全綠。
 
 ## Module Interactions
 
@@ -92,7 +92,7 @@ public static class VariableManager
     // 變數實例 → 名稱（實例的 ToString()）
     public static string NameOf(object varSpec);
 
-    // 去重：批內重複或 exists 為 true 的名稱略過，寫 [VARIABLE_DUPLICATE] WARN
+    // 去重：批內重複或 exists 為 true 的名稱略過，寫 [變數重複] 警告
     public static IReadOnlyList<string> SkipDuplicates(string typeName, IReadOnlyList<string> names, Func<string, bool> exists);
 
     // 依型別取名稱：名稱等於型別名（0 維），或以「型別名@」開頭
@@ -126,9 +126,9 @@ public Dictionary<string, double> GetSetVarValues(string setName)
 ## Edge Cases & Error Handling
 
 - 名稱清單為空：回空字典，不呼叫 solver。
-- 名稱不在池裡：`VARIABLE_NOT_FOUND`（同 `ReadVar`）。由池篩出的清單正常不會發生。
+- 名稱不在池裡：`[變數找不到]`（同 `ReadVar`）。由池篩出的清單正常不會發生。
 - 匯入模型的名稱不符 `TypeName@…`：`NamesOfType` 回空（同現行行為）。
-- 尚未求解或沒有可用解：solver 丟例外，維持 `SOLUTION_READ_FAILED` Error Log 後原樣 rethrow。
+- 尚未求解或沒有可用解：solver 丟例外，維持 `[取得解失敗]` 錯誤 log 後原樣 rethrow。
 - 回傳順序：照變數池的建立順序（同現行行為）。
 
 ## Open Questions

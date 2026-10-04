@@ -25,8 +25,8 @@ namespace OptimFoundation.Core.IO
         {
             if (reader == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(reader)),
-                    "CSV_PARSE_INVALID", "CSV 解析失敗", nameof(ParseCsv), null, "reader_is_null");
+                    new ArgumentNullException(nameof(reader), "reader 不得為 null"),
+                    "CSV 解析不合法", null, nameof(ParseCsv), null, "輸入串流為空");
 
             var fields = new List<string>();
             var field = new StringBuilder();
@@ -102,8 +102,8 @@ namespace OptimFoundation.Core.IO
 
             if (inQuotes)
                 throw Logging.ErrorOnce(
-                    new InvalidDataException($"[CsvCtrl] 第 {recordNumber} 行引號未閉合，不支援欄位內換行。"),
-                    "CSV_PARSE_INVALID", "CSV 解析失敗", nameof(ParseCsv), recordNumber, "unclosed_quote");
+                    new InvalidDataException($"CSV 引號未閉合：第 {recordNumber} 行，不支援欄內換行"),
+                    "CSV 解析不合法", null, nameof(ParseCsv), recordNumber, "引號未閉合");
             if (recordStarted)
             {
                 fields.Add(field.ToString());
@@ -120,8 +120,8 @@ namespace OptimFoundation.Core.IO
         {
             if (engine == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(engine)),
-                    "CSV_WRITE_INVALID", "CSV 解答輸出失敗", nameof(WriteSolution), typeof(TVariable).Name, "engine_is_null");
+                    new ArgumentNullException(nameof(engine), "engine 不得為 null"),
+                    "CSV 寫出不合法", "寫出解", nameof(WriteSolution), typeof(TVariable).Name, "引擎為空");
 
             try
             {
@@ -145,11 +145,11 @@ namespace OptimFoundation.Core.IO
                     sw.WriteLine(row);
                 }
 
-                Logging.Info($"[CsvCtrl] Solution exported: {file}");
+                Logging.Info($"[CSV 解寫出完成] 路徑={file}");
             }
             catch (Exception ex)
             {
-                Logging.ErrorOnce(ex, "CSV_WRITE_FAILED", "公開 API 執行失敗", nameof(WriteSolution), typeof(TVariable).Name,
+                Logging.ErrorOnce(ex, "CSV 寫出失敗", null, nameof(WriteSolution), typeof(TVariable).Name,
                     ex.GetBaseException().Message);
                 throw;
             }
@@ -164,16 +164,16 @@ namespace OptimFoundation.Core.IO
         {
             if (rows == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(rows)),
-                    "CSV_WRITE_INVALID", "CSV 資料輸出失敗", nameof(WriteRows), typeof(T).Name, "rows_are_null");
+                    new ArgumentNullException(nameof(rows), "rows 不得為 null"),
+                    "CSV 寫出不合法", "寫出資料列", nameof(WriteRows), typeof(T).Name, "資料列集合為空");
 
             try
             {
                 var props = typeof(T).GetProperties();
                 if (props.Length == 0)
                     throw Logging.ErrorOnce(
-                        new InvalidOperationException($"[CsvCtrl] {typeof(T).Name} 沒有任何 public property，無法輸出。"),
-                        "CSV_WRITE_INVALID", "CSV 資料輸出失敗", nameof(WriteRows), typeof(T).Name, "public_properties_missing");
+                        new InvalidOperationException($"找不到公開屬性：{typeof(T).Name} 沒有任何 public 屬性，無法寫出"),
+                        "CSV 寫出不合法", "寫出資料列", nameof(WriteRows), typeof(T).Name, "找不到公開屬性");
 
                 string path = FolderDir.Input.GetPathFile(EnsureCsv(fileName ?? typeof(T).Name));
                 bool overwritten = File.Exists(path);
@@ -187,11 +187,11 @@ namespace OptimFoundation.Core.IO
                         sw.WriteLine(string.Join(",", props.Select(p => Quote(FormatValue(p.GetValue(row))))));
                 }
 
-                Logging.Info($"[CsvCtrl] rows written: {path}（rows={rows.Count}, overwritten={overwritten}）");
+                Logging.Info($"[CSV 資料列寫出完成] 路徑={path} 數量={rows.Count} 覆寫={(overwritten ? "是" : "否")}");
             }
             catch (Exception ex)
             {
-                Logging.ErrorOnce(ex, "CSV_WRITE_FAILED", "公開 API 執行失敗", nameof(WriteRows), typeof(T).Name,
+                Logging.ErrorOnce(ex, "CSV 寫出失敗", null, nameof(WriteRows), typeof(T).Name,
                     ex.GetBaseException().Message);
                 throw;
             }
@@ -207,9 +207,9 @@ namespace OptimFoundation.Core.IO
                 case DateTime d when d.Ticks % TimeSpan.TicksPerSecond != 0:
                     // 捨去秒以下精度會使 CSV 讀回值失真。
                     throw Logging.ErrorOnce(
-                        new NotSupportedException($"[CsvCtrl] 不支援秒以下精度的 DateTime：{d:O}——index 粒度只到秒。"),
-                        "CSV_DATETIME_INVALID", "CSV 日期輸出失敗", nameof(FormatValue), d.ToString("O", CultureInfo.InvariantCulture),
-                        "datetime_subsecond_precision");
+                        new NotSupportedException($"不支援秒以下精度的 DateTime：{d:O}，索引粒度只到秒"),
+                        "CSV 日期寫出不合法", null, nameof(FormatValue), d.ToString("O", CultureInfo.InvariantCulture),
+                        "日期含秒以下精度");
                 case DateTime d:
                     return d.ToString(
                         d.TimeOfDay == TimeSpan.Zero ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm:ss",

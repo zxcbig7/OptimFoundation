@@ -61,8 +61,8 @@ namespace OptimFoundation.Generators
 
         private static readonly DiagnosticDescriptor SetDimensionRequiredRule = new DiagnosticDescriptor(
             id: "OPTF008",
-            title: "Set 至少需要一個維度",
-            messageFormat: "Set '{0}' 至少必須宣告一個 [OptDim<T>(\"Name\")]；零維只允許 OptParam。",
+            title: "集合至少需要一個維度",
+            messageFormat: "集合 '{0}' 至少必須宣告一個 [OptDim<T>(\"Name\")]；零維只允許 OptParam。",
             category: "OptimFoundation.Naming",
             defaultSeverity: DiagnosticSeverity.Error,
             isEnabledByDefault: true);

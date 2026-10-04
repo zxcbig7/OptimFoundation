@@ -57,7 +57,7 @@ namespace OptimFoundation.Db.Oracle
                 {
                     using var cmd = BuildCommand(sql, conn, AmbientTransactionOracle, parameters);
                     int rows = cmd.ExecuteNonQuery();
-                    Logging.Info($"[OracleDbCtrl] Execute ({rows} row(s))");
+                    Logging.Info($"[Oracle 執行完成] 數量={rows}");
                     return rows;
                 }
                 finally
@@ -94,7 +94,7 @@ namespace OptimFoundation.Db.Oracle
             }
             catch (Exception ex)
             {
-                Logging.ErrorOnce(ex, "ORACLE_API_FAILED", "公開 API 執行失敗", context, value,
+                Logging.ErrorOnce(ex, "Oracle 操作失敗", null, context, value,
                     ex.GetBaseException().Message);
                 throw;
             }
@@ -190,11 +190,11 @@ namespace OptimFoundation.Db.Oracle
             tableName = tableName.ToUpper();
             if (CheckHasTable(tableName))
             {
-                Logging.Info($"[OracleDbCtrl] Table {tableName} already exists.");
+                Logging.Info($"[資料表已存在] 參數資料表 | 名稱={tableName}");
                 return;
             }
             Execute(new ClassInfo(typeof(TParameter)).ParamTableCreateCmd(tableName));
-            Logging.Info($"[OracleDbCtrl] Created param table: {tableName}");
+            Logging.Info($"[資料表建立完成] 參數資料表 | 名稱={tableName}");
         }
 
         /// <summary>
@@ -206,11 +206,11 @@ namespace OptimFoundation.Db.Oracle
             tableName = tableName.ToUpper();
             if (CheckHasTable(tableName))
             {
-                Logging.Info($"[OracleDbCtrl] Table {tableName} already exists.");
+                Logging.Info($"[資料表已存在] 參數資料表 | 名稱={tableName}");
                 return;
             }
             Execute(new ClassInfo(typeof(TVariable)).VarTableCreateCmd(tableName));
-            Logging.Info($"[OracleDbCtrl] Created result table: {tableName}");
+            Logging.Info($"[資料表建立完成] 結果資料表 | 名稱={tableName}");
         }
 
         /// <summary>
@@ -222,11 +222,11 @@ namespace OptimFoundation.Db.Oracle
             tableName = tableName.ToUpper();
             if (!CheckHasTable(tableName))
             {
-                Logging.Info($"[OracleDbCtrl] Table not found: {tableName}");
+                Logging.Info($"[資料表找不到] 名稱={tableName}");
                 return;
             }
             Execute($"DROP TABLE {tableName}");
-            Logging.Info($"[OracleDbCtrl] Dropped: {tableName}");
+            Logging.Info($"[資料表刪除完成] 名稱={tableName}");
         }
 
         /// <summary>
@@ -239,7 +239,7 @@ namespace OptimFoundation.Db.Oracle
         {
             if (conditions == null || conditions.Length == 0)
             {
-                Logging.Warn("[DELETE_CONDITION_EMPTY] 未執行資料刪除 | reason=no_condition result=skipped");
+                Logging.Warn("[刪除條件為空] 未執行資料刪除 | 原因=沒有刪除條件 結果=略過");
                 return;
             }
             string where = string.Join(" AND ", conditions.Select(c => c.ToUpper()));
@@ -308,7 +308,7 @@ namespace OptimFoundation.Db.Oracle
             }
 
             ExecuteArrayBind(insertCmd, dataIds.Count, columns);
-            Logging.Info($"[OracleDbCtrl] SaveToDB {classInfo.TypeName} -> {tableName} ({dataIds.Count} rows)");
+            Logging.Info($"[資料表寫出完成] 型別={classInfo.TypeName} 名稱={tableName} 數量={dataIds.Count}");
         }
 
         /// <summary>
@@ -328,7 +328,7 @@ namespace OptimFoundation.Db.Oracle
                 }
 
                 ExecuteArrayBind(sql, rows.Count, columns);
-                Logging.Info($"[OracleDbCtrl] ExecuteBatch ({rows.Count} row(s))");
+                Logging.Info($"[Oracle 批次執行完成] 數量={rows.Count}");
             });
         }
 
@@ -382,11 +382,11 @@ namespace OptimFoundation.Db.Oracle
                     return dataDate;
             }
 
-            string message = $"Cannot convert '{raw}' to {t.FullName} for Oracle persistence.";
+            string message = $"Oracle 資料轉型失敗：無法將 '{raw}' 轉成 {t.FullName}";
             throw Logging.ErrorOnce(
                 new FormatException(message),
-                "ORACLE_CONVERSION_FAILED", "Oracle 資料轉型失敗", nameof(ConvertToDbType), raw,
-                "unsupported_or_invalid_value", $"type={t.FullName}");
+                "Oracle 資料轉型失敗", null, nameof(ConvertToDbType), raw,
+                "不支援或不合法的值", $"型別={t.FullName}");
         }
 
         #endregion
@@ -405,11 +405,11 @@ namespace OptimFoundation.Db.Oracle
         public OracleSolutionSink(IDbCtrl db, string tableName)
         {
             _db = db ?? throw Logging.ErrorOnce(
-                new ArgumentNullException(nameof(db)),
-                "ORACLE_SINK_INVALID", "Oracle 解答輸出設定不合法", nameof(OracleSolutionSink), null, "db_is_null");
+                new ArgumentNullException(nameof(db), "db 不得為 null"),
+                "Oracle 解寫出設定不合法", null, nameof(OracleSolutionSink), null, "資料庫為空");
             _tableName = tableName ?? throw Logging.ErrorOnce(
-                new ArgumentNullException(nameof(tableName)),
-                "ORACLE_SINK_INVALID", "Oracle 解答輸出設定不合法", nameof(OracleSolutionSink), null, "table_name_is_null");
+                new ArgumentNullException(nameof(tableName), "tableName 不得為 null"),
+                "Oracle 解寫出設定不合法", null, nameof(OracleSolutionSink), null, "資料表名稱為空");
         }
 
         /// <summary>
@@ -423,7 +423,7 @@ namespace OptimFoundation.Db.Oracle
             }
             catch (Exception ex)
             {
-                Logging.ErrorOnce(ex, "ORACLE_SOLUTION_WRITE_FAILED", "公開 API 執行失敗", nameof(WriteSolution), typeof(TVariableClass).Name,
+                Logging.ErrorOnce(ex, "Oracle 解寫出失敗", null, nameof(WriteSolution), typeof(TVariableClass).Name,
                     ex.GetBaseException().Message);
                 throw;
             }
@@ -462,7 +462,7 @@ namespace OptimFoundation.Db.Oracle
             if (rows.Count > 0)
                 ctrl.ExecuteBatch(insertCmd, rows);
 
-            Logging.Info($"[OracleSolutionSink] Write {classInfo.TypeName} -> {_tableName} ({solution.Count} rows)");
+            Logging.Info($"[Oracle 解寫出完成] 變數類別={classInfo.TypeName} 名稱={_tableName} 數量={solution.Count}");
         }
 
         /// <summary>
@@ -491,9 +491,9 @@ namespace OptimFoundation.Db.Oracle
             {
                 if (_committed)
                     throw Logging.ErrorOnce(
-                        new InvalidOperationException("[OracleSolutionSink] 批次已 Commit，不可再 Write。"),
-                        "ORACLE_BATCH_INVALID", "Oracle 批次操作不合法", nameof(Write), typeof(TVariableClass).Name,
-                        "batch_already_committed");
+                        new InvalidOperationException("批次已提交，不可再 Write"),
+                        "Oracle 批次操作不合法", null, nameof(Write), typeof(TVariableClass).Name,
+                        "批次已提交");
                 _pending.Add(ctrl => _sink.WriteRows<TVariableClass>(ctrl, engine, _dataId, _userId));
             }
 
@@ -503,9 +503,9 @@ namespace OptimFoundation.Db.Oracle
             {
                 if (_committed)
                     throw Logging.ErrorOnce(
-                        new InvalidOperationException("[OracleSolutionSink] 批次已 Commit，不可重複 Commit。"),
-                        "ORACLE_BATCH_INVALID", "Oracle 批次操作不合法", nameof(Commit), _pending.Count,
-                        "batch_already_committed");
+                        new InvalidOperationException("批次已提交，不可重複 Commit"),
+                        "Oracle 批次操作不合法", null, nameof(Commit), _pending.Count,
+                        "批次已提交");
                 try
                 {
                     _sink._db.ExecuteInTransaction(ctrl =>
@@ -516,7 +516,7 @@ namespace OptimFoundation.Db.Oracle
                 }
                 catch (Exception ex)
                 {
-                    Logging.ErrorOnce(ex, "ORACLE_BATCH_FAILED", "公開 API 執行失敗", nameof(Commit), _pending.Count,
+                    Logging.ErrorOnce(ex, "Oracle 批次操作失敗", null, nameof(Commit), _pending.Count,
                         ex.GetBaseException().Message);
                     throw;
                 }

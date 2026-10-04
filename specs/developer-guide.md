@@ -296,7 +296,7 @@ Trial / Experiment ──► trial / meta / summary / trajectory CSV
 | warm start | `OptModel.AddMIPStart`、`EngineBase.AddMIPStart` |
 | 匯入／匯出 | `OptModel.ReadModel/ReadSolution`、`OptEngine.ReadModel/ReadSolution/ExportModel/ExportSolution` |
 | infeasible 診斷 | `GetConflictConstraints` |
-| build 數量核對 | `VariableBuildCounts`、`ConstraintBuildCounts`；未引用變數由 `Solve()` 前 `[UNREFERENCED_VARIABLES]` WARN 點名 |
+| build 數量核對 | `VariableBuildCounts`、`ConstraintBuildCounts`；未引用變數由 `Solve()` 前 `[變數未引用]` 警告 點名 |
 | 多設定實驗 | `OptProject.Experiment`、`OptExperiment` |
 | CSV／DB | `CsvDataSource`、`DbDataSource`、`IDbCtrl`、`CsvCtrl` |
 
@@ -1322,7 +1322,7 @@ public sealed class MiniProductionSolution
     private static void Require(bool condition, string message)
     {
         if (!condition)
-            throw new InvalidOperationException($"[Validate] {message}");
+            throw new InvalidOperationException($"[解驗證失敗] {message}");
     }
 }
 ```
@@ -1490,9 +1490,9 @@ internal static class Program
             foreach (var trial in result.Trials)
             {
                 Logging.Info(
-                    $"[Experiment] {trial.Label} " +
-                    $"status={trial.Metrics.Status} " +
-                    $"solveTimeMs={trial.Metrics.SolveTimeMs:F0}");
+                    $"[試跑完成] 名稱={trial.Label} " +
+                    $"狀態={trial.Metrics.Status} " +
+                    $"耗時毫秒={trial.Metrics.SolveTimeMs:F0}");
             }
 
             return 0;
@@ -1677,11 +1677,11 @@ flowchart LR
 
 欄位固定，只有一種格式，沒有版本號。
 
-同名實驗再跑一次整組覆寫，並留 `[EXPERIMENT_OVERWRITTEN]` WARN；這次沒寫到的舊檔（例：上次有軌跡、這次沒有）一併刪掉，檔裡只有最後一次的紀錄。
+同名實驗再跑一次整組覆寫，並留 `[實驗紀錄覆寫]` 警告；這次沒寫到的舊檔（例：上次有軌跡、這次沒有）一併刪掉，檔裡只有最後一次的紀錄。
 
 要留住某一輪的結果，換一個實驗名（例：`tuning-r1` → `tuning-r2`），或跑完就把四個檔複製到 archive。
 
-寫不進去（例：檔案被 Excel 開著）時，這次改寫到 `{檔名}-locked-<時間>.csv`，並留 WARN。
+寫不進去（例：檔案被 Excel 開著）時，這次改寫到 `{檔名}-locked-<時間>.csv`，並留 `[實驗檔被占用]` 警告。
 
 保留期清理不清 Experiment。
 
@@ -2056,6 +2056,145 @@ dotnet run -- read-model <file> exp # 讀模型檔做實驗；不加 exp 就是�
 
 ---
 
+## 24. Log 與例外訊息規範
+
+框架與範本自己寫的 log、例外訊息一律中文，格式與用詞照本章。CPLEX 自己印的 solver log 與 .NET 執行環境的文字（例如 `Unhandled exception.`）不在此限。
+
+### 24.1 一行 log 的格式
+
+```text
+2026-10-04 09:30:12 | 警告 | [限制式為空] 名稱=Constraint_Equal@K1 原因=左式沒有任何項 結果=略過
+2026-10-04 09:30:13 | 警告 | [實驗紀錄覆寫] 同名實驗已有紀錄 | 名稱=Template-tuning-r0 結果=覆寫
+```
+
+| 部分 | 規則 |
+| --- | --- |
+| 時間 | `yyyy-MM-dd HH:mm:ss` |
+| 等級 | `資訊`、`警告`、`錯誤`、`除錯` |
+| `[事件]` | 中文事件名，見 24.2 |
+| 說明 | 選填；只寫事件名沒說到的資訊，不加句號 |
+| ` \| ` | 說明與欄位都有時才寫，用來分隔兩者；沒有說明時 `[事件]` 後直接接欄位 |
+| 欄位 | `欄位=值`，欄位之間單一空白；欄位名查 24.3 |
+| 結果 | 警告與錯誤必帶 `結果=`，值查 24.4；資訊不帶 |
+
+- 值照原樣、不翻譯：類別名、屬性名、CPLEX 參數名、檔名、路徑、數字；單位字照原樣（秒、MB、ticks）。
+- 框架自己寫的值（例如 `原因=`）不含空白，避免和下一個欄位黏在一起；路徑與執行時例外原文照原樣。
+- 是非值寫 `是` / `否`，開關寫 `開` / `關`；null 寫 `<空值>`。
+- `[CPLEX 參數設定]` 以 `CplexConfig` 屬性名或 CPLEX 參數名當欄位名，例如 `[CPLEX 參數設定] Threads=8`。
+- `Logging.ErrorOnce` 自動組出 `[事件] 說明 | 位置= 值= 原因= … 結果=中止`。
+
+### 24.2 事件名
+
+- 寫成「對象 + 狀態」，例如 `變數建立完成`、`限制式為空`、`實驗設定不合法`、`模型匯出失敗`。
+- 狀態詞優先用：開始、完成、摘要、設定、取得、初始化、略過、覆寫、重複、為空、已存在、找不到、不合法、失敗、未引用、已停用、過大、被占用。都不適用時用最短的描述詞，並補進這張清單。
+- 不合法 = 呼叫端給的輸入不符合規則；失敗 = 輸入合法、執行時出錯。
+- 同一件事只用一個事件名；不拿 C# 類別名當事件名（不寫 `[OptEngine]`），需要時把類別或方法放進 `位置=`。
+
+### 24.3 欄位名
+
+| 欄位 | 意義 |
+| --- | --- |
+| `位置` | 出事的方法或步驟 |
+| `值` | 出問題的輸入值 |
+| `原因` | 中文短語；執行時例外照原文 |
+| `結果` | 見 24.4 |
+| `名稱` | 限制式、變數、實驗、資料表、設定等的名稱 |
+| `變數類別` | 變數的 C# 類別名 |
+| `限制式類別` | 限制式的 C# 類別名 |
+| `型別` | .NET 型別 |
+| `模型類型` | LP / MILP / IP / BP |
+| `數量` | 個數；跟預期比對時寫 `實際/預期` |
+| `路徑` | 完整檔案路徑 |
+| `資料夾` | 資料夾路徑 |
+| `檔案` | 多個檔名 |
+| `狀態` | 求解狀態 |
+| `目標值` | 目標式的值 |
+| `最佳界` | best bound |
+| `間隙` | 相對 MIP gap |
+| `種子` | random seed |
+| `耗時毫秒` | 經過時間，單位毫秒 |
+| `範例` | 前幾筆樣本 |
+| `格式` | 檔案格式；`支援格式` 列出可接受的格式 |
+| `模型名稱` | `OptModel` 的名稱 |
+| `新名稱` | 自動改名後的名稱 |
+| `替代路徑` | 原檔案無法寫入時改寫的路徑 |
+| `鍵` | 參數查找用的維度值組合 |
+| `索引` | 集合或參數的維度欄名 |
+| `序號` | 第幾個引數或元素 |
+| `屬性` | C# 屬性名 |
+| `方向` | 目標式或限制式的方向（`Minimize`、`LessEqual` 等） |
+| `常數` | 式子裡的常數項；`右側常數`、`右側值` 指右側 |
+| `懲罰` | 軟性限制式每單位違反量的罰分 |
+| `範圍` | 變數上下界 `[下界,上界]` |
+| `門檻` | 觸發警告的上限 |
+| `保留天數` | 輸出檔保留期 |
+| `細節` | 無法拆成欄位的補充說明 |
+| `覆寫`、`多模型`、`收斂軌跡` | 是非或開關欄位，值為 是/否、開/關 |
+
+- 計數一律叫 `數量`；同一行有多個計數時寫 `{對象}數量`，例如 `集合數量`、`連續變數數量`、`模型內變數數量`、`項數量`。
+- 型別一律叫 `型別`；需要區分時寫 `{修飾}型別`，例如 `例外型別`、`宣告型別`、`指定型別`；`變數型別` 專指 Binary / Integer / Continuous。
+- 表上沒有、也套不進上面兩條的欄位，用中文名詞命名並先補進這張表再使用；同一個意思只用一個欄位名。
+- 一個欄位有多個值時用 `|`（前後不加空白）分隔。
+
+### 24.4 結果值
+
+| 結果 | 用在 |
+| --- | --- |
+| `中止` | 錯誤：丟出例外 |
+| `略過` | 這一項不做，其他照常 |
+| `繼續` | 有問題但照常執行 |
+| `保留原值` | 遇到重複時保留先前那一份 |
+| `覆寫` | 新內容取代舊內容 |
+| `回傳空值` | 查不到，回傳 null 交給呼叫端 |
+| `改用替代檔` | 原檔案無法寫入，改寫到另一個檔 |
+| `保留舊檔` | 舊檔案刪不掉，留在原處，流程照常 |
+| `改名` | 名稱衝突，自動改用另一個名稱 |
+
+### 24.5 用詞表
+
+| 概念 | 用 | 不用 |
+| --- | --- | --- |
+| 建立模型元件 | 建立 | 建構、建置、產生、生成 |
+| `ReadModel` / `ReadSolution`（檔案讀進引擎） | 讀入 | 匯入、讀取 |
+| `IDataSource.Load`（資料來源） | 載入 | 讀取、匯入 |
+| `import-data`（raw 整理成標準 CSV） | 匯入 | |
+| `ExportModel` / `ExportSolution`（solver 檔） | 匯出 | 輸出 |
+| CSV、資料庫、sink 寫資料列 | 寫出 | 寫入、輸出 |
+| 不做這一項 | 略過 | 跳過、忽略、捨棄 |
+| 新取代舊 | 覆寫 | 取代、覆蓋 |
+| 查不到 | 找不到 | 查無、不存在、缺少、未找到 |
+| constraint | 限制式 | 約束、條件 |
+| variable | 變數 | 變量 |
+| objective | 目標式 | 目標函數 |
+| solve | 求解 | 解題 |
+| solver | 求解器（指 CPLEX 本身時寫 CPLEX） | solver |
+| experiment | 實驗 | 試驗 |
+| trial | 試跑 | trial、組合 |
+| MIP start | 起始解 | MIP start、warm start |
+| solution | 解 | 解答 |
+| `.sol` 檔 | 解檔 | |
+| `.lp` / `.mps` / `.sav` 檔 | 模型檔 | 模型文件 |
+| Set | 集合 | |
+| Parameter | 參數 | |
+| row | 資料列 | 列、row |
+| column | 欄 | 欄位（欄位專指 log 的 `欄位=值`） |
+| config | 設定 | 配置 |
+| file | 檔案 | 檔、file |
+| table（資料庫） | 資料表 | 表格、table |
+| CSV / 記憶體的二維資料（`TabularData`） | 表格資料 | |
+| expression pool（`AddLHS` / `AddRHS` 累積處） | 暫存區 | pool |
+| log（訊息文字內） | 日誌 | log |
+| duplicate | 重複 | |
+| expected / actual | 預期 / 實際 | |
+
+### 24.6 例外訊息
+
+- 中文，不加句號；用詞與 24.5 相同，和同一處 `ErrorOnce` 的事件名、原因說同一件事。
+- 有細節時寫「主旨：細節」，例如 `找不到資料表：Set_Item`。
+- `ArgumentNullException` 不只傳 `nameof(參數)`，補中文訊息：`new ArgumentNullException(nameof(rows), "rows 不得為 null")`。
+
+---
+
 ## API reference 使用規則
 
 以下 catalog 完整保留目前 source 的 public signature，並依 source module 分組。搭配前面的架構章節閱讀：
@@ -2072,7 +2211,7 @@ dotnet run -- read-model <file> exp # 讀模型檔做實驗；不加 exp 就是�
 - `BuildVars<T>` 是一般入口；`BuildCVs/IVs/BVs` 與 string overload 用於需要直接控制型別、bounds 或動態 schema 時。
 - `Build()` 後、`Solve()` 前加入 MIP start；key 使用 canonical variable name。
 - `EnableTrajectory()` 在 solve 前呼叫；先查 `SupportsTrajectory`。
-- `VariableBuildCounts`、`ConstraintBuildCounts` 提供各群組 expected/actual；宣告了卻沒被引用的變數由 `Solve()` 前的 `[UNREFERENCED_VARIABLES]` WARN 點名。
+- `VariableBuildCounts`、`ConstraintBuildCounts` 提供各群組 expected/actual；宣告了卻沒被引用的變數由 `Solve()` 前的 `[變數未引用]` 警告 點名。
 - `ExportModel`、`ExportSolution` 的父目錄應先存在；`ReadSolution` 需要相容模型。
 - `GetConflictConstraints()` 用於 infeasible 診斷。copy/merge/thread/reset APIs 都是進階 stateful 操作。
 - `Experiment.Save()` 是一般輸出入口；writers 的 `Write` 供 framework integration。`ConfigSummary` 只有 status/incumbent/W-L-T counts。
@@ -2312,9 +2451,9 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 - `public bool CreateEqual(string name)` | `OptimFoundation.Core/EngineBase.cs:1553` | 驗證明確 name，把兩側 pool 正規化後建立 equality並加入 solver model。沒有 LHS/RHS variable terms 時 warning、回傳 false且不清 pool；duplicate 略過新增但清 pool並回傳 true；成功也清 pool。
 - `public bool CreateEqual(ConstraintBase owner, params object[] dims)` | `OptimFoundation.Core/EngineBase.cs:1557` | 由 owner type 與 dims 命名，將完整 pool 建成 equality。空 variable pool 回傳 false且保留；同名 duplicate 或成功建立都記錄結果、清 pool並回傳 true。
 - `public bool CreateEqual(double rhs, string name)` | `OptimFoundation.Core/EngineBase.cs:1562` | 驗證 name；LHS 沒有變數項時 warning、回傳 false且不清 pool。否則用參數 `rhs` 覆寫 RHS constant，仍納入原 RHS variable terms，建立 equality；duplicate/成功後清 pool並回傳 true。
-- `public bool CreateRange(double lb, double ub, string name)` | `OptimFoundation.Core/EngineBase.cs:1579` | 只取 LHS terms 建 `lb - LhsConst <= LHS <= ub - LhsConst` 並使用明確 name；RHS terms/constant 不參與，若存在會記 `[POOL_RHS_IGNORED]` warning 後捨棄。LHS 沒有變數項時清空 pool 並回傳 false；成功或 duplicate skip 後也清空整個 pool並回傳 true。
+- `public bool CreateRange(double lb, double ub, string name)` | `OptimFoundation.Core/EngineBase.cs:1579` | 只取 LHS terms 建 `lb - LhsConst <= LHS <= ub - LhsConst` 並使用明確 name；RHS terms/constant 不參與，若存在會記 `[右側暫存區略過]` 警告 後捨棄。LHS 沒有變數項時清空 pool 並回傳 false；成功或 duplicate skip 後也清空整個 pool並回傳 true。
 - `public bool CreateRange(double lb, double ub, ConstraintBase owner, params object[] dims)` | `OptimFoundation.Core/EngineBase.cs:1583` | 先由 owner+dims 產生 canonical name，再只消耗 LHS 建範圍限制式；任何 RHS pool 內容都會 warning 並忽略。LHS 空時清 pool、記 build failure 並回傳 false；其他完成路徑清 pool並回傳 true。
-- `public void CreateMinimize()` | `OptimFoundation.Core/EngineBase.cs:1682` | 只取 LHS terms、LHS constant 與已累積 soft penalty terms，設定 `ObjectiveSense.Minimize` 並以 `SetObjective` 取代 solver objective；RHS pool 若有內容會記 `[POOL_RHS_IGNORED]` warning 後捨棄。LHS 與 soft penalty 都空時不建立 objective，即使只有 constant 也 skip；所有正常返回路徑都清 pool。方法無回傳值，成功會更新 objective terms/constant/sense 與 model stats state。
+- `public void CreateMinimize()` | `OptimFoundation.Core/EngineBase.cs:1682` | 只取 LHS terms、LHS constant 與已累積 soft penalty terms，設定 `ObjectiveSense.Minimize` 並以 `SetObjective` 取代 solver objective；RHS pool 若有內容會記 `[右側暫存區略過]` 警告 後捨棄。LHS 與 soft penalty 都空時不建立 objective，即使只有 constant 也 skip；所有正常返回路徑都清 pool。方法無回傳值，成功會更新 objective terms/constant/sense 與 model stats state。
 - `public void CreateMaximize()` | `OptimFoundation.Core/EngineBase.cs:1685` | 只以 LHS terms、LHS constant 及 soft penalty terms建立 `ObjectiveSense.Maximize` objective，並取代 solver 目前 objective；任何 RHS terms/constant 都 warning 後忽略。沒有 LHS terms且沒有 soft penalty時 skip建立並清 pool；成功更新 objective tracking/state後也清 pool。方法回傳 void，建置例外會記錄後重拋。
 - `public virtual bool SupportsSoftConstraints` | `OptimFoundation.Core/EngineBase.cs:1756`
 - `public virtual bool CreateLessEqualSoft(double rhs, double penalty)` | `OptimFoundation.Core/EngineBase.cs:1759` | 自動命名後建立 nonnegative continuous slack `Surplus_*`，把它以 -1 加入式子形成 `LHS - slack <= rhs`；目標最小化加入 `+penalty*slack`，最大化加入負 penalty。pool 空回傳 false；成功會重設 objective、清 pool並回傳 true。
@@ -2364,7 +2503,7 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 - `public IReadOnlyList<ConfigSummary> Summaries` | `OptimFoundation.Core/Experiments/Experiment.cs:29`
 - `public Experiment(string project, string name, string description)` | `OptimFoundation.Core/Experiments/Experiment.cs:41` | 驗證 project 與 name（都不可空白、不可含非法檔名字元：兩者組成檔名）、設定 CreatedAt 並初始化 Trials；建立容器時不求解也不寫檔。
 - `public void AddTrial(Trial trial)` | `OptimFoundation.Core/Experiments/Experiment.cs:45` | 驗證 `trial` 非 null 後，只把既有 `Trial` reference 加入 `Trials`；不呼叫 `Run`、不求解、不複製 trial，也不寫檔。
-- `public void Save()` | `OptimFoundation.Core/Experiments/Experiment.cs:81` | 建立 Experiment 目錄，把 trials 寫成 `{Project}-{Name}-trial.csv` / `-meta.csv` / `-summary.csv`（`WriteSummary` 時）/ `-trajectory.csv`（有點才寫）；同名實驗整組覆寫並留 `[EXPERIMENT_OVERWRITTEN]` WARN，這次沒寫到的舊檔一併刪掉；寫不進去改寫 `-locked-<時間>` 並留 WARN；沒有 trial 只留 WARN；失敗記 log 後重拋。
+- `public void Save()` | `OptimFoundation.Core/Experiments/Experiment.cs:81` | 建立 Experiment 目錄，把 trials 寫成 `{Project}-{Name}-trial.csv` / `-meta.csv` / `-summary.csv`（`WriteSummary` 時）/ `-trajectory.csv`（有點才寫）；同名實驗整組覆寫並留 `[實驗紀錄覆寫]` 警告，這次沒寫到的舊檔一併刪掉；寫不進去改寫 `-locked-<時間>` 並留 WARN；沒有 trial 只留 WARN；失敗記 log 後重拋。
 - `public interface ITrajectorySource` | `OptimFoundation.Core/Experiments/Experiment.cs:103`
 - `public sealed class Trial` | `OptimFoundation.Core/Experiments/Experiment.cs:118`
 - `public string Label` | `OptimFoundation.Core/Experiments/Experiment.cs:121`
@@ -2374,7 +2513,7 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 - `public DateTime RunTime` | `OptimFoundation.Core/Experiments/Experiment.cs:134`
 - `public ConfigSnapshot Config` | `OptimFoundation.Core/Experiments/Experiment.cs:137`
 - `public SolveMetrics Metrics` | `OptimFoundation.Core/Experiments/Experiment.cs:140`
-- `public static Trial Capture(ISolverEngine engine, string label, Func<bool> solveAction, bool captureTrajectory = true)` | `OptimFoundation.Core/Experiments/Experiment.cs:182` | 要求非 null engine 與 action；先從 `engine.Config` 建 `ConfigSnapshot`，若要求 trajectory 且 engine 實作並支援 `ITrajectorySource`，在求解前呼叫 `EnableTrajectory()`。接著實際呼叫一次 `solveAction()`；其 bool 回傳不決定是否建 Trial。action 正常返回後讀 `engine.LastMetrics`，若為 null 則以當下 `engine.Status` 建最小 metrics，再連同 label、目前時間、snapshot 組成新 Trial；trajectory 由 solve 後的 `LastMetrics.Convergence` 一併保存。action 或 capture 失敗時記 `TRIAL_CAPTURE_FAILED` 並原例外重拋，不回傳 Trial；此方法不呼叫 `Dispose()`，engine lifecycle 仍由呼叫端管理。
+- `public static Trial Capture(ISolverEngine engine, string label, Func<bool> solveAction, bool captureTrajectory = true)` | `OptimFoundation.Core/Experiments/Experiment.cs:182` | 要求非 null engine 與 action；先從 `engine.Config` 建 `ConfigSnapshot`，若要求 trajectory 且 engine 實作並支援 `ITrajectorySource`，在求解前呼叫 `EnableTrajectory()`。接著實際呼叫一次 `solveAction()`；其 bool 回傳不決定是否建 Trial。action 正常返回後讀 `engine.LastMetrics`，若為 null 則以當下 `engine.Status` 建最小 metrics，再連同 label、目前時間、snapshot 組成新 Trial；trajectory 由 solve 後的 `LastMetrics.Convergence` 一併保存。action 或 capture 失敗時記 `[試跑擷取失敗]` 並原例外重拋，不回傳 Trial；此方法不呼叫 `Dispose()`，engine lifecycle 仍由呼叫端管理。
 - `public sealed class ConfigSummary` | `OptimFoundation.Core/Experiments/Experiment.cs:246`
 - `public string RunId` | `OptimFoundation.Core/Experiments/Experiment.cs:249` | 批次識別（同 `Trial.ExperimentId`），不寫進 CSV。
 - `public string Model` | `OptimFoundation.Core/Experiments/Experiment.cs:220`
@@ -2477,7 +2616,7 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 - `public static void Debug(string message)` | `OptimFoundation.Core/Infrastructure/Logging.cs:61` | 以 Debug level 寫 framework log；訊息可能輸出至 console 與已設定 log file。
 - `public static void Warn(string message)` | `OptimFoundation.Core/Infrastructure/Logging.cs:64` | 以 Warn level 寫 framework log；訊息可能輸出至 console 與已設定 log file。
 - `public static void Error(string message)` | `OptimFoundation.Core/Infrastructure/Logging.cs:67` | 以 Error level 寫 framework log；訊息可能輸出至 console 與已設定 log file。
-- `public static TException ErrorOnce<TException>(TException exception, string eventCode, string description, string context, object value, string reason, string details = null) where TException : Exception` | `OptimFoundation.Core/Infrastructure/Logging.cs:73` | 同一 Exception instance 僅記一次結構化錯誤，在 exception.Data 標記後回傳原例外供原樣重拋。
+- `public static TException ErrorOnce<TException>(TException exception, string eventName, string description, string context, object value, string reason, string details = null) where TException : Exception` | `OptimFoundation.Core/Infrastructure/Logging.cs:73` | 同一 Exception instance 僅記一次結構化錯誤，在 exception.Data 標記後回傳原例外供原樣重拋。
 - `public static void Info(string message, Stopwatch sw)` | `OptimFoundation.Core/Infrastructure/Logging.cs:125` | 以 Info level 寫 framework log；訊息可能輸出至 console 與已設定 log file。
 - `public static void SetLogFileName(string name)` | `OptimFoundation.Core/Infrastructure/Logging.cs:138` | 設定後續 file logging 的檔名；應在首次寫檔前呼叫。
 - `public static void WriteToFile(string message)` | `OptimFoundation.Core/Infrastructure/Logging.cs:156` | 把訊息附加到目前 log file，會建立並寫入 Log 目錄。

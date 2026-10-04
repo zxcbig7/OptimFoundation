@@ -17,8 +17,8 @@ namespace OptimFoundation.Core.IO
         {
             if (rows == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(rows)),
-                    "DATA_SOURCE_INVALID", "記憶體資料來源不合法", nameof(AddRows), typeof(T).Name, "rows_are_null");
+                    new ArgumentNullException(nameof(rows), "rows 不得為 null"),
+                    "記憶體資料來源不合法", null, nameof(AddRows), typeof(T).Name, "資料列集合為空");
             var properties = typeof(T).GetProperties();
             _rows[typeof(T).Name] = new[]
                 {
@@ -27,8 +27,8 @@ namespace OptimFoundation.Core.IO
                 .Concat(rows
                 .Select(row => row == null
                     ? throw Logging.ErrorOnce(
-                        new ArgumentException("A model row cannot be null.", nameof(rows)),
-                        "DATA_SOURCE_INVALID", "記憶體資料來源不合法", nameof(AddRows), typeof(T).Name, "row_is_null")
+                        new ArgumentException("資料列不得為 null", nameof(rows)),
+                        "記憶體資料來源不合法", null, nameof(AddRows), typeof(T).Name, "資料列為空")
                     : properties.Select(property => ModelRowMapper.ToInvariantString(property.GetValue(row))).ToArray()))
                 .ToList();
             return this;
@@ -39,17 +39,17 @@ namespace OptimFoundation.Core.IO
         {
             if (name == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(name)),
-                    "DATA_SOURCE_INVALID", "記憶體資料來源不合法", nameof(AddRows), null, "name_is_null");
+                    new ArgumentNullException(nameof(name), "name 不得為 null"),
+                    "記憶體資料來源不合法", null, nameof(AddRows), null, "名稱為空");
             if (rows == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(rows)),
-                    "DATA_SOURCE_INVALID", "記憶體資料來源不合法", nameof(AddRows), name, "rows_are_null");
+                    new ArgumentNullException(nameof(rows), "rows 不得為 null"),
+                    "記憶體資料來源不合法", null, nameof(AddRows), name, "資料列集合為空");
 
             _rows[name] = rows
                 .Select(row => row?.ToArray() ?? throw Logging.ErrorOnce(
-                    new ArgumentException("A data row cannot be null.", nameof(rows)),
-                    "DATA_SOURCE_INVALID", "記憶體資料來源不合法", nameof(AddRows), name, "row_is_null"))
+                    new ArgumentException("資料列不得為 null", nameof(rows)),
+                    "記憶體資料來源不合法", null, nameof(AddRows), name, "資料列為空"))
                 .ToList();
             return this;
         }
@@ -60,8 +60,8 @@ namespace OptimFoundation.Core.IO
             if (_rows.TryGetValue(name, out var rows))
                 return rows.Select(row => row.ToArray()).ToList();
             throw Logging.ErrorOnce(
-                new KeyNotFoundException($"[InMemoryDataSource] No table named '{name}' has been registered. Call AddRows first."),
-                "DATA_SOURCE_NOT_FOUND", "找不到記憶體資料來源", nameof(LoadRows), name, "table_not_registered");
+                new KeyNotFoundException($"找不到資料表：{name}，請先呼叫 AddRows 登記"),
+                "記憶體資料來源找不到", null, nameof(LoadRows), name, "資料表尚未註冊");
         }
 
         /// <summary>將已加入的資料轉成 DataTable，第一列作為欄名，其餘列作為資料。</summary>

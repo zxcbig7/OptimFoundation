@@ -79,7 +79,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             Assert.Equal(0, engine.ObjectiveConstantResult);
             Assert.False(engine.HasPool);
-            Assert.Contains("[POOL_RHS_IGNORED] 右側 pool 不被採用 | operation=CreateMinimize name=<objective> rhsTerms=1 rhsConst=3 reason=objective_uses_lhs_only result=rhs_discarded", ReadLog(tag));
+            Assert.Contains("[右側暫存區略過] 位置=CreateMinimize 名稱=<目標式> 右側項數量=1 右側常數=3 原因=目標式只採用左側 結果=略過", ReadLog(tag));
         }
 
 
@@ -96,7 +96,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             Assert.Contains("Band@x", engine.BuiltConstraints);
             Assert.False(engine.HasPool);
-            Assert.Contains("[POOL_RHS_IGNORED] 右側 pool 不被採用 | operation=CreateRange name=Band@x rhsTerms=1 rhsConst=0 reason=range_uses_lhs_only result=rhs_discarded", ReadLog(tag));
+            Assert.Contains("[右側暫存區略過] 位置=CreateRange 名稱=Band@x 右側項數量=1 右側常數=0 原因=範圍限制式只採用左側 結果=略過", ReadLog(tag));
         }
 
         [Fact(DisplayName = "CreateRange 沒有 RHS pool：不發 warn")]
@@ -109,7 +109,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             engine.AddLHS(1.0, new VarS { S = "x" });
             engine.CreateRange(0, 10, "Band@x");
 
-            Assert.DoesNotContain("[POOL_RHS_IGNORED]", ReadLog(tag));
+            Assert.DoesNotContain("[右側暫存區略過]", ReadLog(tag));
         }
 
 
@@ -145,7 +145,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             var start = Assert.Single(engine.MipStarts);
             Assert.Equal("warm", start.Name);
             Assert.Equal(new[] { ("VariableB_Pick@A", 1.0), ("VariableB_Pick@B", 0.0) }, start.Entries.OrderBy(e => e.Var));
-            Assert.Contains("[MIP_START_UNKNOWN_VARIABLE] MIP start 含模型內不存在的變數 | name=warm unknown=1 sample=VariableB_Pick@Z", ReadLog(tag));
+            Assert.Contains("[起始解變數找不到] 名稱=warm 數量=3 找不到變數數量=1 範例=VariableB_Pick@Z 原因=變數不在模型內 結果=略過", ReadLog(tag));
         }
 
         [Fact(DisplayName = "AddMIPStart：LP 模型 warn 後略過")]
@@ -159,7 +159,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             Assert.Equal(0, applied);
             Assert.Empty(engine.MipStarts);
-            Assert.Contains("[MIP_START_SKIPPED] 略過 MIP start | name=<auto> values=1 reason=model_is_lp result=skipped", ReadLog(tag));
+            Assert.Contains("[起始解略過] 名稱=<自動> 數量=1 原因=線性規劃模型 結果=略過", ReadLog(tag));
         }
 
         [Fact(DisplayName = "AddMIPStart：沒有任何名稱對得上 → 略過不呼叫 solver")]

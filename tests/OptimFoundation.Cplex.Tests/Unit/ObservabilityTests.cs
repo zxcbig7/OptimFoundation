@@ -53,7 +53,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
         private static void AssertOneNamingError(string log, string context, string value, string reason)
         {
-            string payload = $"[MODEL_NAME_INVALID] 模型名稱驗證失敗 | context={context} value={value} reason={reason} result=aborted";
+            string payload = $"[模型名稱不合法] 位置={context} 值={value} 原因={reason} 結果=中止";
             int count = 0;
             int offset = 0;
             while ((offset = log.IndexOf(payload, offset, StringComparison.Ordinal)) >= 0)
@@ -68,7 +68,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
         {
             string marker = $"[{eventCode}]";
             int count = log.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
-                .Count(line => line.Contains("| ERROR |", StringComparison.Ordinal)
+                .Count(line => line.Contains("| 錯誤 |", StringComparison.Ordinal)
                     && line.Contains(marker, StringComparison.Ordinal));
             Assert.Equal(expected, count);
         }
@@ -96,11 +96,10 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             Assert.False(created);
             string log = ReadLog(tag);
-            Assert.Contains("CONSTRAINT_EMPTY", log);
-            Assert.Contains("未建立限制式", log);
-            Assert.Contains("Demand@D1", log);
-            Assert.Contains("reason=pool_empty", log);
-            Assert.Contains("result=skipped", log);
+            Assert.Contains("[限制式為空]", log);
+            Assert.Contains("[限制式為空] 名稱=Demand@D1", log);
+            Assert.Contains("原因=暫存區為空", log);
+            Assert.Contains("結果=略過", log);
         }
 
         [Fact]
@@ -117,10 +116,10 @@ namespace OptimFoundation.Cplex.Tests.Unit
             engine.CreateEqual("UniqueName");
 
             string log = ReadLog(tag);
-            Assert.Contains("CONSTRAINT_DUPLICATE", log);
-            Assert.Contains("略過重複限制式", log);
-            Assert.Contains("UniqueName", log);
-            Assert.Contains("result=kept_existing", log);
+            Assert.Contains("[限制式重複]", log);
+            Assert.Contains("原因=名稱重複", log);
+            Assert.Contains("名稱=UniqueName", log);
+            Assert.Contains("結果=保留原值", log);
         }
 
         [Fact]
@@ -137,8 +136,8 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Equal(new[] { "VarS@A", "VarS@B", "VarS@C" }, engine.BuiltVars.Select(v => v.Name));
             Assert.Equal((5, 3), engine.VariableBuildCounts["VarS"]);
             string log = ReadLog(tag);
-            Assert.Contains("[VARIABLE_DUPLICATE] 略過同名變數 | type=VarS duplicates=1 sample=VarS@A reason=name_exists result=kept_existing", log);
-            Assert.Contains("[VARIABLE_DUPLICATE] 略過同名變數 | type=VarS duplicates=1 sample=VarS@B reason=name_exists result=kept_existing", log);
+            Assert.Contains("[變數重複] 變數類別=VarS 數量=1 範例=VarS@A 原因=名稱已存在 結果=保留原值", log);
+            Assert.Contains("[變數重複] 變數類別=VarS 數量=1 範例=VarS@B 原因=名稱已存在 結果=保留原值", log);
         }
 
         [Fact]
@@ -158,7 +157,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Equal(1, engine.SoftPenaltyTermCount);
             Assert.Equal(new[] { "Budget" }, engine.BuiltConstraints);
             Assert.False(engine.HasPool);
-            Assert.Contains("[CONSTRAINT_DUPLICATE] 略過重複限制式 | name=Budget", ReadLog(tag));
+            Assert.Contains("[限制式重複] 名稱=Budget", ReadLog(tag));
         }
 
         [Fact]
@@ -175,11 +174,11 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.True(created);
             string log = ReadLog(tag);
             Assert.Contains("[軟性限制式建立完成]", log);
-            Assert.Contains("name=SetupBudget", log);
-            Assert.Contains("sense=LessEqual", log);
-            Assert.Contains("rhs=12.5", log);
-            Assert.Contains("penalty=3", log);
-            Assert.Contains("result=success", log);
+            Assert.Contains("名稱=SetupBudget", log);
+            Assert.Contains("方向=LessEqual", log);
+            Assert.Contains("右側值=12.5", log);
+            Assert.Contains("懲罰=3", log);
+            Assert.DoesNotContain("結果=", log.Split('\n').Single(line => line.Contains("[軟性限制式建立完成]")));
         }
 
         [Fact]
@@ -201,13 +200,14 @@ namespace OptimFoundation.Cplex.Tests.Unit
             engine.Solve();
 
             string log = ReadLog(tag);
-            Assert.Contains("[變數建立完成] type=VarS count=2/2", log);
-            Assert.Contains("[變數建立摘要] 已建立=2/2（實際/預期） 變數類別=1 種 模型內合計=2", log);
-            Assert.Contains("[目標式建構開始] sense=Minimize terms=1", log);
-            Assert.Contains("[目標式建構完成] sense=Minimize terms=1 constant=0 result=success", log);
-            Assert.Contains("[限制式建立] 群組=Demand 已建立=1/2（實際/預期）", log);
-            Assert.Contains("[限制式建立] 群組=Capacity 已建立=0/1（實際/預期）", log);
-            Assert.Contains("[限制式建立摘要] 已建立=1/3（實際/預期） 群組=2 個 solver 實際持有=", log);
+            Assert.Contains("[變數建立完成] 變數類別=VarS 數量=2/2", log);
+            Assert.Contains("[變數建立摘要] 數量=2/2 變數類別數量=1 模型內變數數量=2", log);
+            Assert.Contains("[目標式建立開始] 方向=Minimize 項數量=1", log);
+            Assert.Contains("[目標式建立完成] 方向=Minimize 項數量=1 常數=0", log);
+            Assert.DoesNotContain("[目標式建立完成] 方向=Minimize 項數量=1 常數=0 結果=", log);
+            Assert.Contains("[限制式建立完成] 限制式類別=Demand 數量=1/2", log);
+            Assert.Contains("[限制式建立完成] 限制式類別=Capacity 數量=0/1", log);
+            Assert.Contains("[限制式建立摘要] 數量=1/3 限制式類別數量=2 模型內限制式數量=", log);
         }
 
         [Fact]
@@ -224,7 +224,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             engine.CreateMinimize();
             engine.Solve();
 
-            Assert.Contains("[模型類型] type=MILP continuous=2 integer=1 binary=3", ReadLog(tag));
+            Assert.Contains("[模型類型摘要] 模型類型=MILP 連續變數數量=2 整數變數數量=1 二元變數數量=3", ReadLog(tag));
         }
 
         [Fact]
@@ -239,7 +239,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             engine.CreateMinimize();
             engine.Solve();
 
-            Assert.Contains("[模型類型] type=LP continuous=2 integer=0 binary=0", ReadLog(tag));
+            Assert.Contains("[模型類型摘要] 模型類型=LP 連續變數數量=2 整數變數數量=0 二元變數數量=0", ReadLog(tag));
         }
 
         [Fact]
@@ -254,7 +254,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             engine.CreateMinimize();
             engine.Solve();
 
-            Assert.Contains("[模型類型] type=BP continuous=0 integer=0 binary=2", ReadLog(tag));
+            Assert.Contains("[模型類型摘要] 模型類型=BP 連續變數數量=0 整數變數數量=0 二元變數數量=2", ReadLog(tag));
         }
 
         [Fact]
@@ -267,9 +267,9 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Throws<ArgumentException>(() => engine.BuildVars<VarS>(new[] { "A" }));
 
             string log = ReadLog(tag);
-            Assert.Contains("VARIABLE_TYPE_UNKNOWN", log);
-            Assert.Contains("type=VarS", log);
-            Assert.Contains("result=aborted", log);
+            Assert.Contains("[變數型別不合法]", log);
+            Assert.Contains("變數類別=VarS", log);
+            Assert.Contains("結果=中止", log);
         }
 
         [Fact]
@@ -283,11 +283,11 @@ namespace OptimFoundation.Cplex.Tests.Unit
                 () => engine.BuildBVs<VariableC_Amt>(new[] { "A" }));
 
             string log = ReadLog(tag);
-            Assert.Contains("VARIABLE_TYPE_MISMATCH", log);
-            Assert.Contains("type=VariableC_Amt", log);
-            Assert.Contains("declared=Continuous", log);
-            Assert.Contains("requested=Binary", log);
-            Assert.Contains("result=aborted", log);
+            Assert.Contains("[變數型別不一致]", log);
+            Assert.Contains("變數類別=VariableC_Amt", log);
+            Assert.Contains("宣告型別=Continuous", log);
+            Assert.Contains("指定型別=Binary", log);
+            Assert.Contains("結果=中止", log);
         }
 
         [Fact]
@@ -301,11 +301,11 @@ namespace OptimFoundation.Cplex.Tests.Unit
                 () => engine.BuildVars<VariableC_Amt>(new[] { true }));
 
             string log = ReadLog(tag);
-            Assert.Contains("VARIABLE_SET_INVALID", log);
-            Assert.Contains("value=System.Boolean[]", log);
-            Assert.Contains("reason=unsupported_set_type", log);
-            Assert.Contains("result=aborted", log);
-            AssertErrorCodeCount(log, "VARIABLE_SET_INVALID", 1);
+            Assert.Contains("[變數維度集合不合法]", log);
+            Assert.Contains("值=System.Boolean[]", log);
+            Assert.Contains("原因=不支援的集合型別", log);
+            Assert.Contains("結果=中止", log);
+            AssertErrorCodeCount(log, "變數維度集合不合法", 1);
         }
 
         [Fact]
@@ -317,7 +317,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             Assert.Throws<ArgumentException>(() => engine.BuildCVs<VariableC_Amt>(new[] { "E-01" }));
 
-            AssertOneNamingError(ReadLog(tag), "Set #1", "E-01", "contains_reserved_character");
+            AssertOneNamingError(ReadLog(tag), "集合 #1", "E-01", "含保留字元");
         }
 
         [Fact]
@@ -329,7 +329,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             Assert.Throws<ArgumentException>(() => engine.BuildCVs<VariableC_Amt>(new[] { -5 }));
 
-            AssertOneNamingError(ReadLog(tag), "Set #1", "-5", "contains_reserved_character");
+            AssertOneNamingError(ReadLog(tag), "集合 #1", "-5", "含保留字元");
         }
 
         [Fact]
@@ -342,7 +342,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Throws<ArgumentException>(() => engine.BuildCVs<VarDG>(
                 new[] { new DateTime(2026, 8, 9, 1, 2, 3, 250, DateTimeKind.Utc) }, new[] { "A" }));
 
-            AssertOneNamingError(ReadLog(tag), "Set #1", "2026-08-09T01:02:03.2500000Z", "datetime_subsecond_precision");
+            AssertOneNamingError(ReadLog(tag), "集合 #1", "2026-08-09T01:02:03.2500000Z", "日期含秒以下精度");
         }
 
         [Fact]
@@ -354,7 +354,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             Assert.Throws<ArgumentException>(() => engine.CreateEqual(new TestConstraint(), null!));
 
-            AssertOneNamingError(ReadLog(tag), nameof(TestConstraint), "<null>", "dimensions_array_is_null");
+            AssertOneNamingError(ReadLog(tag), nameof(TestConstraint), "<空值>", "維度陣列為空");
         }
 
         [Fact]
@@ -366,7 +366,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             Assert.Throws<ArgumentException>(() => engine.CreateEqual("Demand@2026-08-09"));
 
-            AssertOneNamingError(ReadLog(tag), "CreateEqual token #1", "2026-08-09", "contains_reserved_character");
+            AssertOneNamingError(ReadLog(tag), "CreateEqual 片段 #1", "2026-08-09", "含保留字元");
         }
 
         [Fact]
@@ -380,12 +380,12 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             Assert.Same(original, thrown);
             string log = ReadLog(tag);
-            Assert.Contains("[DATA_LOAD_FAILED]", log);
-            Assert.Contains("context=Load", log);
-            Assert.Contains("value=System.Object", log);
-            Assert.Contains("reason=boundary boom", log);
-            Assert.Contains("result=aborted", log);
-            AssertErrorCodeCount(log, "DATA_LOAD_FAILED", 1);
+            Assert.Contains("[資料載入失敗]", log);
+            Assert.Contains("位置=Load", log);
+            Assert.Contains("值=System.Object", log);
+            Assert.Contains("原因=boundary boom", log);
+            Assert.Contains("結果=中止", log);
+            AssertErrorCodeCount(log, "資料載入失敗", 1);
         }
 
         [Fact]
@@ -396,13 +396,13 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             var thrown = Assert.Throws<InvalidOperationException>(() =>
                 OptData.Load<object>(() => throw Logging.ErrorOnce(
-                    original, "INNER_FAILURE", "底層失敗", "InnerOperation", "bad-value", "inner_reason")));
+                    original, "內層操作失敗", "底層失敗", "InnerOperation", "bad-value", "inner_reason")));
 
             Assert.Same(original, thrown);
             string log = ReadLog(tag);
-            Assert.Contains("[INNER_FAILURE]", log);
-            Assert.DoesNotContain("[DATA_LOAD_FAILED]", log);
-            AssertErrorCodeCount(log, "INNER_FAILURE", 1);
+            Assert.Contains("[內層操作失敗]", log);
+            Assert.DoesNotContain("[資料載入失敗]", log);
+            AssertErrorCodeCount(log, "內層操作失敗", 1);
         }
 
         [Fact]
@@ -418,11 +418,12 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             Assert.Null(row);
             string log = ReadLog(tag);
-            Assert.Contains("[PARAMETER_NOT_FOUND]", log);
-            Assert.Contains("context=Parameter_GncProfit", log);
-            Assert.Contains("key=Chair", log);
-            Assert.Contains("reason=no_matching_row", log);
-            Assert.Contains("result=missing", log);
+            Assert.Contains("[參數找不到]", log);
+            Assert.Contains("型別=Parameter_GncProfit", log);
+            Assert.Contains("鍵=Chair", log);
+            Assert.Contains("原因=沒有符合的資料列", log);
+            Assert.Contains("結果=回傳空值", log);
+
         }
 
         [Fact]
@@ -436,12 +437,12 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             Assert.Equal(2, data.DataIssues.Count);
             string log = ReadLog(tag);
-            Assert.Contains("[DATA_VALIDATION_WARNING]", log);
-            Assert.Contains("context=Set_GncItem reason=DuplicateKey", log);
-            Assert.Contains("context=Parameter_GncProfit reason=Numeric", log);
-            Assert.Contains("result=continued", log);
-            Assert.Contains("Issues (2)", log);
-            Assert.DoesNotContain("| ERROR |", log);
+            Assert.Contains("[資料不合法]", log);
+            Assert.Contains("名稱=Set_GncItem 原因=鍵重複", log);
+            Assert.Contains("名稱=Parameter_GncProfit 原因=數值不合法", log);
+            Assert.Contains("結果=繼續", log);
+            Assert.Contains("[資料載入摘要] 集合數量=1 參數數量=1 問題數量=2", log);
+            Assert.DoesNotContain("| 錯誤 |", log);
         }
 
         [Fact]
@@ -456,10 +457,10 @@ namespace OptimFoundation.Cplex.Tests.Unit
             var issue = Assert.Single(data.DataIssues);
             Assert.Equal(DataIssueKind.InvalidKey, issue.Kind);
             string log = ReadLog(tag);
-            Assert.Contains("context=Set_GncItem reason=InvalidKey", log);
-            Assert.Contains("reason=contains_whitespace", log);
-            Assert.DoesNotContain("[MODEL_NAME_INVALID]", log);
-            Assert.DoesNotContain("| ERROR |", log);
+            Assert.Contains("名稱=Set_GncItem 原因=鍵不合法", log);
+            Assert.Contains("原因=含空白字元", log);
+            Assert.DoesNotContain("[模型名稱不合法]", log);
+            Assert.DoesNotContain("| 錯誤 |", log);
         }
 
         [Fact]
@@ -494,9 +495,9 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             Assert.DoesNotContain("BrokenProperty", snapshot.SolverSpecific.Keys);
             string log = ReadLog(tag);
-            Assert.Contains("CONFIG_SNAPSHOT_SKIPPED", log);
-            Assert.Contains("設定快照略過屬性", log);
-            Assert.Contains("BrokenProperty", log);
+            Assert.Contains("[設定快照屬性略過]", log);
+            Assert.Contains("結果=略過", log);
+            Assert.Contains("屬性=BrokenProperty", log);
             Assert.Contains("snapshot getter failed", log);
         }
 
@@ -513,13 +514,12 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             Assert.IsType<FormatException>(invocation.InnerException);
             string log = ReadLog(tag);
-            Assert.Contains("ORACLE_CONVERSION_FAILED", log);
-            Assert.Contains("Oracle 資料轉型失敗", log);
-            Assert.Contains("context=ConvertToDbType", log);
-            Assert.Contains("value=not-an-int", log);
-            Assert.Contains("reason=unsupported_or_invalid_value", log);
-            Assert.Contains("result=aborted", log);
-            AssertErrorCodeCount(log, "ORACLE_CONVERSION_FAILED", 1);
+            Assert.Contains("[Oracle 資料轉型失敗]", log);
+            Assert.Contains("位置=ConvertToDbType", log);
+            Assert.Contains("值=not-an-int", log);
+            Assert.Contains("原因=不支援或不合法的值", log);
+            Assert.Contains("結果=中止", log);
+            AssertErrorCodeCount(log, "Oracle 資料轉型失敗", 1);
         }
     }
 }

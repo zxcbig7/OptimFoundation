@@ -45,8 +45,8 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
         private static List<string> UnreferencedWarnings(string log) =>
             log.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
-                .Where(line => line.Contains("| WARN  |", StringComparison.Ordinal)
-                    && line.Contains("[UNREFERENCED_VARIABLES]", StringComparison.Ordinal))
+                .Where(line => line.Contains("| 警告 |", StringComparison.Ordinal)
+                    && line.Contains("[變數未引用]", StringComparison.Ordinal))
                 .ToList();
 
         // 3 binary + 1 integer + 1 continuous + 1 軟性 Surplus；一般 / 範圍 / 軟性限制式各一條；maximize
@@ -144,9 +144,10 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
             Assert.Equal(2, engine.LastMetrics!.VarCount);
             string line = Assert.Single(UnreferencedWarnings(ReadLog(tag)));
-            Assert.Contains("1 個變數已宣告但沒被任何限制式或目標式引用", line);
-            Assert.Contains("groups=VariableB_Pick=1", line);
-            Assert.Contains("sample=VariableB_Pick@C", line);
+            Assert.Contains("已宣告的變數沒被任何限制式或目標式引用", line);
+            Assert.Contains("數量=1", line);
+            Assert.Contains("變數類別=VariableB_Pick=1", line);
+            Assert.Contains("範例=VariableB_Pick@C", line);
         }
 
         // CPLEX 移除限制式後仍保留先前已收錄的欄；ResetConstraint 後只用部分變數重建，不該誤報
@@ -227,7 +228,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.DoesNotContain("modelStats", meta);
 
             string line = Assert.Single(UnreferencedWarnings(ReadLog($"{name}-exp_exp")));
-            Assert.Contains("sample=VariableB_Pick@C", line);
+            Assert.Contains("範例=VariableB_Pick@C", line);
         }
     }
 }

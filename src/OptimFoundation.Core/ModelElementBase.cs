@@ -28,11 +28,11 @@ namespace OptimFoundation.Core
             var properties = GetProps(GetType());
             if (values.Length != properties.Length)
             {
-                string message = $"{GetType().Name} expects {properties.Length} values but received {values.Length}.";
+                string message = $"{GetType().Name} 需要 {properties.Length} 個值，但收到 {values.Length} 個";
                 throw Logging.ErrorOnce(
                     new ArgumentException(message),
-                    "MODEL_ELEMENT_INIT_FAILED", "模型元素初始化失敗", nameof(InitClassBySets), GetType().Name,
-                    "arity_mismatch", $"type={GetType().Name} expected={properties.Length} actual={values.Length}");
+                    "模型元素初始化失敗", null, nameof(InitClassBySets), GetType().Name,
+                    "值的數量與屬性數量不一致", $"型別={GetType().Name} 數量={values.Length}/{properties.Length}");
             }
 
             for (var index = 0; index < properties.Length; index++)
@@ -48,9 +48,9 @@ namespace OptimFoundation.Core
                 catch (Exception ex) when (ex is FormatException || ex is OverflowException)
                 {
                     throw Logging.ErrorOnce(
-                        new InvalidCastException($"Cannot convert {context}.", ex),
-                        "MODEL_ELEMENT_INIT_FAILED", "模型元素初始化失敗", context, values[index],
-                        "conversion_failed", $"detail={ex.GetBaseException().Message}");
+                        new InvalidCastException($"無法轉型：{context}", ex),
+                        "模型元素初始化失敗", null, context, values[index],
+                        "轉型失敗", $"細節={ex.GetBaseException().Message}");
                 }
             }
         }

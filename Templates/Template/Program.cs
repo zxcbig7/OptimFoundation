@@ -88,10 +88,10 @@ internal static class Program
             foreach (var trial in result.Trials)
             {
                 Logging.Info(
-                    $"[Experiment] {trial.Model} | {trial.Label} " +
-                    $"status={trial.Metrics.Status} " +
-                    $"objective={trial.Metrics.ObjectiveValue} " +
-                    $"solveTimeMs={trial.Metrics.SolveTimeMs:F0}");
+                    $"[試跑完成] 模型名稱={trial.Model} 名稱={trial.Label} " +
+                    $"狀態={trial.Metrics.Status} " +
+                    $"目標值={trial.Metrics.ObjectiveValue} " +
+                    $"耗時毫秒={trial.Metrics.SolveTimeMs:F0}");
             }
 
             return 0;

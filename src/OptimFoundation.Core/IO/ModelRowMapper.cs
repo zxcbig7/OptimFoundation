@@ -23,15 +23,15 @@ namespace OptimFoundation.Core.IO
         {
             if (rows == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(rows)),
-                    "MODEL_ROW_MAPPING_FAILED", "資料列映射失敗", sourceDescription, null, "rows_are_null");
+                    new ArgumentNullException(nameof(rows), "rows 不得為 null"),
+                    "資料列映射失敗", null, sourceDescription, null, "資料列集合為空");
 
             var properties = typeof(TRow).GetProperties();
             var normalizedRows = rows
                 .Select(row => row?.Select(cell => (cell ?? string.Empty).Trim()).ToArray()
                     ?? throw Logging.ErrorOnce(
-                        new InvalidDataException($"[{sourceDescription}] A data row cannot be null."),
-                        "MODEL_ROW_MAPPING_FAILED", "資料列映射失敗", sourceDescription, null, "row_is_null"))
+                        new InvalidDataException($"{sourceDescription}：資料列不得為 null"),
+                        "資料列映射失敗", null, sourceDescription, null, "資料列為空"))
                 .Where(row => row.Any(cell => cell.Length > 0))
                 .ToArray();
             var result = new List<TRow>();
@@ -43,10 +43,10 @@ namespace OptimFoundation.Core.IO
             if (!hasHeader)
                 throw Logging.ErrorOnce(
                     new InvalidDataException(
-                        $"[{sourceDescription}] Model row source requires a header containing: {string.Join(", ", properties.Select(property => property.Name))}. " +
-                        $"Actual first row: {string.Join(", ", firstRow)}."),
-                    "MODEL_ROW_MAPPING_FAILED", "資料列映射失敗", sourceDescription, string.Join(",", firstRow),
-                    "required_header_missing");
+                        $"{sourceDescription}：資料列來源需要標題列，須包含欄名：{string.Join(", ", properties.Select(property => property.Name))}；" +
+                        $"實際第一行：{string.Join(", ", firstRow)}"),
+                    "資料列映射失敗", null, sourceDescription, string.Join(",", firstRow),
+                    "找不到必要的欄名");
 
             foreach (var row in normalizedRows.Skip(hasHeader ? 1 : 0))
             {
@@ -55,9 +55,9 @@ namespace OptimFoundation.Core.IO
                 {
                     if (columnMap[i] >= row.Length)
                         throw Logging.ErrorOnce(
-                            new InvalidDataException($"[{sourceDescription}] A data row is missing a value for '{properties[i].Name}'."),
-                            "MODEL_ROW_MAPPING_FAILED", "資料列映射失敗", sourceDescription, properties[i].Name,
-                            "row_value_missing");
+                            new InvalidDataException($"{sourceDescription}：資料列找不到 '{properties[i].Name}' 的值"),
+                            "資料列映射失敗", null, sourceDescription, properties[i].Name,
+                            "資料列找不到值");
                     cells[i] = row[columnMap[i]];
                 }
 
@@ -75,21 +75,21 @@ namespace OptimFoundation.Core.IO
         {
             if (properties == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(properties)),
-                    "MODEL_ROW_MAPPING_FAILED", "資料列映射失敗", nameof(ConvertCells), null, "properties_are_null");
+                    new ArgumentNullException(nameof(properties), "properties 不得為 null"),
+                    "資料列映射失敗", null, nameof(ConvertCells), null, "屬性集合為空");
             if (cells == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(cells)),
-                    "MODEL_ROW_MAPPING_FAILED", "資料列映射失敗", nameof(ConvertCells), null, "cells_are_null");
+                    new ArgumentNullException(nameof(cells), "cells 不得為 null"),
+                    "資料列映射失敗", null, nameof(ConvertCells), null, "資料列的值為空");
 
             var values = new object[properties.Length];
             for (var i = 0; i < properties.Length; i++)
             {
                 if (i >= cells.Length)
                     throw Logging.ErrorOnce(
-                        new InvalidDataException($"[{sourceDescription}] Row is missing a value for '{properties[i].Name}'."),
-                        "MODEL_ROW_MAPPING_FAILED", "資料列映射失敗", sourceDescription, properties[i].Name,
-                        "row_value_missing");
+                        new InvalidDataException($"{sourceDescription}：資料列找不到 '{properties[i].Name}' 的值"),
+                        "資料列映射失敗", null, sourceDescription, properties[i].Name,
+                        "資料列找不到值");
                 values[i] = ConvertCell(cells[i], properties[i].PropertyType, properties[i].Name, sourceDescription);
             }
             return values;
@@ -119,9 +119,9 @@ namespace OptimFoundation.Core.IO
             catch (Exception ex) when (ex is FormatException || ex is InvalidCastException || ex is OverflowException || ex is ArgumentException)
             {
                 throw Logging.ErrorOnce(
-                    new FormatException($"[{sourceDescription}] Value '{value}' cannot be parsed as {effectiveType.Name} for '{propertyName}' using invariant culture.", ex),
-                    "MODEL_VALUE_CONVERSION_FAILED", "資料值轉型失敗", $"{sourceDescription}.{propertyName}", value,
-                    "invariant_conversion_failed", $"targetType={effectiveType.Name}");
+                    new FormatException($"{sourceDescription}：無法以不變文化將值 '{value}' 轉成 {effectiveType.Name}（屬性：{propertyName}）", ex),
+                    "資料值轉型失敗", null, $"{sourceDescription}.{propertyName}", value,
+                    "以不變文化轉型失敗", $"型別={effectiveType.Name}");
             }
         }
 

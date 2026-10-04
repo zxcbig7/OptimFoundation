@@ -123,7 +123,7 @@ namespace OptimFoundation.Core
                     }
                 }
                 if (skipped > 0)
-                    Logging.Warn($"[OUTPUT_PURGE_SKIPPED] 部分舊檔未清除 | folder={_folderName} count={skipped} reason={firstFailure} result=kept");
+                    Logging.Warn($"[舊檔清除略過] 部分舊檔未清除 | 資料夾={_folderName} 數量={skipped} 原因={firstFailure} 結果=繼續");
                 return deleted;
             }
         }

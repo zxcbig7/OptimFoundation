@@ -82,7 +82,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.True(engine.Solve());
             Assert.Equal(0.0, engine.MIPGap);
             Assert.Equal(6.0, engine.BestObjValue, precision: 6);
-            Assert.Contains("[MIP gap 略過] modelType=LP reason=not_mip", ReadLog(tag));
+            Assert.Contains("[間隙略過] 模型類型=LP", ReadLog(tag));
         }
 
         [Fact(DisplayName = "MILP 讀 MIP gap 並留 log")]
@@ -96,7 +96,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
             Assert.True(engine.Solve());
             Assert.Equal(16.0, engine.GetObjectiveValue(), precision: 6);
-            Assert.Contains("[MIP gap 讀取] modelType=BP", ReadLog(tag));
+            Assert.Contains("[間隙取得] 模型類型=BP", ReadLog(tag));
         }
 
         [Fact(DisplayName = "檔案 pipeline：ExportSolution(.sol) → 下一個 engine ReadSolution 成為 MIP start")]
@@ -156,7 +156,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
                 .LoadConfig(new ProjectConfig { EnableSolverLog = false });
             Assert.True(optProject.Solve(model, new CplexConfig()));
             Assert.Equal(6.0, optProject.Engine.GetObjectiveValue(), precision: 6);
-            Assert.Contains("[OptEngine] Solution read:", ReadLog(project));
+            Assert.Contains("[解檔讀入完成]", ReadLog(project));
         }
 
         [Fact(DisplayName = "記憶體 pipeline：前段 GetSolution → 後段 AddMIPStart")]

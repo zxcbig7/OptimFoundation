@@ -58,11 +58,11 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.True(ok); // scale guard 只警告，不阻擋求解
 
             string logContent = ReadLatestLogContent(tag);
-            Assert.Contains("WARN", logContent);
-            Assert.Contains("MODEL_SCALE_WARNING", logContent);
-            Assert.Contains("count=2", logContent);
-            Assert.Contains("threshold=1", logContent);
-            Assert.Contains("result=continued", logContent);
+            Assert.Contains("| 警告 |", logContent);
+            Assert.Contains("[模型規模過大]", logContent);
+            Assert.Contains("數量=2", logContent);
+            Assert.Contains("門檻=1", logContent);
+            Assert.Contains("結果=繼續", logContent);
         }
 
         [Fact]
@@ -86,7 +86,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             string logContent = ReadLatestLogContent(tag);
             Assert.Contains("marker start", logContent); // 確認讀到的正是這次執行寫的檔
-            Assert.DoesNotContain("WARN", logContent);
+            Assert.DoesNotContain("| 警告 |", logContent);
         }
 
         [Fact]

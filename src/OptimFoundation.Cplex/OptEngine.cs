@@ -188,8 +188,8 @@ namespace OptimFoundation.Cplex
         {
             if (string.IsNullOrWhiteSpace(name))
                 throw Logging.ErrorOnce(
-                    new ArgumentException("Model name cannot be null or whitespace.", nameof(name)),
-                    "MODEL_NAME_INVALID", "模型名稱驗證失敗", nameof(SetModelName), name, "name_is_empty");
+                    new ArgumentException("模型名稱不得為空白", nameof(name)),
+                    "模型名稱不合法", null, nameof(SetModelName), name, "名稱為空");
             _modelName = name;
         }
 
@@ -212,15 +212,15 @@ namespace OptimFoundation.Cplex
         {
             if (Model == null)
                 throw Logging.ErrorOnce(
-                    new InvalidOperationException("ExportModel 必須在 Build() 之後呼叫。"),
-                    "MODEL_EXPORT_FAILED", "模型匯出失敗", nameof(ExportModel), fileName, "engine_not_built");
+                    new InvalidOperationException("ExportModel 必須在 Build() 之後呼叫"),
+                    "模型匯出失敗", null, nameof(ExportModel), fileName, "引擎尚未建立");
 
             if (string.IsNullOrWhiteSpace(fileName))
                 throw Logging.ErrorOnce(
-                    new ArgumentException("Export file name cannot be null or whitespace.", nameof(fileName)),
-                    "MODEL_EXPORT_FAILED", "模型匯出失敗", nameof(ExportModel), fileName, "file_name_is_empty");
+                    new ArgumentException("匯出檔名不得為空白", nameof(fileName)),
+                    "模型匯出不合法", null, nameof(ExportModel), fileName, "檔名為空");
 
-            string format = ResolveModelFileFormat(fileName, "MODEL_EXPORT_FAILED", "模型匯出失敗", nameof(ExportModel));
+            string format = ResolveModelFileFormat(fileName, "模型匯出失敗", nameof(ExportModel));
 
             string path;
             if (Path.IsPathRooted(fileName))
@@ -240,11 +240,11 @@ namespace OptimFoundation.Cplex
             catch (System.Exception ex)
             {
                 throw Logging.ErrorOnce(
-                    ex, "MODEL_EXPORT_FAILED", "模型匯出失敗", nameof(ExportModel), path,
-                    ex.GetBaseException().Message, $"exception={ex.GetType().FullName}");
+                    ex, "模型匯出失敗", null, nameof(ExportModel), path,
+                    ex.GetBaseException().Message, $"例外型別={ex.GetType().FullName}");
             }
 
-            Logging.Info($"[OptEngine] Model exported: {path} format={format}");
+            Logging.Info($"[模型匯出完成] 路徑={path} 格式={format}");
         }
 
         /// <summary>
@@ -268,15 +268,15 @@ namespace OptimFoundation.Cplex
         {
             if (Model == null)
                 throw Logging.ErrorOnce(
-                    new InvalidOperationException("ReadModel 必須在 Model Build 之後使用。"),
-                    "MODEL_IMPORT_FAILED", "模型匯入失敗", nameof(ReadModel), fileName, "engine_not_built");
+                    new InvalidOperationException("ReadModel 必須在 Build() 之後呼叫"),
+                    "模型讀入失敗", null, nameof(ReadModel), fileName, "引擎尚未建立");
 
             if (string.IsNullOrWhiteSpace(fileName))
                 throw Logging.ErrorOnce(
-                    new ArgumentException("Import file name cannot be null or whitespace.", nameof(fileName)),
-                    "MODEL_IMPORT_FAILED", "模型匯入失敗", nameof(ReadModel), fileName, "file_name_is_empty");
+                    new ArgumentException("讀入檔名不得為空白", nameof(fileName)),
+                    "模型讀入不合法", null, nameof(ReadModel), fileName, "檔名為空");
 
-            string format = ResolveModelFileFormat(fileName, "MODEL_IMPORT_FAILED", "模型匯入失敗", nameof(ReadModel));
+            string format = ResolveModelFileFormat(fileName, "模型讀入失敗", nameof(ReadModel));
 
             string path = Path.IsPathRooted(fileName)
                 ? fileName
@@ -284,11 +284,11 @@ namespace OptimFoundation.Cplex
 
             if (!File.Exists(path))
                 throw Logging.ErrorOnce(
-                    new FileNotFoundException($"找不到模型檔 '{path}'。", path),
-                    "MODEL_IMPORT_FAILED", "模型匯入失敗", nameof(ReadModel), path, "file_not_found");
+                    new FileNotFoundException($"找不到模型檔：{path}", path),
+                    "模型讀入失敗", null, nameof(ReadModel), path, "找不到檔案");
 
             if (Variables.Count > 0 || _constraints.Count > 0)
-                Logging.Warn($"[MODEL_IMPORT_OVERWRITE] 匯入將取代既有建模內容 | vars={Variables.Count} constraints={_constraints.Count} result=discarded");
+                Logging.Warn($"[模型讀入覆寫] 讀入的模型將覆寫既有建模內容 | 變數數量={Variables.Count} 限制式數量={_constraints.Count} 結果=覆寫");
 
             try
             {
@@ -297,12 +297,12 @@ namespace OptimFoundation.Cplex
             catch (System.Exception ex)
             {
                 throw Logging.ErrorOnce(
-                    ex, "MODEL_IMPORT_FAILED", "模型匯入失敗", nameof(ReadModel), path,
-                    ex.GetBaseException().Message, $"exception={ex.GetType().FullName}");
+                    ex, "模型讀入失敗", null, nameof(ReadModel), path,
+                    ex.GetBaseException().Message, $"例外型別={ex.GetType().FullName}");
             }
 
             var counts = ReindexFromModel();
-            Logging.Info($"[OptEngine] Model imported: {path} format={format} vars={counts.VarCount} constraints={counts.ConstraintCount}");
+            Logging.Info($"[模型讀入完成] 路徑={path} 格式={format} 變數數量={counts.VarCount} 限制式數量={counts.ConstraintCount}");
             return counts;
         }
 
@@ -313,7 +313,7 @@ namespace OptimFoundation.Cplex
         /// <summary>
         /// 檢查模型副檔名；提前拒絕不支援的格式，讓錯誤附上支援清單。
         /// </summary>
-        private static string ResolveModelFileFormat(string fileName, string eventCode, string description, string context)
+        private static string ResolveModelFileFormat(string fileName, string eventName, string context)
         {
             string ext = Path.GetExtension(fileName);
             string compression = ModelFileCompressions.FirstOrDefault(c => c.Equals(ext, StringComparison.OrdinalIgnoreCase));
@@ -323,9 +323,9 @@ namespace OptimFoundation.Cplex
             if (format == null)
                 throw Logging.ErrorOnce(
                     new ArgumentException(
-                        $"Unsupported model file extension in '{fileName}'. Use .lp / .mps / .sav, optionally followed by .gz / .bz2.",
+                        $"不支援的模型檔副檔名：{fileName}，請用 .lp / .mps / .sav，可再接 .gz / .bz2",
                         nameof(fileName)),
-                    eventCode, description, context, fileName, "unsupported_extension", "supported=.lp|.mps|.sav[.gz|.bz2]");
+                    eventName, null, context, fileName, "不支援的副檔名", "支援格式=.lp|.mps|.sav[.gz|.bz2]");
 
             return (format + compression).TrimStart('.').ToUpperInvariant();
         }
@@ -372,7 +372,7 @@ namespace OptimFoundation.Cplex
 
             string unique = $"{name}#{registered}";
             while (Variables.ContainsKey(unique)) unique += "#";
-            Logging.Warn($"[MODEL_IMPORT_DUPLICATE_NAME] 匯入的變數名重複 | name={name} renamed={unique} result=renamed");
+            Logging.Warn($"[讀入變數重複] 名稱={name} 新名稱={unique} 結果=改名");
             return unique;
         }
 
@@ -398,13 +398,13 @@ namespace OptimFoundation.Cplex
         {
             if (Model == null)
                 throw Logging.ErrorOnce(
-                    new InvalidOperationException("ReadSolution 必須在 Build() 之後呼叫。"),
-                    "SOLUTION_IMPORT_FAILED", "起始解匯入失敗", nameof(ReadSolution), fileName, "engine_not_built");
+                    new InvalidOperationException("ReadSolution 必須在 Build() 之後呼叫"),
+                    "解檔讀入失敗", null, nameof(ReadSolution), fileName, "引擎尚未建立");
 
             if (string.IsNullOrWhiteSpace(fileName))
                 throw Logging.ErrorOnce(
-                    new ArgumentException("Solution file name cannot be null or whitespace.", nameof(fileName)),
-                    "SOLUTION_IMPORT_FAILED", "起始解匯入失敗", nameof(ReadSolution), fileName, "file_name_is_empty");
+                    new ArgumentException("解檔檔名不得為空白", nameof(fileName)),
+                    "解檔讀入不合法", null, nameof(ReadSolution), fileName, "檔名為空");
 
             string path = Path.IsPathRooted(fileName)
                 ? fileName
@@ -412,8 +412,8 @@ namespace OptimFoundation.Cplex
 
             if (!File.Exists(path))
                 throw Logging.ErrorOnce(
-                    new FileNotFoundException($"找不到解檔 '{path}'。", path),
-                    "SOLUTION_IMPORT_FAILED", "起始解匯入失敗", nameof(ReadSolution), path, "file_not_found");
+                    new FileNotFoundException($"找不到解檔：{path}", path),
+                    "解檔讀入失敗", null, nameof(ReadSolution), path, "找不到檔案");
 
             bool isMst = path.EndsWith(".mst", StringComparison.OrdinalIgnoreCase)
                 || path.EndsWith(".mst.gz", StringComparison.OrdinalIgnoreCase);
@@ -421,12 +421,12 @@ namespace OptimFoundation.Cplex
 
             if (isMst && !isMip)
             {
-                Logging.Warn($"[MIP_START_SKIPPED] 略過 MIP start 檔 | path={path} modelType={ModelType} reason=model_is_lp result=skipped");
+                Logging.Warn($"[起始解略過] 起始解檔 | 路徑={path} 模型類型={ModelType} 原因=線性規劃模型 結果=略過");
                 return 0;
             }
 
             if (Config is CplexConfig { AdvancedStart: 0 })
-                Logging.Warn($"[SOLUTION_START_DISABLED] AdvancedStart=0，CPLEX 不會使用起始解 | path={path} result=continued");
+                Logging.Warn($"[起始解已停用] CPLEX 不會使用起始解 | AdvancedStart=0 路徑={path} 結果=繼續");
 
             try
             {
@@ -436,12 +436,12 @@ namespace OptimFoundation.Cplex
             catch (System.Exception ex)
             {
                 throw Logging.ErrorOnce(
-                    ex, "SOLUTION_IMPORT_FAILED", "起始解匯入失敗", nameof(ReadSolution), path,
-                    ex.GetBaseException().Message, $"exception={ex.GetType().FullName}");
+                    ex, "解檔讀入失敗", null, nameof(ReadSolution), path,
+                    ex.GetBaseException().Message, $"例外型別={ex.GetType().FullName}");
             }
 
             int starts = isMip ? Model.GetNMIPStarts() : 0;
-            Logging.Info($"[OptEngine] Solution read: {path} format={(isMst ? "mst" : "sol")} modelType={ModelType} mipStarts={starts}");
+            Logging.Info($"[解檔讀入完成] 路徑={path} 格式={(isMst ? "mst" : "sol")} 模型類型={ModelType} 起始解數量={starts}");
             return starts;
         }
 
@@ -457,14 +457,14 @@ namespace OptimFoundation.Cplex
         {
             if (Model == null || !(Status == SolveStatus.Optimal || Status == SolveStatus.Feasible))
                 throw Logging.ErrorOnce(
-                    new InvalidOperationException("ExportSolution 必須在 Solve() 取得可用解之後呼叫。"),
-                    "SOLUTION_EXPORT_FAILED", "解匯出失敗", nameof(ExportSolution), fileName, "no_solution_available",
-                    $"status={Status}");
+                    new InvalidOperationException("ExportSolution 必須在 Solve() 取得可用解之後呼叫"),
+                    "解檔匯出失敗", null, nameof(ExportSolution), fileName, "沒有可用的解",
+                    $"狀態={Status}");
 
             if (string.IsNullOrWhiteSpace(fileName))
                 throw Logging.ErrorOnce(
-                    new ArgumentException("Solution file name cannot be null or whitespace.", nameof(fileName)),
-                    "SOLUTION_EXPORT_FAILED", "解匯出失敗", nameof(ExportSolution), fileName, "file_name_is_empty");
+                    new ArgumentException("解檔檔名不得為空白", nameof(fileName)),
+                    "解檔匯出不合法", null, nameof(ExportSolution), fileName, "檔名為空");
 
             string path;
             if (Path.IsPathRooted(fileName))
@@ -484,11 +484,11 @@ namespace OptimFoundation.Cplex
             catch (System.Exception ex)
             {
                 throw Logging.ErrorOnce(
-                    ex, "SOLUTION_EXPORT_FAILED", "解匯出失敗", nameof(ExportSolution), path,
-                    ex.GetBaseException().Message, $"exception={ex.GetType().FullName}");
+                    ex, "解檔匯出失敗", null, nameof(ExportSolution), path,
+                    ex.GetBaseException().Message, $"例外型別={ex.GetType().FullName}");
             }
 
-            Logging.Info($"[OptEngine] Solution exported: {path}");
+            Logging.Info($"[解檔匯出完成] 路徑={path}");
             return path;
         }
 
@@ -560,9 +560,9 @@ namespace OptimFoundation.Cplex
                 ConstraintSense.Equal => Model.AddEq(lhs, rhs),
                 ConstraintSense.GreaterEqual => Model.AddGe(lhs, rhs),
                 _ => throw Logging.ErrorOnce(
-                    new ArgumentOutOfRangeException(nameof(sense)),
-                    "CONSTRAINT_SENSE_INVALID", "限制式方向不合法", nameof(AddConstraint), sense,
-                    "unsupported_constraint_sense")
+                    new ArgumentOutOfRangeException(nameof(sense), "不支援的限制式方向"),
+                    "限制式方向不合法", null, nameof(AddConstraint), sense,
+                    "不支援的限制式方向")
             };
             r.Name = name;
             _constraints.Add(r);
@@ -643,7 +643,7 @@ namespace OptimFoundation.Cplex
         /// 求解並保存狀態與統計；依設定匯出模型、解與軌跡，Infeasible 時自動分析 IIS。
         /// </summary>
         /// <returns>true = Optimal 或 Feasible。逾時但有可行解也算 true；逾時無解為 TimeLimit → false。</returns>
-        /// <exception cref="System.Exception">CPLEX 求解丟出的例外會照原樣 rethrow（先寫 SOLVER_EXCEPTION log）。</exception>
+        /// <exception cref="System.Exception">CPLEX 求解丟出的例外會照原樣 rethrow（先寫「CPLEX 求解失敗」log）。</exception>
         protected override bool SolveCore()
         {
             string proj = _modelName ?? "Model";
@@ -670,8 +670,8 @@ namespace OptimFoundation.Cplex
             catch (System.Exception ex)
             {
                 Logging.ErrorOnce(
-                    ex, "SOLVER_EXCEPTION", "求解器執行失敗", nameof(SolveCore), "CPLEX",
-                    ex.GetBaseException().Message, $"exception={ex.GetType().FullName}");
+                    ex, "CPLEX 求解失敗", null, nameof(SolveCore), "CPLEX",
+                    ex.GetBaseException().Message, $"例外型別={ex.GetType().FullName}");
                 throw;
             }
             finally
@@ -735,9 +735,9 @@ namespace OptimFoundation.Cplex
                 _conflictConstraints = RunConflictAnalysis();
 
             if (ok)
-                Logging.Info($"[OptEngine] Status={Status}  ObjVal={Model.GetObjValue()}  BestBound={BestObjValue}  MIPGap={MIPGap}");
+                Logging.Info($"[求解完成] 狀態={Status} 目標值={Model.GetObjValue()} 最佳界={BestObjValue} 間隙={MIPGap}");
             else
-                Logging.Info($"[OptEngine] Status={Status}");
+                Logging.Info($"[求解完成] 狀態={Status}");
 
             return ok;
         }
@@ -751,7 +751,7 @@ namespace OptimFoundation.Cplex
             }
             catch (System.Exception ex)
             {
-                Logging.Warn($"[SEED_READ_FAILED] 讀不到 CPLEX RandomSeed，實驗紀錄的 Seed 欄將寫 n/a | reason={ex.GetBaseException().Message} result=continued");
+                Logging.Warn($"[CPLEX 種子取得失敗] 實驗紀錄的種子欄將寫 n/a | 原因={ex.GetBaseException().Message} 結果=繼續");
                 return null;
             }
         }
@@ -764,13 +764,13 @@ namespace OptimFoundation.Cplex
             {
                 BestObjValue = Model.GetBestObjValue();
                 MIPGap = Model.GetMIPRelativeGap();
-                Logging.Info($"[MIP gap 讀取] modelType={ModelType} bestBound={BestObjValue} gap={MIPGap}");
+                Logging.Info($"[間隙取得] 模型類型={ModelType} 最佳界={BestObjValue} 間隙={MIPGap}");
                 return;
             }
 
             BestObjValue = Model.GetObjValue();
             MIPGap = 0;
-            Logging.Info($"[MIP gap 略過] modelType={ModelType} reason=not_mip bestBound={BestObjValue} gap=0");
+            Logging.Info($"[間隙略過] 模型類型={ModelType} 最佳界={BestObjValue} 間隙=0 原因=非混合整數模型");
         }
 
         /// <summary>
@@ -787,7 +787,7 @@ namespace OptimFoundation.Cplex
             string log = System.Text.Encoding.UTF8.GetString(
                 _solverLogStream.GetBuffer(), 0, (int)_solverLogStream.Length);
             if (!string.IsNullOrWhiteSpace(log))
-                Logging.WriteToFile($"[CPLEX Log]{Environment.NewLine}{log}");
+                Logging.WriteToFile($"[CPLEX 求解日誌]{Environment.NewLine}{log}");
             _solverLogStream.SetLength(0);
             _solverLogStream.Position = 0;
         }
@@ -808,7 +808,7 @@ namespace OptimFoundation.Cplex
             }
             catch (System.Exception ex)
             {
-                Logging.ErrorOnce(ex, "SOLUTION_READ_FAILED", "公開 API 執行失敗", context, value,
+                Logging.ErrorOnce(ex, "取得解失敗", null, context, value,
                     ex.GetBaseException().Message);
                 throw;
             }
@@ -826,7 +826,7 @@ namespace OptimFoundation.Cplex
             }
             catch (System.Exception ex)
             {
-                Logging.ErrorOnce(ex, "SOLVER_DISPOSE_FAILED", "公開 API 執行失敗", nameof(Dispose), "CPLEX",
+                Logging.ErrorOnce(ex, "CPLEX 釋放失敗", null, nameof(Dispose), "CPLEX",
                     ex.GetBaseException().Message);
                 throw;
             }
@@ -1052,7 +1052,7 @@ namespace OptimFoundation.Cplex
             FolderDir.IIS.CreateFolder();  // 即使未設定 exportLP/Sol，IIS 資料夾也必須存在才能寫入
             string iisPath = FolderDir.IIS.GetPathFile($"{this._modelName}_IIS_{_startTime}.ilp");
             Model.WriteConflict(iisPath);
-            Logging.Info($"[OptEngine] IIS written: {iisPath}");
+            Logging.Info($"[衝突檔匯出完成] 路徑={iisPath}");
 
             var statuses = Model.GetConflict(constraintArr);
             for (int i = 0; i < constraintArr.Length; i++)
@@ -1066,7 +1066,7 @@ namespace OptimFoundation.Cplex
             }
 
             if (conflictNames.Count > 0)
-                Logging.Info($"[OptEngine] Conflict constraints ({conflictNames.Count}): {string.Join(", ", conflictNames)}");
+                Logging.Info($"[衝突限制式摘要] 數量={conflictNames.Count} 名稱={string.Join("|", conflictNames)}");
 
             return conflictNames;
         }

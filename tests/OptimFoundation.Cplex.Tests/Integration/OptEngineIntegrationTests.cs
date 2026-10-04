@@ -52,8 +52,8 @@ namespace OptimFoundation.Cplex.Tests.Integration
             using var stream = new FileStream(logFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             using var reader = new StreamReader(stream);
             string log = reader.ReadToEnd();
-            Assert.Contains($"[Project] Name={projectName} RetentionDays=0 ", log);
-            Assert.Contains("[Project Setting] CPLEX Log → framework log file only", log);
+            Assert.Contains($"[專案初始化完成] 名稱={projectName} 保留天數=0 ", log);
+            Assert.Contains("[CPLEX 求解日誌設定] 只寫出到框架日誌檔", log);
         }
 
 
@@ -97,7 +97,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
                 .First();
             using var fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             using var reader = new StreamReader(fs);
-            Assert.Contains("[CPLEX Log]", reader.ReadToEnd());
+            Assert.Contains("[CPLEX 求解日誌]", reader.ReadToEnd());
         }
 
         [Fact(DisplayName = "簡單 MILP：Binary x，min -x s.t. x <= 1，解 = 1")]
@@ -328,7 +328,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
             Assert.True(project.Solve(new OptModel(tag), new CplexConfig()));
             Assert.Equal(SolveStatus.Optimal, project.Engine.Status);
-            Assert.Contains("[MODEL_EMPTY]", ReadLatestLog(tag));
+            Assert.Contains("[模型為空]", ReadLatestLog(tag));
         }
 
         [Fact]
@@ -345,7 +345,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
                 Trial trial = Assert.Single(result.Trials);
                 Assert.Equal(SolveStatus.Optimal, trial.Metrics.Status);
-                Assert.Contains("[MODEL_EMPTY]", ReadLatestLog($"{tag}-exp_exp"));
+                Assert.Contains("[模型為空]", ReadLatestLog($"{tag}-exp_exp"));
             }
             finally
             {

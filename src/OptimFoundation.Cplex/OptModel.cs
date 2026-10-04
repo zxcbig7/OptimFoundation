@@ -31,8 +31,8 @@ namespace OptimFoundation.Cplex
         public OptModel AddVariables(Action<OptEngine> build)
         {
             _variableSteps.Add(build ?? throw Logging.ErrorOnce(
-                new ArgumentNullException(nameof(build)),
-                "MODEL_DEFINITION_INVALID", "模型定義不合法", nameof(AddVariables), Name, "build_action_is_null"));
+                new ArgumentNullException(nameof(build), "build 不得為 null"),
+                "模型定義不合法", null, nameof(AddVariables), Name, "建立動作為空"));
             return this;
         }
 
@@ -40,8 +40,8 @@ namespace OptimFoundation.Cplex
         public OptModel AddObjective(Action<OptEngine> build)
         {
             _objectiveSteps.Add(build ?? throw Logging.ErrorOnce(
-                new ArgumentNullException(nameof(build)),
-                "MODEL_DEFINITION_INVALID", "模型定義不合法", nameof(AddObjective), Name, "build_action_is_null"));
+                new ArgumentNullException(nameof(build), "build 不得為 null"),
+                "模型定義不合法", null, nameof(AddObjective), Name, "建立動作為空"));
             return this;
         }
 
@@ -49,8 +49,8 @@ namespace OptimFoundation.Cplex
         public OptModel AddConstraints(Action<OptEngine> build)
         {
             _constraintSteps.Add(build ?? throw Logging.ErrorOnce(
-                new ArgumentNullException(nameof(build)),
-                "MODEL_DEFINITION_INVALID", "模型定義不合法", nameof(AddConstraints), Name, "build_action_is_null"));
+                new ArgumentNullException(nameof(build), "build 不得為 null"),
+                "模型定義不合法", null, nameof(AddConstraints), Name, "建立動作為空"));
             return this;
         }
 
@@ -73,8 +73,8 @@ namespace OptimFoundation.Cplex
         {
             if (string.IsNullOrWhiteSpace(fileName))
                 throw Logging.ErrorOnce(
-                    new ArgumentException("Model file name is required.", nameof(fileName)),
-                    "MODEL_DEFINITION_INVALID", "模型定義不合法", nameof(ReadModel), fileName, "file_name_is_empty");
+                    new ArgumentException("模型檔名不得為空白", nameof(fileName)),
+                    "模型讀入不合法", null, nameof(ReadModel), fileName, "檔名為空");
 
             string modelName = string.IsNullOrWhiteSpace(name)
                 ? System.IO.Path.GetFileNameWithoutExtension(fileName)
@@ -99,8 +99,8 @@ namespace OptimFoundation.Cplex
         {
             if (string.IsNullOrWhiteSpace(fileName))
                 throw Logging.ErrorOnce(
-                    new ArgumentException("Solution file name is required.", nameof(fileName)),
-                    "MODEL_DEFINITION_INVALID", "模型定義不合法", nameof(ReadSolution), Name, "file_name_is_empty");
+                    new ArgumentException("解檔檔名不得為空白", nameof(fileName)),
+                    "解檔讀入不合法", null, nameof(ReadSolution), Name, "檔名為空");
 
             _startSteps.Add(engine => engine.ReadSolution(fileName));
             return this;
@@ -116,8 +116,8 @@ namespace OptimFoundation.Cplex
         {
             if (values == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(values)),
-                    "MODEL_DEFINITION_INVALID", "模型定義不合法", nameof(AddMIPStart), Name, "values_factory_is_null");
+                    new ArgumentNullException(nameof(values), "values 不得為 null"),
+                    "模型定義不合法", null, nameof(AddMIPStart), Name, "值建立函式為空");
 
             _startSteps.Add(engine => engine.AddMIPStart(values(), name));
             return this;
@@ -130,13 +130,13 @@ namespace OptimFoundation.Cplex
         {
             if (engine == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(engine)),
-                    "MODEL_APPLY_INVALID", "模型套用失敗", nameof(ApplyTo), Name, "engine_is_null");
+                    new ArgumentNullException(nameof(engine), "engine 不得為 null"),
+                    "模型套用不合法", null, nameof(ApplyTo), Name, "引擎為空");
 
             if (_sourceFile != null)
                 engine.ReadModel(_sourceFile);
             else if (_variableSteps.Count == 0 && _objectiveSteps.Count == 0 && _constraintSteps.Count == 0)
-                Logging.Warn($"[MODEL_EMPTY] OptModel '{Name}' has no build phases; solving the empty model unchanged");
+                Logging.Warn($"[模型為空] 沒有任何建立階段，直接求解空模型 | 名稱={Name} 結果=繼續");
 
             foreach (var step in _variableSteps) step(engine);
             foreach (var step in _objectiveSteps) step(engine);

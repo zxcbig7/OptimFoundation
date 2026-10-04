@@ -435,7 +435,7 @@ namespace OptimFoundation.Core
     /// <list type="bullet">
     /// <item>有資料 → UTF-8 BOM + 表頭 + 這次的列，同名舊檔直接覆寫（BOM 讓 zh-TW Excel 正確辨識中文，避免被當成 Big5 讀成亂碼）</item>
     /// <item>這次沒有任何列 → 不建只有表頭的空殼；同名舊檔刪掉，免得留下上一次的紀錄</item>
-    /// <item>寫不進去（例：檔案被 Excel 開著）→ 這次改寫到 {檔名}-locked-{時間}.csv，留 WARN，紀錄不會丟</item>
+    /// <item>寫不進去（例：檔案被 Excel 開著）→ 這次改寫到 {檔名}-locked-{時間}.csv，留警告，紀錄不會丟</item>
     /// </list>
     /// </summary>
     internal static class ExperimentCsv
@@ -460,12 +460,12 @@ namespace OptimFoundation.Core
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
                 string fallback = StampedPath(path, "locked");
-                Logging.Warn($"[EXPERIMENT_FILE_LOCKED] 實驗檔寫不進去，這次改寫到另一個檔 | value={path} fallback={fallback} reason={ex.GetBaseException().Message} result=written_to_fallback");
+                Logging.Warn($"[實驗檔被占用] 實驗檔寫不進去，這次改寫到另一個檔案 | 路徑={path} 替代路徑={fallback} 原因={ex.GetBaseException().Message} 結果=改用替代檔");
                 File.WriteAllText(fallback, body.ToString(), FileEncoding);
             }
         }
 
-        /// <summary>刪掉這次沒有資料的同名舊檔；刪不掉（例：被 Excel 開著）就留著並留 WARN。</summary>
+        /// <summary>刪掉這次沒有資料的同名舊檔；刪不掉（例：被 Excel 開著）就留著並留警告。</summary>
         internal static void Delete(string path)
         {
             if (!File.Exists(path)) return;
@@ -475,7 +475,7 @@ namespace OptimFoundation.Core
             }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
-                Logging.Warn($"[EXPERIMENT_FILE_LOCKED] 上一次的實驗檔刪不掉，檔裡不是這次的紀錄 | value={path} reason={ex.GetBaseException().Message} result=stale_file_kept");
+                Logging.Warn($"[實驗檔被占用] 上一次的實驗檔刪不掉，檔案裡不是這次的紀錄 | 路徑={path} 原因={ex.GetBaseException().Message} 結果=保留舊檔");
             }
         }
 

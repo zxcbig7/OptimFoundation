@@ -78,7 +78,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
         {
             var ex = Assert.Throws<ArgumentException>(() =>
                 VariableManager.ConvertSetsToTokens(new List<string> { "A", "B@C" }));
-            Assert.Contains("Set #1", ex.Message);
+            Assert.Contains("集合 #1", ex.Message);
             Assert.Contains("B@C", ex.Message);
         }
 

@@ -29,7 +29,7 @@ public sealed partial class Dataload : DataContext
     {
         var raw = new CsvDataSource().LoadData(rawFile);
         if (raw.Rows.Count == 0)
-            throw new InvalidDataException("Template raw file 至少需要一列。");
+            throw new InvalidDataException("Template 原始檔案至少需要一筆資料列");
 
         static double Number(object value, string column) =>
             double.TryParse(
@@ -38,7 +38,7 @@ public sealed partial class Dataload : DataContext
                 CultureInfo.InvariantCulture,
                 out double result)
                 ? result
-                : throw new InvalidDataException($"raw 欄位 {column} 不是有效數字：'{value}'。");
+                : throw new InvalidDataException($"原始資料的欄 {column} 不是有效數字：'{value}'");
 
         static DateTime Date(object value) =>
             DateTime.TryParseExact(
@@ -48,7 +48,7 @@ public sealed partial class Dataload : DataContext
                 DateTimeStyles.None,
                 out DateTime result)
                 ? result
-                : throw new InvalidDataException($"raw 欄位 Date 不是 yyyy-MM-dd：'{value}'。");
+                : throw new InvalidDataException($"原始資料的欄 Date 不是 yyyy-MM-dd：'{value}'");
 
         double penalty = Number(raw.Rows[0]["Penalty"], "Penalty");
 
@@ -56,12 +56,12 @@ public sealed partial class Dataload : DataContext
         {
             string key = row["Key"]?.ToString()?.Trim() ?? string.Empty;
             if (key.Length == 0)
-                throw new InvalidDataException("raw Key 不得為空白。");
+                throw new InvalidDataException("原始資料的欄 Key 不得為空白");
 
             DateTime date = Date(row["Date"]);
             double cost = Number(row["Cost"], "Cost");
             if (Number(row["Penalty"], "Penalty") != penalty)
-                throw new InvalidDataException("raw 每列的 Penalty 必須一致。");
+                throw new InvalidDataException("原始資料每筆資料列的欄 Penalty 必須一致");
 
             if (!set_StringKey.Any(item => item.Key == key))
             {
@@ -70,7 +70,7 @@ public sealed partial class Dataload : DataContext
             }
             else if (parameter_OneDim.Single(item => item.Key == key).QTY != cost)
             {
-                throw new InvalidDataException($"raw Key {key} 每列的 Cost 必須一致。");
+                throw new InvalidDataException($"原始資料 Key {key} 每筆資料列的欄 Cost 必須一致");
             }
 
             if (!set_DateKey.Any(item => item.Date == date))

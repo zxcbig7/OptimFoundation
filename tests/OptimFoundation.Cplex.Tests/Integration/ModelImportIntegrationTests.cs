@@ -98,8 +98,8 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.Equal(2, counts.VarCount);
             Assert.Equal(2, counts.ConstraintCount);
             string log = ReadLog(tag);
-            Assert.Contains($"format={expectedFormat}", log.Split('\n').Single(l => l.Contains("[OptEngine] Model exported:")));
-            Assert.Contains($"format={expectedFormat}", log.Split('\n').Single(l => l.Contains("[OptEngine] Model imported:")));
+            Assert.Contains($"格式={expectedFormat}", log.Split('\n').Single(l => l.Contains("[模型匯出完成]")));
+            Assert.Contains($"格式={expectedFormat}", log.Split('\n').Single(l => l.Contains("[模型讀入完成]")));
         }
 
         [Theory(DisplayName = "匯入後 ModelType 依原模型變數型別判定：Binary / Integer / 連續不混淆")]
@@ -336,7 +336,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.Throws<ArgumentException>(() => engine.ExportModel(fileName));
             Assert.False(File.Exists(FolderDir.Model.GetPathFile(fileName)));
             Assert.Contains(
-                $"[MODEL_EXPORT_FAILED] 模型匯出失敗 | context=ExportModel value={fileName} reason=unsupported_extension supported=.lp|.mps|.sav[.gz|.bz2] result=aborted",
+                $"[模型匯出失敗] 位置=ExportModel 值={fileName} 原因=不支援的副檔名 支援格式=.lp|.mps|.sav[.gz|.bz2] 結果=中止",
                 ReadLog(tag));
         }
 
@@ -351,7 +351,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
             Assert.Throws<ArgumentException>(() => engine.ReadModel("no_such_model.txt"));
             Assert.Contains(
-                "[MODEL_IMPORT_FAILED] 模型匯入失敗 | context=ReadModel value=no_such_model.txt reason=unsupported_extension supported=.lp|.mps|.sav[.gz|.bz2] result=aborted",
+                "[模型讀入失敗] 位置=ReadModel 值=no_such_model.txt 原因=不支援的副檔名 支援格式=.lp|.mps|.sav[.gz|.bz2] 結果=中止",
                 ReadLog(tag));
         }
     }

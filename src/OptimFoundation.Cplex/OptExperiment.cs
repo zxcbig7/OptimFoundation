@@ -26,12 +26,12 @@ namespace OptimFoundation.Cplex
         {
             if (string.IsNullOrWhiteSpace(name))
                 throw Logging.ErrorOnce(
-                    new ArgumentException("Experiment name is required.", nameof(name)),
-                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(OptExperiment), name, "name_is_empty");
+                    new ArgumentException("實驗名稱不得為空白", nameof(name)),
+                    "實驗設定不合法", null, nameof(OptExperiment), name, "名稱為空");
             if (name.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0)
                 throw Logging.ErrorOnce(
-                    new ArgumentException($"Experiment name '{name}' contains invalid file name characters.", nameof(name)),
-                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(OptExperiment), name, "invalid_file_name_char");
+                    new ArgumentException($"實驗名稱含不合法的檔名字元：{name}", nameof(name)),
+                    "實驗設定不合法", null, nameof(OptExperiment), name, "檔名含不合法字元");
             _project = project;
             Name = name;
             _description = description ?? string.Empty;
@@ -52,8 +52,8 @@ namespace OptimFoundation.Cplex
         public OptExperiment LoadConfig(ProjectConfig config)
         {
             _projectConfig = config ?? throw Logging.ErrorOnce(
-                new ArgumentNullException(nameof(config)),
-                "EXPERIMENT_INVALID", "實驗設定不合法", nameof(LoadConfig), Name, "config_is_null");
+                new ArgumentNullException(nameof(config), "config 不得為 null"),
+                "實驗設定不合法", null, nameof(LoadConfig), Name, "設定為空");
             return this;
         }
 
@@ -72,8 +72,8 @@ namespace OptimFoundation.Cplex
         {
             if (model == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(model)),
-                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(AddModel), Name, "model_is_null");
+                    new ArgumentNullException(nameof(model), "model 不得為 null"),
+                    "實驗設定不合法", null, nameof(AddModel), Name, "模型為空");
             _models.Add(model);
             return this;
         }
@@ -84,12 +84,12 @@ namespace OptimFoundation.Cplex
             ValidateLabel(label);
             if (config == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(config)),
-                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(AddConfig), label, "config_is_null");
+                    new ArgumentNullException(nameof(config), "config 不得為 null"),
+                    "實驗設定不合法", null, nameof(AddConfig), label, "設定為空");
             if (_configs.Any(c => string.Equals(c.Label, label, StringComparison.Ordinal)))
                 throw Logging.ErrorOnce(
-                    new ArgumentException($"Duplicate experiment configuration label '{label}'.", nameof(label)),
-                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(AddConfig), label, "duplicate_config_label");
+                    new ArgumentException($"設定標籤重複：{label}", nameof(label)),
+                    "實驗設定不合法", null, nameof(AddConfig), label, "設定標籤重複");
             _configs.Add((label, config));
             return this;
         }
@@ -99,13 +99,13 @@ namespace OptimFoundation.Cplex
         {
             if (model == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(model)),
-                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(AddTrial), Name, "model_is_null");
+                    new ArgumentNullException(nameof(model), "model 不得為 null"),
+                    "實驗設定不合法", null, nameof(AddTrial), Name, "模型為空");
             ValidateLabel(label);
             if (config == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(config)),
-                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(AddTrial), label, "config_is_null");
+                    new ArgumentNullException(nameof(config), "config 不得為 null"),
+                    "實驗設定不合法", null, nameof(AddTrial), label, "設定為空");
             _explicitTrials.Add((model, label, config));
             return this;
         }
@@ -119,7 +119,7 @@ namespace OptimFoundation.Cplex
             }
             catch (Exception ex)
             {
-                Logging.ErrorOnce(ex, "EXPERIMENT_RUN_FAILED", "公開 API 執行失敗", nameof(Run), Name,
+                Logging.ErrorOnce(ex, "實驗執行失敗", null, nameof(Run), Name,
                     ex.GetBaseException().Message);
                 throw;
             }
@@ -135,8 +135,8 @@ namespace OptimFoundation.Cplex
 
             if (cells.Count == 0)
                 throw Logging.ErrorOnce(
-                    new InvalidOperationException("An experiment requires at least one model/configuration cell."),
-                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(Run), Name, "trial_cell_is_missing");
+                    new InvalidOperationException("實驗至少需要一組模型與設定的搭配"),
+                    "實驗設定不合法", null, nameof(Run), Name, "沒有任何模型與設定的搭配");
 
             var finalLabels = new HashSet<string>(StringComparer.Ordinal);
             foreach (var cell in cells)
@@ -144,8 +144,8 @@ namespace OptimFoundation.Cplex
                 string finalLabel = $"{cell.Model.Name} | {cell.Label}";
                 if (!finalLabels.Add(finalLabel))
                     throw Logging.ErrorOnce(
-                        new InvalidOperationException($"Duplicate final experiment trial label '{finalLabel}'."),
-                        "EXPERIMENT_INVALID", "實驗設定不合法", nameof(Run), finalLabel, "duplicate_final_trial_label");
+                        new InvalidOperationException($"試跑標籤重複：{finalLabel}"),
+                        "實驗設定不合法", null, nameof(Run), finalLabel, "試跑標籤重複");
             }
 
             var experiment = new Experiment(_project.Name, Name, _description);
@@ -158,8 +158,8 @@ namespace OptimFoundation.Cplex
             bool multiModel = cells.Select(c => c.Model.Name).Distinct(StringComparer.Ordinal).Count() > 1;
 
             Logging.Info(
-                $"[Experiment] {FullName} | cells={cells.Count} multiModel={(multiModel ? "ON" : "OFF")} " +
-                $"trajectory={(_captureTrajectory ? "ON" : "OFF")}");
+                $"[實驗開始] 名稱={FullName} 試跑數量={cells.Count} 多模型={(multiModel ? "開" : "關")} " +
+                $"收斂軌跡={(_captureTrajectory ? "開" : "關")}");
 
             string runId = OptProject.NextRunId();
             int trialId = 0;
@@ -188,8 +188,8 @@ namespace OptimFoundation.Cplex
         {
             if (string.IsNullOrWhiteSpace(label))
                 throw Logging.ErrorOnce(
-                    new ArgumentException("Experiment configuration label is required.", nameof(label)),
-                    "EXPERIMENT_INVALID", "實驗設定不合法", nameof(ValidateLabel), label, "label_is_empty");
+                    new ArgumentException("設定標籤不得為空白", nameof(label)),
+                    "實驗設定不合法", null, nameof(ValidateLabel), label, "標籤為空");
         }
     }
 }

@@ -30,9 +30,9 @@ namespace OptimFoundation.Core
         {
             if (sets == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(sets)),
-                    "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToRows), null,
-                    "sets_array_is_null");
+                    new ArgumentNullException(nameof(sets), "sets 不得為 null"),
+                    "變數維度集合不合法", null, nameof(ConvertSetsToRows), null,
+                    "集合陣列為空");
 
             if (sets.Length > 0 && sets.All(x => x is string))
                 sets = [sets.Cast<string>().ToList()];
@@ -42,9 +42,9 @@ namespace OptimFoundation.Core
             {
                 if (sets[i] == null)
                     throw Logging.ErrorOnce(
-                        new ArgumentException($"Set #{i + 1} cannot be null.", nameof(sets)),
-                        "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToRows), null,
-                        "set_is_null", $"index={i + 1}");
+                        new ArgumentException($"集合 #{i + 1} 不得為 null", nameof(sets)),
+                        "變數維度集合不合法", null, nameof(ConvertSetsToRows), null,
+                        "集合為空", $"序號={i + 1}");
 
                 if (sets[i] is System.Collections.IEnumerable rowSequence)
                 {
@@ -55,7 +55,7 @@ namespace OptimFoundation.Core
                             .GetProperties(BindingFlags.Instance | BindingFlags.Public)
                             .Where(property => property.CanRead && property.GetIndexParameters().Length == 0)
                             .Select(property => ModelNaming.Token(
-                                $"Set row #{i + 1}.{property.Name}", property.GetValue(row)))
+                                $"集合資料列 #{i + 1}.{property.Name}", property.GetValue(row)))
                             .ToArray()).ToList();
                         continue;
                     }
@@ -65,19 +65,19 @@ namespace OptimFoundation.Core
                 {
                     if (sets[i] is not System.Collections.IEnumerable sequence)
                         throw Logging.ErrorOnce(
-                            new ArgumentException($"Set #{i + 1} must be enumerable."),
-                            "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToRows), sets[i],
-                            "set_not_enumerable", $"index={i + 1}");
+                            new ArgumentException($"集合 #{i + 1} 必須可列舉"),
+                            "變數維度集合不合法", null, nameof(ConvertSetsToRows), sets[i],
+                            "集合無法列舉", $"序號={i + 1}");
 
                     result[i] = sequence.Cast<object>().Select(item =>
                     {
                         if (item is not ITuple tuple)
                             throw Logging.ErrorOnce(
-                                new ArgumentException($"Set #{i + 1} contains a non-tuple member."),
-                                "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToRows), item,
-                                "non_tuple_member", $"index={i + 1}");
+                                new ArgumentException($"集合 #{i + 1} 含有非元組的成員"),
+                                "變數維度集合不合法", null, nameof(ConvertSetsToRows), item,
+                                "集合成員不是元組", $"序號={i + 1}");
                         return Enumerable.Range(0, tuple.Length)
-                            .Select(index => ModelNaming.Token($"Set #{i + 1} member #{index + 1}", tuple[index]))
+                            .Select(index => ModelNaming.Token($"集合 #{i + 1} 成員 #{index + 1}", tuple[index]))
                             .ToArray();
                     }).ToList();
                 }
@@ -115,9 +115,9 @@ namespace OptimFoundation.Core
                 int width = rows[0].Length;
                 if (rows.Any(row => row.Length != width))
                     throw Logging.ErrorOnce(
-                        new ArgumentException("Each row in a multidimensional set must have the same arity."),
-                        "VARIABLE_ARITY_MISMATCH", "變數維度數量不一致", nameof(ValidateVariableArity), typeof(TVariable).Name,
-                        "multidimensional_rows_have_different_arity");
+                        new ArgumentException("多維集合的每個資料列維度數量必須一致"),
+                        "變數維度數量不一致", null, nameof(ValidateVariableArity), typeof(TVariable).Name,
+                        "多維集合的資料列維度數量不一致");
                 return width;
             });
             int expected = typeof(TVariable).GetProperties(BindingFlags.Instance | BindingFlags.Public)
@@ -126,9 +126,9 @@ namespace OptimFoundation.Core
                     && property.DeclaringType != typeof(VariableBase));
             if (actual != expected)
                 throw Logging.ErrorOnce(
-                    new ArgumentException($"BuildVars arity mismatch for {typeof(TVariable).Name}: supplied {actual}, variable properties {expected}."),
-                    "VARIABLE_ARITY_MISMATCH", "變數維度數量不一致", nameof(ValidateVariableArity), typeof(TVariable).Name,
-                    "variable_property_count_mismatch", $"actual={actual} expected={expected}");
+                    new ArgumentException($"BuildVars 維度數量不一致：{typeof(TVariable).Name} 傳入 {actual}，變數屬性 {expected}"),
+                    "變數維度數量不一致", null, nameof(ValidateVariableArity), typeof(TVariable).Name,
+                    "變數屬性數量不一致", $"數量={actual}/{expected}");
         }
 
         /// <summary>
@@ -139,9 +139,9 @@ namespace OptimFoundation.Core
         {
             if (sets == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(sets)),
-                    "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToTokens), null,
-                    "sets_array_is_null");
+                    new ArgumentNullException(nameof(sets), "sets 不得為 null"),
+                    "變數維度集合不合法", null, nameof(ConvertSetsToTokens), null,
+                    "集合陣列為空");
 
             // 單一 string[] 可能被展開成 params object[]；重新包裝以維持單一維度。
             if (sets.Length > 0 && sets.All(x => x is string))
@@ -152,29 +152,29 @@ namespace OptimFoundation.Core
             {
                 if (sets[i] == null)
                     throw Logging.ErrorOnce(
-                        new ArgumentException($"Set #{i + 1} cannot be null.", nameof(sets)),
-                        "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToTokens), null,
-                        "set_is_null", $"index={i + 1}");
+                        new ArgumentException($"集合 #{i + 1} 不得為 null", nameof(sets)),
+                        "變數維度集合不合法", null, nameof(ConvertSetsToTokens), null,
+                        "集合為空", $"序號={i + 1}");
 
                 result[i] = sets[i] switch
                 {
-                    IEnumerable<DateTime> seq => seq.Select(value => ModelNaming.Token($"Set #{i + 1}", value)).ToList(),
-                    IEnumerable<int> seq => seq.Select(value => ModelNaming.Token($"Set #{i + 1}", value)).ToList(),
-                    IEnumerable<long> seq => seq.Select(value => ModelNaming.Token($"Set #{i + 1}", value)).ToList(),
-                    IEnumerable<double> seq => seq.Select(value => ModelNaming.Token($"Set #{i + 1}", value)).ToList(),
-                    IEnumerable<decimal> seq => seq.Select(value => ModelNaming.Token($"Set #{i + 1}", value)).ToList(),
-                    IEnumerable<string> seq => seq.Select(value => ModelNaming.Token($"Set #{i + 1}", value)).ToList(),
+                    IEnumerable<DateTime> seq => seq.Select(value => ModelNaming.Token($"集合 #{i + 1}", value)).ToList(),
+                    IEnumerable<int> seq => seq.Select(value => ModelNaming.Token($"集合 #{i + 1}", value)).ToList(),
+                    IEnumerable<long> seq => seq.Select(value => ModelNaming.Token($"集合 #{i + 1}", value)).ToList(),
+                    IEnumerable<double> seq => seq.Select(value => ModelNaming.Token($"集合 #{i + 1}", value)).ToList(),
+                    IEnumerable<decimal> seq => seq.Select(value => ModelNaming.Token($"集合 #{i + 1}", value)).ToList(),
+                    IEnumerable<string> seq => seq.Select(value => ModelNaming.Token($"集合 #{i + 1}", value)).ToList(),
                     string s => throw Logging.ErrorOnce(
-                        new ArgumentException($"Set 不可為單一 string '{s}'——集合與裸 string 混傳，請確認每個參數都是一個 Set（IEnumerable）。"),
-                        "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToTokens), s,
-                        "bare_string_is_not_a_set", $"index={i + 1}"),
+                        new ArgumentException($"集合不得為單一 string '{s}'：集合與裸 string 混傳，請確認每個參數都是一個集合（IEnumerable）"),
+                        "變數維度集合不合法", null, nameof(ConvertSetsToTokens), s,
+                        "字串不是集合", $"序號={i + 1}"),
                     // enum 是值型別，不能用 IEnumerable<Enum> 判斷任意 enum 集合，因此另外檢查集合的元素型別。
                     System.Collections.IEnumerable seq when GetEnumElementType(sets[i]) != null
-                        => seq.Cast<object>().Select(value => ModelNaming.Token($"Set #{i + 1}", value)).ToList(),
+                        => seq.Cast<object>().Select(value => ModelNaming.Token($"集合 #{i + 1}", value)).ToList(),
                     _ => throw Logging.ErrorOnce(
-                        new ArgumentException($"不支援的 Set 型別：{sets[i].GetType().Name}。目前僅支援 IEnumerable<DateTime/int/long/double/decimal/string/enum>。"),
-                        "VARIABLE_SET_INVALID", "變數維度集合不合法", nameof(ConvertSetsToTokens), sets[i].GetType().FullName,
-                        "unsupported_set_type", $"index={i + 1}")
+                        new ArgumentException($"不支援的集合型別：{sets[i].GetType().Name}，目前僅支援 IEnumerable<DateTime/int/long/double/decimal/string/enum>"),
+                        "變數維度集合不合法", null, nameof(ConvertSetsToTokens), sets[i].GetType().FullName,
+                        "不支援的集合型別", $"序號={i + 1}")
                 };
             }
             return result;

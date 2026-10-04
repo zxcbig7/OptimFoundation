@@ -14,26 +14,26 @@ namespace OptimFoundation.Core.IO
         {
             if (records == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(records)),
-                    "TABULAR_DATA_INVALID", "表格資料不合法", nameof(ToDataTable), null, "records_are_null");
+                    new ArgumentNullException(nameof(records), "records 不得為 null"),
+                    "表格資料不合法", null, nameof(ToDataTable), null, "資料列集合為空");
             var rows = records.Select(row => row?.ToArray()
                 ?? throw Logging.ErrorOnce(
-                    new InvalidDataException($"[{sourceDescription}] A CSV row cannot be null."),
-                    "TABULAR_DATA_INVALID", "表格資料不合法", sourceDescription, null, "row_is_null")).ToArray();
+                    new InvalidDataException($"{sourceDescription}：CSV 資料列不得為 null"),
+                    "表格資料不合法", null, sourceDescription, null, "資料列為空")).ToArray();
             if (rows.Length == 0)
                 throw Logging.ErrorOnce(
-                    new InvalidDataException($"[{sourceDescription}] CSV requires a header row."),
-                    "TABULAR_DATA_INVALID", "表格資料不合法", sourceDescription, "<empty>", "header_is_missing");
+                    new InvalidDataException($"{sourceDescription}：CSV 需要標題列"),
+                    "表格資料不合法", null, sourceDescription, "<空白>", "找不到標題列");
 
             var headers = rows[0].Select(header => (header ?? string.Empty).Trim()).ToArray();
             if (headers.Length == 0 || headers.Any(string.IsNullOrEmpty))
                 throw Logging.ErrorOnce(
-                    new InvalidDataException($"[{sourceDescription}] CSV header cannot contain empty column names."),
-                    "TABULAR_DATA_INVALID", "表格資料不合法", sourceDescription, string.Join(",", headers), "header_contains_empty_column");
+                    new InvalidDataException($"{sourceDescription}：CSV 標題列不得含空的欄名"),
+                    "表格資料不合法", null, sourceDescription, string.Join(",", headers), "標題列含空的欄名");
             if (headers.Distinct(StringComparer.OrdinalIgnoreCase).Count() != headers.Length)
                 throw Logging.ErrorOnce(
-                    new InvalidDataException($"[{sourceDescription}] CSV header contains duplicate column names."),
-                    "TABULAR_DATA_INVALID", "表格資料不合法", sourceDescription, string.Join(",", headers), "header_contains_duplicate_column");
+                    new InvalidDataException($"{sourceDescription}：CSV 標題列含重複的欄名"),
+                    "表格資料不合法", null, sourceDescription, string.Join(",", headers), "標題列含重複的欄名");
 
             var table = new DataTable();
             foreach (var header in headers) table.Columns.Add(header, typeof(string));
@@ -42,9 +42,9 @@ namespace OptimFoundation.Core.IO
             {
                 if (rows[rowIndex].Length != headers.Length)
                     throw Logging.ErrorOnce(
-                        new InvalidDataException($"[{sourceDescription}] Row {rowIndex + 1} has {rows[rowIndex].Length} columns; expected {headers.Length}."),
-                        "TABULAR_DATA_INVALID", "表格資料不合法", sourceDescription, rowIndex + 1, "column_count_mismatch",
-                        $"actual={rows[rowIndex].Length} expected={headers.Length}");
+                        new InvalidDataException($"{sourceDescription}：第 {rowIndex + 1} 資料列有 {rows[rowIndex].Length} 欄，預期 {headers.Length} 欄"),
+                        "表格資料不合法", null, sourceDescription, rowIndex + 1, "欄數不一致",
+                        $"數量={rows[rowIndex].Length}/{headers.Length}");
                 var row = table.NewRow();
                 for (var columnIndex = 0; columnIndex < headers.Length; columnIndex++)
                     row[columnIndex] = rows[rowIndex][columnIndex] ?? string.Empty;
@@ -57,8 +57,8 @@ namespace OptimFoundation.Core.IO
         {
             if (table == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(table)),
-                    "TABULAR_DATA_INVALID", "表格資料不合法", nameof(ToRecords), null, "table_is_null");
+                    new ArgumentNullException(nameof(table), "table 不得為 null"),
+                    "表格資料不合法", null, nameof(ToRecords), null, "資料表為空");
             yield return table.Columns.Cast<DataColumn>().Select(column => column.ColumnName).ToArray();
             foreach (DataRow row in table.Rows)
                 yield return row.ItemArray.Select(ToInvariantString).ToArray();

@@ -11,7 +11,7 @@ public sealed class TemplateSolution
     public static void ValidateData(Dataload data)
     {
         if (data.DataIssues.Count > 0)
-            throw new InvalidOperationException($"Framework 資料檢查發現 {data.DataIssues.Count} 個問題。");
+            throw new InvalidOperationException($"資料不合法：框架資料檢查發現 {data.DataIssues.Count} 個問題");
 
         Require(data.set_StringKey.Count >= 2, "Set_StringKey 至少要兩個 Key，Constraint_Range 的 [1, |Key| - 1] 才有解");
 
@@ -19,13 +19,13 @@ public sealed class TemplateSolution
         {
             Require(
                 data.parameter_OneDim.Any(row => row.Key == key.Key),
-                $"Parameter_OneDim 缺少 {key.Key}");
+                $"找不到 Parameter_OneDim：{key.Key}");
 
             foreach (var date in data.set_DateKey)
             {
                 Require(
                     data.parameter_TwoDim.Any(row => row.Key == key.Key && row.Date == date.Date),
-                    $"Parameter_TwoDim 缺少 {key.Key} / {date.Date:yyyy-MM-dd}");
+                    $"找不到 Parameter_TwoDim：{key.Key} / {date.Date:yyyy-MM-dd}");
             }
         }
 
@@ -82,7 +82,7 @@ public sealed class TemplateSolution
             Require(
                 Math.Abs(binaryValue - Math.Round(binaryValue)) <= Tolerance &&
                 binaryValue >= -Tolerance && binaryValue <= 1.0 + Tolerance,
-                $"{key.Key} 的 VariableB_Binary 不是 binary");
+                $"{key.Key} 的 VariableB_Binary 不是二元值");
             selected += binaryValue;
 
             foreach (var date in data.set_DateKey)
@@ -133,6 +133,6 @@ public sealed class TemplateSolution
     private static void Require(bool condition, string message)
     {
         if (!condition)
-            throw new InvalidOperationException($"[Validate] {message}");
+            throw new InvalidOperationException($"[解驗證失敗] {message}");
     }
 }

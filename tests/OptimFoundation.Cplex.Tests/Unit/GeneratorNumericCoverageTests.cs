@@ -163,7 +163,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Contains(result.DataIssues, issue =>
                 issue.Kind == DataIssueKind.DuplicateKey
                 && issue.Parameter == nameof(Set_GncItem)
-                && issue.Detail.Contains("duplicate Set key"));
+                && issue.Detail.Contains("集合鍵重複"));
         }
 
         // 數值欄位不參與模型名稱組成，因此負數或科學記號中的 -、+ 不應觸發名稱字元檢查。
@@ -191,7 +191,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
                 issue.Kind == DataIssueKind.InvalidKey
                 && issue.Parameter == nameof(Parameter_GncProfit)
                 && issue.Detail.Contains("GncItem='Chair A'")
-                && issue.Detail.Contains("reason=contains_whitespace"));
+                && issue.Detail.Contains("原因=含空白字元"));
         }
 
         [Fact]
@@ -220,7 +220,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Contains(result.DataIssues, issue =>
                 issue.Kind == DataIssueKind.DuplicateKey
                 && issue.Parameter == nameof(Parameter_GncProfit)
-                && issue.Detail.Contains("duplicate Parameter key"));
+                && issue.Detail.Contains("參數鍵重複"));
         }
     }
 }

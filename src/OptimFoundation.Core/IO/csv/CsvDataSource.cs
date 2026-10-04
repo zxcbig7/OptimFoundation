@@ -21,8 +21,8 @@ namespace OptimFoundation.Core.IO
         {
             if (string.IsNullOrWhiteSpace(fileName))
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(fileName)),
-                    "CSV_SOURCE_INVALID", "CSV 資料來源不合法", nameof(LoadRows), fileName, "file_name_is_empty");
+                    new ArgumentNullException(nameof(fileName), "fileName 不得為空"),
+                    "CSV 資料來源不合法", null, nameof(LoadRows), fileName, "檔名為空");
 
             using var reader = new StreamReader(FolderDir.Input.GetPathFile(EnsureCsv(fileName)), Encoding.UTF8);
             foreach (var row in CsvCtrl.ParseCsv(reader))
@@ -34,15 +34,15 @@ namespace OptimFoundation.Core.IO
         {
             if (string.IsNullOrWhiteSpace(fileName))
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(fileName)),
-                    "CSV_SOURCE_INVALID", "CSV 資料來源不合法", nameof(LoadData), fileName, "file_name_is_empty");
+                    new ArgumentNullException(nameof(fileName), "fileName 不得為空"),
+                    "CSV 資料來源不合法", null, nameof(LoadData), fileName, "檔名為空");
             try
             {
                 return TabularData.ToDataTable(LoadRows(fileName), fileName);
             }
             catch (Exception ex)
             {
-                Logging.ErrorOnce(ex, "CSV_LOAD_FAILED", "公開 API 執行失敗", nameof(LoadData), fileName,
+                Logging.ErrorOnce(ex, "CSV 載入失敗", null, nameof(LoadData), fileName,
                     ex.GetBaseException().Message);
                 throw;
             }

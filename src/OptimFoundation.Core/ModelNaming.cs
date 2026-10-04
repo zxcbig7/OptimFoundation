@@ -44,7 +44,7 @@ namespace OptimFoundation.Core
             if (value == null)
             {
                 token = null;
-                reason = "value_is_null";
+                reason = "值為空";
                 return false;
             }
 
@@ -53,7 +53,7 @@ namespace OptimFoundation.Core
                 if (!TryFormatDate(date, out string formatted))
                 {
                     token = formatted;
-                    reason = "datetime_subsecond_precision";
+                    reason = "日期含秒以下精度";
                     return false;
                 }
                 token = formatted;
@@ -81,7 +81,7 @@ namespace OptimFoundation.Core
         internal static string FormatDate(string context, DateTime value)
         {
             if (!TryFormatDate(value, out string token))
-                ThrowInvalid(context, token, "datetime_subsecond_precision");
+                ThrowInvalid(context, token, "日期含秒以下精度");
             return token;
         }
 
@@ -104,11 +104,11 @@ namespace OptimFoundation.Core
         /// <summary>以 head 作為名稱開頭，再用 @ 接上維度值；一筆多維 Set 資料會展開成多個名稱片段。</summary>
         internal static string Compose(string head, params object?[] dims)
         {
-            ValidateToken("model name head", head);
+            ValidateToken("模型名稱開頭", head);
             if (char.IsDigit(head[0]) || head[0] == '.')
-                ThrowInvalid("model name head", head, "invalid_leading_character");
+                ThrowInvalid("模型名稱開頭", head, "開頭字元不合法");
             if (dims == null)
-                ThrowInvalid(head, null, "dimensions_array_is_null");
+                ThrowInvalid(head, null, "維度陣列為空");
 
             var tokens = new List<string>(dims.Length);
             for (int index = 0; index < dims.Length; index++)
@@ -118,18 +118,18 @@ namespace OptimFoundation.Core
                 {
                     string rowText = row.ToString();
                     if (string.IsNullOrEmpty(rowText))
-                        ThrowInvalid($"{head} dim #{index + 1}", rowText, "set_row_has_no_dimensions");
+                        ThrowInvalid($"{head} 維度 #{index + 1}", rowText, "集合資料列沒有任何維度");
 
                     string[] rowTokens = rowText.Split(Separator);
                     for (int rowIndex = 0; rowIndex < rowTokens.Length; rowIndex++)
                     {
-                        ValidateToken($"{head} dim #{index + 1}.{rowIndex + 1}", rowTokens[rowIndex]);
+                        ValidateToken($"{head} 維度 #{index + 1}.{rowIndex + 1}", rowTokens[rowIndex]);
                         tokens.Add(rowTokens[rowIndex]);
                     }
                 }
                 else
                 {
-                    tokens.Add(Token($"{head} dim #{index + 1}", value));
+                    tokens.Add(Token($"{head} 維度 #{index + 1}", value));
                 }
             }
 
@@ -142,15 +142,15 @@ namespace OptimFoundation.Core
         internal static string ValidateComposedName(string context, string name)
         {
             if (string.IsNullOrWhiteSpace(name))
-                ThrowInvalid(context, name, "name_is_empty");
+                ThrowInvalid(context, name, "名稱為空");
 
             string[] tokens = name.Split(Separator);
-            ValidateToken($"{context} head", tokens[0]);
+            ValidateToken($"{context} 開頭", tokens[0]);
             if (char.IsDigit(tokens[0][0]) || tokens[0][0] == '.')
-                ThrowInvalid($"{context} head", tokens[0], "invalid_leading_character");
+                ThrowInvalid($"{context} 開頭", tokens[0], "開頭字元不合法");
 
             for (int index = 1; index < tokens.Length; index++)
-                ValidateToken($"{context} token #{index}", tokens[index]);
+                ValidateToken($"{context} 片段 #{index}", tokens[index]);
 
             return name;
         }
@@ -166,21 +166,21 @@ namespace OptimFoundation.Core
         private static string? InvalidTokenReason(string token)
         {
             if (string.IsNullOrEmpty(token))
-                return "token_is_empty";
+                return "名稱片段為空";
 
             if (token.IndexOfAny(InvalidTokenCharacters) >= 0)
-                return "contains_reserved_character";
+                return "含保留字元";
 
             for (int index = 0; index < token.Length; index++)
                 if (char.IsWhiteSpace(token[index]))
-                    return "contains_whitespace";
+                    return "含空白字元";
 
             return null;
         }
 
-        /// <summary>Log 用的單行顯示值：null 顯示為 &lt;null&gt;，換行字元跳脫。</summary>
+        /// <summary>Log 用的單行顯示值：null 顯示為 &lt;空值&gt;，換行字元跳脫。</summary>
         internal static string DisplayValue(string? value)
-            => (value ?? "<null>")
+            => (value ?? "<空值>")
                 .Replace("\r", "\\r", StringComparison.Ordinal)
                 .Replace("\n", "\\n", StringComparison.Ordinal);
 
@@ -189,11 +189,11 @@ namespace OptimFoundation.Core
         {
             string safeValue = DisplayValue(value);
             var exception = new ArgumentException(
-                $"模型名稱不合法：context={context}, value='{safeValue}', reason={reason}。");
+                $"模型名稱不合法：位置={context}，值='{safeValue}'，原因={reason}");
             throw Logging.ErrorOnce(
                 exception,
-                "MODEL_NAME_INVALID",
-                "模型名稱驗證失敗",
+                "模型名稱不合法",
+                null,
                 context,
                 safeValue,
                 reason);

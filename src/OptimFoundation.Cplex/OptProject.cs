@@ -19,12 +19,12 @@ namespace OptimFoundation.Cplex
         {
             if (string.IsNullOrWhiteSpace(name))
                 throw Logging.ErrorOnce(
-                    new ArgumentException("Project name is required.", nameof(name)),
-                    "PROJECT_INVALID", "專案設定不合法", nameof(OptProject), name, "name_is_empty");
+                    new ArgumentException("專案名稱不得為空白", nameof(name)),
+                    "專案設定不合法", null, nameof(OptProject), name, "名稱為空");
             if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
                 throw Logging.ErrorOnce(
-                    new ArgumentException($"Project name '{name}' contains invalid file name characters.", nameof(name)),
-                    "PROJECT_INVALID", "專案設定不合法", nameof(OptProject), name, "invalid_file_name_char");
+                    new ArgumentException($"專案名稱含不合法的檔名字元：{name}", nameof(name)),
+                    "專案設定不合法", null, nameof(OptProject), name, "檔名含不合法字元");
 
             Name = name;
             RetentionDays = retentionDays;
@@ -35,7 +35,7 @@ namespace OptimFoundation.Cplex
             }
             catch (Exception ex)
             {
-                Logging.ErrorOnce(ex, "PROJECT_INIT_FAILED", "專案初始化失敗", nameof(OptProject), name,
+                Logging.ErrorOnce(ex, "專案初始化失敗", null, nameof(OptProject), name,
                     ex.GetBaseException().Message);
                 throw;
             }
@@ -52,7 +52,7 @@ namespace OptimFoundation.Cplex
             Logging.SetLogFileName(Name);
             FolderDir.CreateAll();
             int purged = FolderDir.PurgeAllOutputs(RetentionDays);
-            Logging.Info($"[Project] Name={Name} RetentionDays={RetentionDays} Folders={FolderDir.ProjFolder.ProjectPath} Purged={purged}");
+            Logging.Info($"[專案初始化完成] 名稱={Name} 保留天數={RetentionDays} 資料夾={FolderDir.ProjFolder.ProjectPath} 清除檔案數量={purged}");
         }
 
         #region 正式求解
@@ -63,8 +63,8 @@ namespace OptimFoundation.Cplex
         public OptProject LoadConfig(ProjectConfig config)
         {
             _projectConfig = config ?? throw Logging.ErrorOnce(
-                new ArgumentNullException(nameof(config)),
-                "PROJECT_INVALID", "專案設定不合法", nameof(LoadConfig), Name, "config_is_null");
+                new ArgumentNullException(nameof(config), "config 不得為 null"),
+                "專案設定不合法", null, nameof(LoadConfig), Name, "設定為空");
             return this;
         }
 
@@ -97,12 +97,12 @@ namespace OptimFoundation.Cplex
         {
             if (model == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(model)),
-                    "SOLVE_INVALID", "正式求解設定不合法", nameof(Solve), Name, "model_is_null");
+                    new ArgumentNullException(nameof(model), "model 不得為 null"),
+                    "求解設定不合法", "正式求解", nameof(Solve), Name, "模型為空");
             if (config == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(config)),
-                    "SOLVE_INVALID", "正式求解設定不合法", nameof(Solve), model.Name, "config_is_null");
+                    new ArgumentNullException(nameof(config), "config 不得為 null"),
+                    "求解設定不合法", "正式求解", nameof(Solve), model.Name, "設定為空");
 
             try
             {
@@ -110,7 +110,7 @@ namespace OptimFoundation.Cplex
             }
             catch (Exception ex)
             {
-                Logging.ErrorOnce(ex, "SOLVE_EXECUTION_FAILED", "公開 API 執行失敗", nameof(Solve), model.Name,
+                Logging.ErrorOnce(ex, "求解執行失敗", null, nameof(Solve), model.Name,
                     ex.GetBaseException().Message);
                 throw;
             }

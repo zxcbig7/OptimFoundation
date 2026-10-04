@@ -139,7 +139,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
         {
             string tag = NewName("LogScope");
             var project = new OptProject(tag, retentionDays: 0);
-            Assert.Contains($"[Project] Name={tag}", ReadLatestLog(tag));
+            Assert.Contains($"[專案初始化完成] 名稱={tag}", ReadLatestLog(tag));
 
             _ = project.Experiment("r1", "log scope");
             string marker = "marker-" + Guid.NewGuid().ToString("N");

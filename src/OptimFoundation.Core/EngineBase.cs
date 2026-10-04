@@ -276,7 +276,7 @@ namespace OptimFoundation.Core
                 try { return Convert.ToInt64(mi.Invoke(target, null)); }
                 catch (Exception ex)
                 {
-                    Logging.Warn($"[TELEMETRY_READ_FAILED] 無法讀取求解遙測 | method={name} target={target.GetType().FullName} reason={ex.GetBaseException().Message} result=null");
+                    Logging.Warn($"[求解遙測取得失敗] 位置={name} 型別={target.GetType().FullName} 原因={ex.GetBaseException().Message} 結果=回傳空值");
                     return null;
                 }
             }
@@ -425,8 +425,8 @@ namespace OptimFoundation.Core
         {
             Logging.ErrorOnce(
                 exception,
-                "ENGINE_API_FAILED",
-                "公開 API 執行失敗",
+                "引擎操作失敗",
+                null,
                 operation,
                 GetType().FullName,
                 exception.GetBaseException().Message);
@@ -443,7 +443,7 @@ namespace OptimFoundation.Core
         {
             if (Config == null) return;
             if (VariableCount > Config.ScaleWarnThreshold)
-                Logging.Warn($"[MODEL_SCALE_WARNING] 變數規模超過警告門檻 | count={VariableCount} threshold={Config.ScaleWarnThreshold} result=continued");
+                Logging.Warn($"[模型規模過大] 變數數量超過警告門檻 | 數量={VariableCount} 門檻={Config.ScaleWarnThreshold} 結果=繼續");
         }
 
         /// <summary>取得目標式解值。必須在 Solve() 回傳 true 後呼叫，否則求解器可能拋出例外。</summary>
@@ -480,7 +480,7 @@ namespace OptimFoundation.Core
         {
             int before = Variables.Count;
             List<string> names = null;
-            string stage = "key_generation";
+            string stage = "名稱建立階段";
             try
             {
                 names = nameFactory().ToList();
@@ -488,28 +488,28 @@ namespace OptimFoundation.Core
                 // 同名變數沿用既有項目，避免 solver 多建但字典只留下最後一個。
                 var newNames = SkipDuplicateVariableNames(setName, names);
 
-                stage = "solver_creation";
+                stage = "CPLEX 變數建立階段";
                 if (newNames.Count > 0)
                     AddVariables(newNames, lb, ub, type);
 
                 int actual = Variables.Count - before;
                 RecordVariableBuild(setName, names.Count, actual);
-                Logging.Info($"[變數建立完成] type={setName} count={actual}/{names.Count}");
+                Logging.Info($"[變數建立完成] 變數類別={setName} 數量={actual}/{names.Count}");
             }
             catch (Exception ex)
             {
                 int actual = Math.Max(0, Variables.Count - before);
-                string expected = names == null ? "unknown" : names.Count.ToString();
+                string expected = names == null ? "未知" : names.Count.ToString();
                 if (names != null)
                     RecordVariableBuild(setName, names.Count, actual);
                 Logging.ErrorOnce(
                     ex,
-                    "VARIABLE_BUILD_FAILED",
                     "變數建立失敗",
+                    null,
                     "BatchBuild",
                     stage,
                     ex.GetBaseException().Message,
-                    $"type={setName} varType={type} bounds=[{lb},{ub}] count={actual}/{expected}");
+                    $"變數類別={setName} 變數型別={type} 範圍=[{lb},{ub}] 數量={actual}/{expected}");
                 throw;
             }
         }
@@ -528,7 +528,7 @@ namespace OptimFoundation.Core
             }
 
             if (duplicates.Count > 0)
-                Logging.Warn($"[VARIABLE_DUPLICATE] 略過同名變數 | type={setName} duplicates={duplicates.Count} sample={string.Join(",", duplicates.Take(5))} reason=name_exists result=kept_existing");
+                Logging.Warn($"[變數重複] 變數類別={setName} 數量={duplicates.Count} 範例={string.Join(",", duplicates.Take(5))} 原因=名稱已存在 結果=保留原值");
             return newNames;
         }
 
@@ -544,14 +544,14 @@ namespace OptimFoundation.Core
                 return true;
 
             var exception = new InvalidOperationException(
-                $"Variable 前綴解析器回傳未知的 VarType 成員名稱：{typeName}。");
+                $"變數前綴解析器回傳未知的 VarType 成員名稱：{typeName}");
             throw Logging.ErrorOnce(
                 exception,
-                "VARIABLE_TYPE_RESOLUTION_FAILED",
                 "變數型別解析失敗",
+                null,
                 nameof(TryResolveVariableType),
                 typeName,
-                "unknown_var_type");
+                "未知的變數型別");
         }
 
         private static void ValidateExplicitVariableType<TVariable>(VarType requestedType, string operation)
@@ -562,16 +562,16 @@ namespace OptimFoundation.Core
             if (!TryResolveVariableType(className, out var declaredType) || declaredType == requestedType)
                 return;
 
-            string message = $"{operation}<{className}> 要建立 {requestedType} 變數，但類別名前綴宣告為 {declaredType}。" +
-                $"命名規則：{VariablePrefixNaming.NamingGuide}。";
+            string message = $"{operation}<{className}> 要建立 {requestedType} 變數，但類別名前綴宣告為 {declaredType}；" +
+                $"命名規則：{VariablePrefixNaming.NamingGuide}";
             throw Logging.ErrorOnce(
                 new ArgumentException(message),
-                "VARIABLE_TYPE_MISMATCH",
-                "變數前綴與建構方法型別不一致",
+                "變數型別不一致",
+                "變數名稱前綴與建立方法指定的型別不一致",
                 operation,
                 className,
-                "declared_type_mismatch",
-                $"type={className} declared={declaredType} requested={requestedType}");
+                "宣告型別與指定型別不一致",
+                $"變數類別={className} 宣告型別={declaredType} 指定型別={requestedType}");
         }
 
 
@@ -624,17 +624,17 @@ namespace OptimFoundation.Core
             string name = typeof(TVariable).Name;
             if (!TryResolveVariableType(name, out var type))
             {
-                string msg = $"BuildVars<{name}> 無法從類別名前綴判定變數型別。" +
+                string msg = $"BuildVars<{name}> 無法從類別名前綴判定變數型別；" +
                     $"命名天條：{VariablePrefixNaming.NamingGuide}，例：VariableC_Start；" +
-                    "不依天條命名請改用 BuildCVs / BuildIVs / BuildBVs。";
+                    "不依天條命名請改用 BuildCVs / BuildIVs / BuildBVs";
                 throw Logging.ErrorOnce(
                     new ArgumentException(msg),
-                    "VARIABLE_TYPE_UNKNOWN",
-                    "無法判定變數型別",
+                    "變數型別不合法",
+                    "無法從名稱前綴判定變數型別",
                     nameof(BuildVars),
                     name,
-                    "invalid_prefix",
-                    $"type={name}");
+                    "前綴不合法",
+                    $"變數類別={name}");
             }
 
             switch (type)
@@ -718,12 +718,12 @@ namespace OptimFoundation.Core
                 return v;
 
             throw Logging.ErrorOnce(
-                new KeyNotFoundException($"找不到變數 '{varName}'"),
-                "VARIABLE_NOT_FOUND",
-                "變數不存在",
+                new KeyNotFoundException($"找不到變數：{varName}"),
+                "變數找不到",
+                null,
                 nameof(ReadVar),
                 varName,
-                "variable_not_built");
+                "變數尚未建立");
         }
 
         // 依型別查詢一律篩 Variables：名稱等於型別名（0 維變數）或以「型別名@」開頭。
@@ -759,7 +759,7 @@ namespace OptimFoundation.Core
             }
             catch (Exception ex)
             {
-                Logging.ErrorOnce(ex, "SOLUTION_READ_FAILED", "公開 API 執行失敗", nameof(GetSetVarValues), setName,
+                Logging.ErrorOnce(ex, "取得解失敗", null, nameof(GetSetVarValues), setName,
                     ex.GetBaseException().Message);
                 throw;
             }
@@ -775,7 +775,7 @@ namespace OptimFoundation.Core
             }
             catch (Exception ex)
             {
-                Logging.ErrorOnce(ex, "SOLUTION_READ_FAILED", "公開 API 執行失敗", nameof(GetSolution), varTypeName,
+                Logging.ErrorOnce(ex, "取得解失敗", null, nameof(GetSolution), varTypeName,
                     ex.GetBaseException().Message);
                 throw;
             }
@@ -798,17 +798,17 @@ namespace OptimFoundation.Core
         /// <exception cref="ArgumentNullException">values 為 null。</exception>
         public int AddMIPStart(IReadOnlyDictionary<string, double> values, string name = null)
         {
-            string label = name ?? "<auto>";
+            string label = name ?? "<自動>";
             if (values == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(values)),
-                    "MIP_START_INVALID", "MIP start 不合法", nameof(AddMIPStart), label, "values_is_null");
+                    new ArgumentNullException(nameof(values), "values 不得為 null"),
+                    "起始解不合法", null, nameof(AddMIPStart), label, "值為空");
 
             try
             {
                 if (ModelType == ModelType.LP)
                 {
-                    Logging.Warn($"[MIP_START_SKIPPED] 略過 MIP start | name={label} values={values.Count} reason=model_is_lp result=skipped");
+                    Logging.Warn($"[起始解略過] 名稱={label} 數量={values.Count} 原因=線性規劃模型 結果=略過");
                     return 0;
                 }
 
@@ -819,25 +819,25 @@ namespace OptimFoundation.Core
                     if (kv.Key != null && Variables.TryGetValue(kv.Key, out var v))
                         entries.Add((v, kv.Value));
                     else
-                        unknown.Add(kv.Key ?? "<null>");
+                        unknown.Add(kv.Key ?? "<空值>");
                 }
 
                 if (unknown.Count > 0)
-                    Logging.Warn($"[MIP_START_UNKNOWN_VARIABLE] MIP start 含模型內不存在的變數 | name={label} unknown={unknown.Count} sample={string.Join(",", unknown.Take(5))} reason=variable_not_in_model result=entries_skipped");
+                    Logging.Warn($"[起始解變數找不到] 名稱={label} 數量={values.Count} 找不到變數數量={unknown.Count} 範例={string.Join(",", unknown.Take(5))} 原因=變數不在模型內 結果=略過");
 
                 if (entries.Count == 0)
                 {
-                    Logging.Warn($"[MIP_START_SKIPPED] 略過 MIP start | name={label} values={values.Count} reason=no_matching_variable result=skipped");
+                    Logging.Warn($"[起始解略過] 名稱={label} 數量={values.Count} 原因=沒有符合的變數 結果=略過");
                     return 0;
                 }
 
                 AddMIPStartCore(entries, name);
-                Logging.Info($"[MIP start 建立完成] name={label} applied={entries.Count}/{values.Count} modelVars={VariableCount}");
+                Logging.Info($"[起始解套用完成] 名稱={label} 數量={entries.Count}/{values.Count} 模型內變數數量={VariableCount}");
                 return entries.Count;
             }
             catch (Exception ex)
             {
-                Logging.ErrorOnce(ex, "MIP_START_FAILED", "MIP start 套用失敗", nameof(AddMIPStart), label,
+                Logging.ErrorOnce(ex, "起始解套用失敗", null, nameof(AddMIPStart), label,
                     ex.GetBaseException().Message);
                 throw;
             }
@@ -946,7 +946,7 @@ namespace OptimFoundation.Core
 
         private static string VariableGroup(string name)
         {
-            if (string.IsNullOrWhiteSpace(name)) return "<unnamed>";
+            if (string.IsNullOrWhiteSpace(name)) return "<未命名>";
             int separator = name.IndexOf('@');
             return separator > 0 ? name.Substring(0, separator) : name;
         }
@@ -973,7 +973,7 @@ namespace OptimFoundation.Core
 
         private static string ConstraintGroup(string name)
         {
-            if (string.IsNullOrWhiteSpace(name)) return "<unnamed>";
+            if (string.IsNullOrWhiteSpace(name)) return "<未命名>";
             int separator = name.IndexOf('@');
             string group = separator > 0 ? name.Substring(0, separator) : name;
             int suffix = group.LastIndexOf('_');
@@ -993,16 +993,16 @@ namespace OptimFoundation.Core
             // 分別列出建立計數與目前模型數量，揭露未登記或重設造成的差異。
             int expectedVariables = _variableBuildCounts.Values.Sum(x => x.Expected);
             int actualVariables = _variableBuildCounts.Values.Sum(x => x.Actual);
-            Logging.Info($"[變數建立摘要] 已建立={actualVariables}/{expectedVariables}（實際/預期） 變數類別={_variableBuildCounts.Count} 種 模型內合計={VariableCount}");
+            Logging.Info($"[變數建立摘要] 數量={actualVariables}/{expectedVariables} 變數類別數量={_variableBuildCounts.Count} 模型內變數數量={VariableCount}");
 
             foreach (var entry in _constraintBuildCounts.OrderBy(x => x.Key, StringComparer.Ordinal))
-                Logging.Info($"[限制式建立] 群組={entry.Key} 已建立={entry.Value.Actual}/{entry.Value.Expected}（實際/預期）");
+                Logging.Info($"[限制式建立完成] 限制式類別={entry.Key} 數量={entry.Value.Actual}/{entry.Value.Expected}");
             int expectedConstraints = _constraintBuildCounts.Values.Sum(x => x.Expected);
             int actualConstraints = _constraintBuildCounts.Values.Sum(x => x.Actual);
-            Logging.Info($"[限制式建立摘要] 已建立={actualConstraints}/{expectedConstraints}（實際/預期） 群組={_constraintBuildCounts.Count} 個 solver 實際持有={ConstraintCount}");
+            Logging.Info($"[限制式建立摘要] 數量={actualConstraints}/{expectedConstraints} 限制式類別數量={_constraintBuildCounts.Count} 模型內限制式數量={ConstraintCount}");
 
             var composition = ReadModelComposition();
-            Logging.Info($"[模型類型] type={ResolveModelType(composition)} continuous={composition.Continuous} integer={composition.Integer} binary={composition.Binary}");
+            Logging.Info($"[模型類型摘要] 模型類型={ResolveModelType(composition)} 連續變數數量={composition.Continuous} 整數變數數量={composition.Integer} 二元變數數量={composition.Binary}");
 
             _buildSummaryDirty = false;
         }
@@ -1026,7 +1026,7 @@ namespace OptimFoundation.Core
 
             var unreferenced = Variables.Where(kv => !_referencedVariables.Contains(kv.Value)).Select(kv => kv.Key).ToList();
             if (unreferenced.Count == 0) return;
-            Logging.Warn($"[UNREFERENCED_VARIABLES] {unreferenced.Count} 個變數已宣告但沒被任何限制式或目標式引用，CPLEX 不會收進模型 | groups={GroupSummary(unreferenced)} sample={string.Join(",", unreferenced.Take(5))} result=continued");
+            Logging.Warn($"[變數未引用] 已宣告的變數沒被任何限制式或目標式引用，CPLEX 不會收進模型 | 數量={unreferenced.Count} 變數類別={GroupSummary(unreferenced)} 範例={string.Join(",", unreferenced.Take(5))} 結果=繼續");
         }
 
         private static string GroupSummary(IEnumerable<string> names)
@@ -1058,7 +1058,7 @@ namespace OptimFoundation.Core
         {
             if (_lhsTerms.Count == 0 && _rhsTerms.Count == 0)
             {
-                Logging.Warn($"[CONSTRAINT_EMPTY] 未建立限制式 | name={constraintName ?? "<unnamed>"} reason=pool_empty result=skipped");
+                Logging.Warn($"[限制式為空] 名稱={constraintName ?? "<未命名>"} 原因=暫存區為空 結果=略過");
                 return false;
             }
             return true;
@@ -1068,11 +1068,11 @@ namespace OptimFoundation.Core
         private void WarnIfRhsPoolIgnored(string operation, string name, string reason)
         {
             if (_rhsTerms.Count == 0 && _rhsConst == 0) return;
-            Logging.Warn($"[POOL_RHS_IGNORED] 右側 pool 不被採用 | operation={operation} name={name} rhsTerms={_rhsTerms.Count} rhsConst={_rhsConst} reason={reason} result=rhs_discarded");
+            Logging.Warn($"[右側暫存區略過] 位置={operation} 名稱={name} 右側項數量={_rhsTerms.Count} 右側常數={_rhsConst} 原因={reason} 結果=略過");
         }
 
         private void LogDuplicateConstraint(string name)
-            => Logging.Warn($"[CONSTRAINT_DUPLICATE] 略過重複限制式 | name={name} reason=duplicate_name result=kept_existing");
+            => Logging.Warn($"[限制式重複] 名稱={name} 原因=名稱重複 結果=保留原值");
 
         // 列舉時才把右側係數取負並接到左側後面，供 LinearExpr 讀取，不另建 List。
         private IEnumerable<(double coef, TVar var)> CombinedLhsMinusRhs()
@@ -1093,20 +1093,20 @@ namespace OptimFoundation.Core
         {
             if (varSpec == null)
             {
-                Logging.Warn("[VARIABLE_NULL] 略過空變數項 | operation=AddLHS reason=null_variable result=term_skipped");
+                Logging.Warn("[變數為空] 位置=AddLHS 原因=傳入的變數為空 結果=略過");
                 return false;
             }
             string key = varSpec.ToString();
             if (!Variables.TryGetValue(key, out var v))
             {
                 throw Logging.ErrorOnce(
-                    new KeyNotFoundException($"AddLHS: 找不到變數 '{key}'（type: {varSpec.GetType().Name}）。請確認 property 宣告順序與 Build*Vs 傳入 set 順序一致。"),
-                    "VARIABLE_NOT_FOUND",
-                    "變數不存在",
+                    new KeyNotFoundException($"AddLHS 找不到變數：{key}（變數類別：{varSpec.GetType().Name}），請確認屬性宣告順序與 Build*Vs 傳入集合順序一致"),
+                    "變數找不到",
+                    null,
                     nameof(AddLHS),
                     key,
-                    "variable_not_built",
-                    $"type={varSpec.GetType().Name}");
+                    "變數尚未建立",
+                    $"變數類別={varSpec.GetType().Name}");
             }
             _lhsTerms.Add((coeff, v));
             return true;
@@ -1129,20 +1129,20 @@ namespace OptimFoundation.Core
         {
             if (varSpec == null)
             {
-                Logging.Warn("[VARIABLE_NULL] 略過空變數項 | operation=AddRHS reason=null_variable result=term_skipped");
+                Logging.Warn("[變數為空] 位置=AddRHS 原因=傳入的變數為空 結果=略過");
                 return false;
             }
             string key = varSpec.ToString();
             if (!Variables.TryGetValue(key, out var v))
             {
                 throw Logging.ErrorOnce(
-                    new KeyNotFoundException($"AddRHS: 找不到變數 '{key}'（type: {varSpec.GetType().Name}）。請確認 property 宣告順序與 Build*Vs 傳入 set 順序一致。"),
-                    "VARIABLE_NOT_FOUND",
-                    "變數不存在",
+                    new KeyNotFoundException($"AddRHS 找不到變數：{key}（變數類別：{varSpec.GetType().Name}），請確認屬性宣告順序與 Build*Vs 傳入集合順序一致"),
+                    "變數找不到",
+                    null,
                     nameof(AddRHS),
                     key,
-                    "variable_not_built",
-                    $"type={varSpec.GetType().Name}");
+                    "變數尚未建立",
+                    $"變數類別={varSpec.GetType().Name}");
             }
             _rhsTerms.Add((coeff, v));
             return true;
@@ -1164,12 +1164,12 @@ namespace OptimFoundation.Core
             if (owner == null)
             {
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(owner), "建立限制式名稱時 owner 不可為 null。"),
-                    "CONSTRAINT_OWNER_INVALID",
-                    "限制式名稱建立失敗",
+                    new ArgumentNullException(nameof(owner), "建立限制式名稱時 owner 不得為 null"),
+                    "限制式名稱不合法",
+                    null,
                     nameof(ComposeConstraintName),
                     null,
-                    "owner_is_null");
+                    "所屬物件為空");
             }
 
             return ModelNaming.Compose(owner.GetType().Name, dims);
@@ -1201,7 +1201,7 @@ namespace OptimFoundation.Core
             name = ValidateConstraintName(nameof(CreateGreaterEqual), name);
             if (_lhsTerms.Count == 0)
             {
-                Logging.Warn($"[CONSTRAINT_EMPTY] 未建立限制式 | name={name} reason=lhs_empty result=skipped");
+                Logging.Warn($"[限制式為空] 名稱={name} 原因=左式沒有任何項 結果=略過");
                 RecordConstraintBuild(name, false);
                 return false;
             }
@@ -1228,7 +1228,7 @@ namespace OptimFoundation.Core
             name = ValidateConstraintName(nameof(CreateLessEqual), name);
             if (_lhsTerms.Count == 0)
             {
-                Logging.Warn($"[CONSTRAINT_EMPTY] 未建立限制式 | name={name} reason=lhs_empty result=skipped");
+                Logging.Warn($"[限制式為空] 名稱={name} 原因=左式沒有任何項 結果=略過");
                 RecordConstraintBuild(name, false);
                 return false;
             }
@@ -1255,7 +1255,7 @@ namespace OptimFoundation.Core
             name = ValidateConstraintName(nameof(CreateEqual), name);
             if (_lhsTerms.Count == 0)
             {
-                Logging.Warn($"[CONSTRAINT_EMPTY] 未建立限制式 | name={name} reason=lhs_empty result=skipped");
+                Logging.Warn($"[限制式為空] 名稱={name} 原因=左式沒有任何項 結果=略過");
                 RecordConstraintBuild(name, false);
                 return false;
             }
@@ -1265,7 +1265,7 @@ namespace OptimFoundation.Core
 
         /// <summary>
         /// 送出範圍限制式 lb ≤ LHS ≤ ub（只用 AddLHS 累積的左側；LHS 常數移到界上抵銷）。
-        /// RHS pool（AddRHS 的變數項與常數）不屬於範圍限制式：有內容時寫 <c>[POOL_RHS_IGNORED]</c> warn 後捨棄。
+        /// RHS pool（AddRHS 的變數項與常數）不屬於範圍限制式：有內容時寫 <c>[右側暫存區略過]</c> warn 後捨棄。
         /// </summary>
         public bool CreateRange(double lb, double ub, string name)
             => CreateRangeCore(lb, ub, ValidateConstraintName(nameof(CreateRange), name));
@@ -1307,8 +1307,8 @@ namespace OptimFoundation.Core
                 RecordConstraintBuild(name, false);
                 Logging.ErrorOnce(
                     ex,
-                    "CONSTRAINT_BUILD_FAILED",
                     "限制式建立失敗",
+                    null,
                     $"Create{sense}",
                     name,
                     ex.GetBaseException().Message);
@@ -1324,12 +1324,12 @@ namespace OptimFoundation.Core
         {
             if (_lhsTerms.Count == 0)
             {
-                Logging.Warn($"[CONSTRAINT_EMPTY] 未建立限制式 | name={name} reason=lhs_empty result=skipped");
+                Logging.Warn($"[限制式為空] 名稱={name} 原因=左式沒有任何項 結果=略過");
                 RecordConstraintBuild(name, false);
                 ClearPool();
                 return false;
             }
-            WarnIfRhsPoolIgnored(nameof(CreateRange), name, "range_uses_lhs_only");
+            WarnIfRhsPoolIgnored(nameof(CreateRange), name, "範圍限制式只採用左側");
 
             bool created = false;
             try
@@ -1351,12 +1351,12 @@ namespace OptimFoundation.Core
                 RecordConstraintBuild(name, false);
                 Logging.ErrorOnce(
                     ex,
-                    "CONSTRAINT_BUILD_FAILED",
-                    "範圍限制式建立失敗",
+                    "限制式建立失敗",
+                    "範圍限制式",
                     nameof(CreateRange),
                     name,
                     ex.GetBaseException().Message,
-                    $"bounds=[{lb},{ub}]");
+                    $"範圍=[{lb},{ub}]");
                 throw;
             }
 
@@ -1378,14 +1378,14 @@ namespace OptimFoundation.Core
         private void SetObjectiveFromPool(ObjectiveSense sense)
         {
             int expectedTerms = _lhsTerms.Count + _softPenaltyTerms.Count;
-            Logging.Info($"[目標式建構開始] sense={sense} terms={expectedTerms} constant={_lhsConst}");
+            Logging.Info($"[目標式建立開始] 方向={sense} 項數量={expectedTerms} 常數={_lhsConst}");
             if (_lhsTerms.Count == 0 && _softPenaltyTerms.Count == 0)
             {
-                Logging.Warn($"[目標式建構完成] sense={sense} terms=0 constant={_lhsConst} reason=no_terms result=skipped");
+                Logging.Warn($"[目標式為空] 方向={sense} 項數量=0 常數={_lhsConst} 原因=沒有任何項 結果=略過");
                 ClearPool();
                 return;
             }
-            WarnIfRhsPoolIgnored($"Create{sense}", "<objective>", "objective_uses_lhs_only");
+            WarnIfRhsPoolIgnored($"Create{sense}", "<目標式>", "目標式只採用左側");
             try
             {
                 _objectiveTerms.Clear();
@@ -1394,14 +1394,14 @@ namespace OptimFoundation.Core
                 _objectiveSense = sense;
                 ApplyObjective();
                 ClearPool();
-                Logging.Info($"[目標式建構完成] sense={sense} terms={expectedTerms} constant={_objectiveConstant} result=success");
+                Logging.Info($"[目標式建立完成] 方向={sense} 項數量={expectedTerms} 常數={_objectiveConstant}");
             }
             catch (Exception ex)
             {
                 Logging.ErrorOnce(
                     ex,
-                    "OBJECTIVE_BUILD_FAILED",
                     "目標式建立失敗",
+                    null,
                     $"Create{sense}",
                     expectedTerms,
                     ex.GetBaseException().Message);
@@ -1483,13 +1483,13 @@ namespace OptimFoundation.Core
         {
             if (!HasPool)
             {
-                string skippedName = name ?? "<auto-soft>";
-                Logging.Warn($"[CONSTRAINT_EMPTY] 未建立軟性限制式 | name={skippedName} sense={sense} reason=pool_empty result=skipped");
+                string skippedName = name ?? "<自動軟性限制式>";
+                Logging.Warn($"[限制式為空] 軟性限制式 | 名稱={skippedName} 方向={sense} 原因=暫存區為空 結果=略過");
                 RecordConstraintBuild(skippedName, false);
                 return false;
             }
             if (name == null)
-                name = ModelNaming.ValidateComposedName("automatic soft constraint", $"Soft_{sense}_{++_softCount}");
+                name = ModelNaming.ValidateComposedName("自動軟性限制式", $"Soft_{sense}_{++_softCount}");
 
             // 與一般限制式共用名稱去重，避免彈性變數撞名。
             if (_verifyConstraints.Contains(name))
@@ -1543,7 +1543,7 @@ namespace OptimFoundation.Core
                 RecordVariableBuild("SoftConstraint", expectedVariables, Variables.Count - variablesBefore);
                 RecordConstraintBuild(name, true);
                 MarkReferenced(terms);
-                Logging.Info($"[軟性限制式建立完成] name={name} sense={sense} rhs={rhs} penalty={penalty} result=success");
+                Logging.Info($"[軟性限制式建立完成] 名稱={name} 方向={sense} 右側值={rhs} 懲罰={penalty}");
             }
             catch (Exception ex)
             {
@@ -1551,12 +1551,12 @@ namespace OptimFoundation.Core
                 RecordConstraintBuild(name, false);
                 Logging.ErrorOnce(
                     ex,
-                    "SOFT_CONSTRAINT_BUILD_FAILED",
                     "軟性限制式建立失敗",
+                    null,
                     nameof(BuildSoft),
                     name,
                     ex.GetBaseException().Message,
-                    $"group={ConstraintGroup(name)}");
+                    $"限制式類別={ConstraintGroup(name)}");
                 throw;
             }
             ClearPool();

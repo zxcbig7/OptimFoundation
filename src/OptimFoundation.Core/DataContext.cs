@@ -76,7 +76,7 @@ namespace OptimFoundation.Core
                     issues.Add(new DataIssue(
                         DataIssueKind.DuplicateKey,
                         set.Name,
-                        $"duplicate Set key at row {row + 1}: {key}"));
+                        $"第 {row + 1} 資料列的集合鍵重複：{key}"));
             }
         }
 
@@ -90,7 +90,7 @@ namespace OptimFoundation.Core
                     issues.Add(new DataIssue(
                         DataIssueKind.DuplicateKey,
                         parameter.Name,
-                        $"duplicate Parameter key at row {row + 1}: {key}"));
+                        $"第 {row + 1} 資料列的參數鍵重複：{key}"));
             }
         }
 
@@ -109,11 +109,11 @@ namespace OptimFoundation.Core
                 }
 
                 valid = false;
-                var field = index < indexFields.Length ? indexFields[index] : $"index #{index + 1}";
+                var field = index < indexFields.Length ? indexFields[index] : $"索引 #{index + 1}";
                 issues.Add(new DataIssue(
                     DataIssueKind.InvalidKey,
                     source,
-                    $"row {row + 1}, {field}='{ModelNaming.DisplayValue(token)}' reason={reason}"));
+                    $"第 {row + 1} 資料列 {field}='{ModelNaming.DisplayValue(token)}' 原因={reason}"));
             }
             return valid ? string.Join("\u001f", tokens) : null;
         }
@@ -123,7 +123,7 @@ namespace OptimFoundation.Core
             for (var row = 0; row < parameter.Rows.Count; row++)
                 foreach (var (name, value) in parameter.Rows[row].Numbers)
                     if (double.IsNaN(value) || double.IsInfinity(value) || Math.Abs(value) > MaxMagnitude)
-                        issues.Add(new DataIssue(DataIssueKind.Numeric, parameter.Name, $"row {row + 1}, {name}={value.ToString(CultureInfo.InvariantCulture)}"));
+                        issues.Add(new DataIssue(DataIssueKind.Numeric, parameter.Name, $"第 {row + 1} 資料列 {name}={value.ToString(CultureInfo.InvariantCulture)}"));
         }
     }
 
@@ -138,8 +138,8 @@ namespace OptimFoundation.Core
         {
             if (factory == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(factory)),
-                    "DATA_LOAD_INVALID", "資料載入失敗", nameof(Load), null, "factory_is_null");
+                    new ArgumentNullException(nameof(factory), "factory 不得為 null"),
+                    "資料載入不合法", null, nameof(Load), null, "建立函式為空");
 
             try
             {
@@ -154,7 +154,7 @@ namespace OptimFoundation.Core
             catch (Exception ex)
             {
                 Logging.ErrorOnce(
-                    ex, "DATA_LOAD_FAILED", "公開 API 執行失敗", nameof(Load), typeof(T).FullName,
+                    ex, "資料載入失敗", null, nameof(Load), typeof(T).FullName,
                     ex.GetBaseException().Message);
                 throw;
             }
@@ -275,8 +275,8 @@ namespace OptimFoundation.Core
         {
             if (_isFrozen)
                 throw Logging.ErrorOnce(
-                    new InvalidOperationException($"DataContext member '{member}' is frozen; 模型建構階段不得修改資料。"),
-                    "DATA_CONTEXT_FROZEN", "資料內容不可修改", nameof(GuardMutation), member, "context_is_frozen");
+                    new InvalidOperationException($"DataContext 成員 '{member}' 已凍結，建立模型階段不得修改資料"),
+                    "資料內容已凍結", "建立模型階段不可修改", nameof(GuardMutation), member, "資料內容已凍結");
         }
 
         /// <summary>驗證已登記的資料：問題逐筆寫 Warning、不阻擋建模，最後印資料摘要。</summary>
@@ -285,17 +285,22 @@ namespace OptimFoundation.Core
             DataIssues = DataValidator.Validate(_sets, _params);
             foreach (var issue in DataIssues)
                 Logging.Warn(
-                    $"[DATA_VALIDATION_WARNING] 資料驗證發現問題 | context={issue.Parameter} " +
-                    $"reason={issue.Kind} detail={issue.Detail} result=continued");
+                    $"[資料不合法] 名稱={issue.Parameter} " +
+                    $"原因={issue.Kind switch { DataIssueKind.DuplicateKey => "鍵重複", DataIssueKind.InvalidKey => "鍵不合法", _ => "數值不合法" }} " +
+                    $"細節={issue.Detail} 結果=繼續");
 
-            Logging.Info("===== Data load summary =====");
-            Logging.Info($"Sets ({_sets.Count}):");
+            Logging.Info($"[資料載入摘要] 集合數量={_sets.Count} 參數數量={_params.Count} 問題數量={DataIssues.Count}");
             foreach (var set in _sets)
-                Logging.Info($"  {set.Name}: index=[{string.Join(",", set.IndexFields)}], rows={set.RowCount}");
-            Logging.Info($"Parameters ({_params.Count}):");
+                Logging.Info($"[集合載入完成] 名稱={set.Name} 索引={FormatIndex(set.IndexFields)} 資料列數量={set.RowCount}");
             foreach (var parameter in _params)
-                Logging.Info($"  {parameter.Name}: index=[{string.Join(",", parameter.IndexFields)}], rows={parameter.RowCount}");
-            Logging.Info($"Issues ({DataIssues.Count})");
+                Logging.Info($"[參數載入完成] 名稱={parameter.Name} 索引={FormatIndex(parameter.IndexFields)} 資料列數量={parameter.RowCount}");
+        }
+
+        // 多個維度欄名用 | 分隔；scalar 參數沒有維度
+        private static string FormatIndex(IEnumerable<string> fields)
+        {
+            string joined = string.Join("|", fields);
+            return joined.Length == 0 ? "<空白>" : joined;
         }
     }
 
@@ -303,7 +308,7 @@ namespace OptimFoundation.Core
     public static class ParameterLookupExtensions
     {
         /// <summary>
-        /// 回傳第一筆符合條件的 Parameter；找不到時記錄 <c>PARAMETER_NOT_FOUND</c> 並回傳 null。
+        /// 回傳第一筆符合條件的 Parameter；找不到時記錄 <c>[參數找不到]</c> 並回傳 null。
         /// keyValues 只用於 Log，缺值後要採 0、略過或其他預設值由呼叫端決定。
         /// </summary>
         public static T FindParameterOrLog<T>(
@@ -314,14 +319,14 @@ namespace OptimFoundation.Core
         {
             if (rows == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(rows)),
-                    "PARAMETER_LOOKUP_INVALID", "Parameter 查找條件不合法",
-                    typeof(T).Name, null, "rows_are_null");
+                    new ArgumentNullException(nameof(rows), "rows 不得為 null"),
+                    "參數查找不合法", null,
+                    typeof(T).Name, null, "資料列集合為空");
             if (predicate == null)
                 throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(predicate)),
-                    "PARAMETER_LOOKUP_INVALID", "Parameter 查找條件不合法",
-                    typeof(T).Name, null, "predicate_is_null");
+                    new ArgumentNullException(nameof(predicate), "predicate 不得為 null"),
+                    "參數查找不合法", null,
+                    typeof(T).Name, null, "查找條件為空");
 
             string key = FormatKey(keyValues);
             try
@@ -329,14 +334,14 @@ namespace OptimFoundation.Core
                 var row = rows.FirstOrDefault(predicate);
                 if (row == null)
                     Logging.Warn(
-                        $"[PARAMETER_NOT_FOUND] Parameter key 查無資料 | context={typeof(T).Name} " +
-                        $"key={key} reason=no_matching_row result=missing");
+                        $"[參數找不到] 型別={typeof(T).Name} " +
+                        $"鍵={key} 原因=沒有符合的資料列 結果=回傳空值");
                 return row;
             }
             catch (Exception ex)
             {
                 Logging.ErrorOnce(
-                    ex, "PARAMETER_LOOKUP_FAILED", "Parameter 查找失敗",
+                    ex, "參數查找失敗", null,
                     typeof(T).Name, key, ex.GetBaseException().Message);
                 throw;
             }
@@ -344,10 +349,10 @@ namespace OptimFoundation.Core
 
         private static string FormatKey(IReadOnlyList<object> values)
         {
-            if (values == null || values.Count == 0) return "<unspecified>";
+            if (values == null || values.Count == 0) return "<未指定>";
             return string.Join("@", values.Select(value => value switch
             {
-                null => "<null>",
+                null => "<空值>",
                 DateTime date => date.ToString(
                     date.TimeOfDay == TimeSpan.Zero ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
                 IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),

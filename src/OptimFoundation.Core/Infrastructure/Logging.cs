@@ -45,7 +45,7 @@ namespace OptimFoundation.Core
         private static void Write(string level, string message)
         {
             string ts = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-            string line = $"{ts} | {level.PadRight(5)} | {message}";
+            string line = $"{ts} | {level} | {message}";
             lock (_lock)
             {
                 _consoleWriter.WriteLine(line);
@@ -53,24 +53,32 @@ namespace OptimFoundation.Core
             }
         }
 
-        /// <summary>一般訊息。</summary>
-        public static void Info(string message) => Write("INFO", message);
+        /// <summary>一般訊息，等級標籤「資訊」；格式見 developer-guide 第 24 章。</summary>
+        public static void Info(string message) => Write("資訊", message);
 
-        /// <summary>除錯訊息（與 Info 同樣會輸出，只是等級標籤不同）。</summary>
-        public static void Debug(string message) => Write("DEBUG", message);
+        /// <summary>除錯訊息，等級標籤「除錯」（與 Info 同樣會輸出）。</summary>
+        public static void Debug(string message) => Write("除錯", message);
 
-        /// <summary>警告：不中斷流程，但需要注意（如限制式被略過、規模超標）。</summary>
-        public static void Warn(string message) => Write("WARN", message);
+        /// <summary>警告：不中斷流程，但需要注意（如限制式被略過、規模過大）；等級標籤「警告」，必帶「結果=」。</summary>
+        public static void Warn(string message) => Write("警告", message);
 
-        /// <summary>錯誤：通常伴隨例外拋出，訊息格式為 [ERROR_CODE] 說明 | key=value。</summary>
-        public static void Error(string message) => Write("ERROR", message);
+        /// <summary>錯誤：通常伴隨例外丟出，等級標籤「錯誤」；主動錯誤一律改用 <see cref="ErrorOnce{TException}"/>。</summary>
+        public static void Error(string message) => Write("錯誤", message);
 
         /// <summary>
         /// 同一例外只記錄一次並原樣回傳，供外層 API 記錄後 rethrow。
+        /// 寫出 <c>[事件] 說明 | 位置= 值= 原因= 細節 結果=中止</c>；說明為空時省略說明與「 | 」。
         /// </summary>
+        /// <param name="exception">要記錄的例外，記錄後原樣回傳。</param>
+        /// <param name="eventName">中文事件名（developer-guide 24.2），例如「實驗設定不合法」。</param>
+        /// <param name="description">事件名沒說到的補充；與事件名重複時傳 null。</param>
+        /// <param name="context">位置：出事的方法或步驟。</param>
+        /// <param name="value">值：出問題的輸入值。</param>
+        /// <param name="reason">原因：中文短語；執行時例外照原文。</param>
+        /// <param name="details">其他「欄位=值」，以單一空白分隔。</param>
         public static TException ErrorOnce<TException>(
             TException exception,
-            string eventCode,
+            string eventName,
             string description,
             string context,
             object value,
@@ -86,29 +94,30 @@ namespace OptimFoundation.Core
                 exception.Data[ErrorLoggedDataKey] = true;
             }
 
-            string code = NormalizeEventCode(eventCode);
+            string head = $"[{NormalizeEventName(eventName)}]";
+            if (!string.IsNullOrWhiteSpace(description)) head += $" {description} |";
             string extra = string.IsNullOrWhiteSpace(details) ? string.Empty : " " + FormatField(details);
-            Error($"[{code}] {description} | context={FormatField(context)} value={FormatField(value)} reason={FormatField(reason)}{extra} result=aborted");
+            Error($"{head} 位置={FormatField(context)} 值={FormatField(value)} 原因={FormatField(reason)}{extra} 結果=中止");
             return exception;
         }
 
-        private static string NormalizeEventCode(string eventCode)
+        private static string NormalizeEventName(string eventName)
         {
-            string code = (eventCode ?? "FRAMEWORK_ERROR").Trim();
-            if (code.StartsWith("[", StringComparison.Ordinal)) code = code.Substring(1);
-            if (code.EndsWith("]", StringComparison.Ordinal)) code = code.Substring(0, code.Length - 1);
-            return string.IsNullOrWhiteSpace(code) ? "FRAMEWORK_ERROR" : code;
+            string name = (eventName ?? "框架錯誤").Trim();
+            if (name.StartsWith("[", StringComparison.Ordinal)) name = name.Substring(1);
+            if (name.EndsWith("]", StringComparison.Ordinal)) name = name.Substring(0, name.Length - 1);
+            return string.IsNullOrWhiteSpace(name) ? "框架錯誤" : name;
         }
 
         private static string FormatField(object value)
         {
             string text;
             if (value == null)
-                text = "<null>";
+                text = "<空值>";
             else if (value is IFormattable formattable)
-                text = formattable.ToString(null, CultureInfo.InvariantCulture) ?? "<null>";
+                text = formattable.ToString(null, CultureInfo.InvariantCulture) ?? "<空值>";
             else
-                text = value.ToString() ?? "<null>";
+                text = value.ToString() ?? "<空值>";
 
             return text
                 .Replace("\r", "\\r")
@@ -116,12 +125,12 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 記錄訊息與經過時間後 Restart 計時器；需累計時請自行讀 Elapsed。
+        /// 在訊息後接上「耗時毫秒=」並 Restart 計時器；需累計時請自行讀 Elapsed。
         /// </summary>
         public static void Info(string message, Stopwatch sw)
         {
-            var e = sw.Elapsed;
-            Info($"{message} (Elapsed {e.Hours}h {e.Minutes}m {e.Seconds}s {e.Milliseconds}ms)");
+            string separator = message.Contains(" | ") || message.Contains("=") ? " " : " | ";
+            Info($"{message}{separator}耗時毫秒={sw.ElapsedMilliseconds}");
             sw.Restart();
         }
 
