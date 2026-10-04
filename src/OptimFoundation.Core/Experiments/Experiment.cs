@@ -202,7 +202,7 @@ namespace OptimFoundation.Core
         private static Trial CaptureCore(ISolverEngine engine, string label, Func<bool> solveAction, bool captureTrajectory)
         {
 
-            var snapshot = ConfigSnapshot.From(engine.Config);
+            var snapshot = ConfigSnapshot.From(engine.SolverConfig);
 
             if (captureTrajectory && engine is ITrajectorySource ts && ts.SupportsTrajectory)
             {

@@ -23,16 +23,15 @@ namespace OptimFoundation.Cplex
         private string _modelName { get; set; }
 
 
-        #region Engine Configuration
-        private bool _exportLp { get; set; }
-        private bool _exportIIs { get; set; }
-        private bool _exportMps { get; set; }
-        private bool _exportSol { get; set; }
-        private bool _enableLog { get; set; }
+        #region Project Configuration
+        private ProjectConfig _projectConfig;
+        private bool _exportLp { get { return _projectConfig.ExportLP; } }
+        private bool _exportIIs { get { return _projectConfig.ExportIIS; } }
+        private bool _exportMps { get { return _projectConfig.ExportMPS; } }
+        private bool _exportSol { get { return _projectConfig.ExportSol; } }
+        private bool _enableLog { get { return _projectConfig.EnableSolverLog; } }
         # endregion
 
-        private readonly ProjectConfig _projectConfig;
-        private CplexConfig _cplexConfig;
 
 
         private readonly List<IRange> _constraints = new List<IRange>();
@@ -49,14 +48,17 @@ namespace OptimFoundation.Cplex
         private readonly List<IRange> _threadConstraints = new List<IRange>();
         private List<string> _conflictConstraints = null;
 
+
         /// <summary>保存求解器設定並建立引擎；呼叫 Build() 時才建立 CPLEX 模型。</summary>
         public OptEngine(CplexConfig config) : this(config, new ProjectConfig()) { }
 
-        /// <summary>保存求解器與專案設定並建立引擎；呼叫 Build() 時才建立 CPLEX 模型。projectConfig 為 null 時使用預設設定。</summary>
-        public OptEngine(CplexConfig config, ProjectConfig projectConfig) : base(config)
+        /// <summary>保存求解器設定並建立引擎；呼叫 Build() 時才建立 CPLEX 模型。</summary>
+        public OptEngine(ProjectConfig projectConfig) : this(new CplexConfig(), projectConfig) { }
+
+        /// <summary>保存求解器與專案設定並建立引擎；呼叫 Build() 時才建立 CPLEX 模型。config 為 null 時沿用 CPLEX 預設值，projectConfig 為 null 時使用預設設定。</summary>
+        public OptEngine(CplexConfig config, ProjectConfig projectConfig) : base(config ?? new CplexConfig())
         {
             _projectConfig = projectConfig ?? new ProjectConfig();
-            _cplexConfig = config;
         }
 
         /// <summary>使用空的 CplexConfig 與預設 ProjectConfig 建立引擎；求解器參數沿用 CPLEX 預設值。</summary>
@@ -127,7 +129,7 @@ namespace OptimFoundation.Cplex
         public override bool SupportsTrajectory => true;
 
         /// <summary>
-        /// 開始記錄求解期間的目標值、最佳界限與 MIP gap；必須在 Solve() 前呼叫。
+        /// 開始記錄求解期間的目標值、Best Bound限與 MIP gap；必須在 Solve() 前呼叫。
         /// 記錄用的 MIPInfoCallback 不會關閉 dynamic search，但會改變搜尋路徑、通常讓求解變慢，因此預設不開啟。
         /// 只記 CPLEX 實際呼叫 callback 時觀察到的點；presolve 或 root 就解完時 callback 不會被呼叫，軌跡為空。
         /// </summary>
@@ -425,7 +427,7 @@ namespace OptimFoundation.Cplex
                 return 0;
             }
 
-            if (Config is CplexConfig { AdvancedStart: 0 })
+            if (SolverConfig is CplexConfig { AdvancedStart: 0 })
                 Logging.Warn($"[起始解已停用] CPLEX 不會使用起始解 | AdvancedStart=0 路徑={path} 結果=繼續");
 
             try
@@ -637,7 +639,7 @@ namespace OptimFoundation.Cplex
         /// <summary>
         /// 初始化 CPLEX 模型並套用 Config 參數。
         /// </summary>
-        protected override void BuildCore() => LoadConfig(Config);
+        protected override void BuildCore() => LoadConfig(SolverConfig);
 
         /// <summary>
         /// 求解並保存狀態與統計；依設定匯出模型、解與軌跡，Infeasible 時自動分析 IIS。
@@ -735,7 +737,7 @@ namespace OptimFoundation.Cplex
                 _conflictConstraints = RunConflictAnalysis();
 
             if (ok)
-                Logging.Info($"[求解完成] 狀態={Status} 目標值={Model.GetObjValue()} 最佳界={BestObjValue} 間隙={MIPGap}");
+                Logging.Info($"[求解完成] 狀態={Status} 目標值={Model.GetObjValue()} Best Bound={BestObjValue} MIPGap={MIPGap}");
             else
                 Logging.Info($"[求解完成] 狀態={Status}");
 
@@ -764,13 +766,13 @@ namespace OptimFoundation.Cplex
             {
                 BestObjValue = Model.GetBestObjValue();
                 MIPGap = Model.GetMIPRelativeGap();
-                Logging.Info($"[間隙取得] 模型類型={ModelType} 最佳界={BestObjValue} 間隙={MIPGap}");
+                Logging.Info($"[Bound And Gap] 模型類型={ModelType} Best Bound={BestObjValue} MIPGap={MIPGap}");
                 return;
             }
 
             BestObjValue = Model.GetObjValue();
             MIPGap = 0;
-            Logging.Info($"[間隙略過] 模型類型={ModelType} 最佳界={BestObjValue} 間隙=0 原因=非混合整數模型");
+            Logging.Info($"[Bound And Gap] 模型類型={ModelType} Best Bound={BestObjValue} MIPGap=Na (非 MILP)");
         }
 
         /// <summary>
@@ -989,7 +991,7 @@ namespace OptimFoundation.Cplex
         public OptEngine CopyModel(OptEngine sourceEngine)
         {
             var targetEngine = new OptEngine();
-            targetEngine.LoadConfig(targetEngine.Config);
+            targetEngine.LoadConfig(targetEngine.SolverConfig);
 
             var cloneManager = new SimpleCloneManager(sourceEngine.Model);
 
@@ -1049,10 +1051,13 @@ namespace OptimFoundation.Cplex
                 return conflictNames;
             }
 
-            FolderDir.IIS.CreateFolder();  // 即使未設定 exportLP/Sol，IIS 資料夾也必須存在才能寫入
-            string iisPath = FolderDir.IIS.GetPathFile($"{this._modelName}_IIS_{_startTime}.ilp");
-            Model.WriteConflict(iisPath);
-            Logging.Info($"[衝突檔匯出完成] 路徑={iisPath}");
+            if (_exportIIs)
+            {
+                FolderDir.IIS.CreateFolder();  // 即使未設定 exportLP/Sol，IIS 資料夾也必須存在才能寫入
+                string iisPath = FolderDir.IIS.GetPathFile($"{this._modelName}_IIS_{_startTime}.ilp");
+                Model.WriteConflict(iisPath);
+                Logging.Info($"[衝突檔匯出完成] 路徑={iisPath}");
+            }
 
             var statuses = Model.GetConflict(constraintArr);
             for (int i = 0; i < constraintArr.Length; i++)

@@ -1,5 +1,134 @@
 # OptimFoundation Code Map
 
+## Focused Scope — Conflict Analysis（2026-10-04）
+
+### File Index
+
+| 檔案 | 範圍 | 關鍵 Symbol |
+| --- | --- | --- |
+| `src/OptimFoundation.Cplex/OptEngine.cs` | 現有方法與直接 caller，非 branch diff | `SolveCore`, `RunConflictAnalysis`, `GetConflictConstraints` |
+| `src/OptimFoundation.Core/EngineBase.cs` | 求解入口 | `Solve`, `SolveCore` |
+| `src/OptimFoundation.Core/Infrastructure/ProjectConfig.cs` | 匯出設定 | `ExportIIS` |
+| `tests/OptimFoundation.Cplex.Tests/Integration/ModelImportIntegrationTests.cs` | 現有使用範例 | `ReadModel_Infeasible_RunsConflictAnalysis` |
+
+### Dependency Graph
+
+| Caller | Callee | 定位 |
+| --- | --- | --- |
+| `EngineBase.Solve` | virtual `SolveCore` → `OptEngine.SolveCore` | Core 求解入口與 Cplex override |
+| `OptEngine.SolveCore` | `RunConflictAnalysis` | `OptEngine.cs:734–735` |
+| `OptEngine.GetConflictConstraints` | `RunConflictAnalysis` | `OptEngine.cs:1083` |
+| `RunConflictAnalysis` | `ILOG.CPLEX.Cplex.RefineConflict`, `WriteConflict`, `GetConflict` | 外部 solver SDK，`OptEngine.cs:1047,1054,1057` |
+| `ModelImportIntegrationTests.ReadModel_Infeasible_RunsConflictAnalysis` | `Solve`, `GetConflictConstraints` | 測試 `:205,208` |
+
+### Symbol Index
+
+| 檔案 | Symbol | 行號 | 定位用途 |
+| --- | --- | --- | --- |
+| `src/OptimFoundation.Cplex/OptEngine.cs` | `_conflictConstraints` | 50 | 快取欄位；清除點 340、914，以及 `OptEngine.Configuration.cs:32` 的 `LoadConfig` |
+| `src/OptimFoundation.Cplex/OptEngine.cs` | `_exportIIs` | 28 | 自動分析 gate 734 |
+| `src/OptimFoundation.Core/Infrastructure/ProjectConfig.cs` | `ExportIIS` | 28 | 設定宣告 |
+| `src/OptimFoundation.Core/EngineBase.cs` | `Solve` | 408 | `SolveCore` 呼叫 415；exception log 與 rethrow 417–420 |
+| `src/OptimFoundation.Cplex/OptEngine.cs` | `SolveCore` | 647 | 狀態轉換 684–691，自動分析條件 734 |
+| `src/OptimFoundation.Cplex/OptEngine.cs` | `RunConflictAnalysis` | 1040 | 實際分析與 ILP 匯出 |
+| `src/OptimFoundation.Cplex/OptEngine.cs` | `GetConflictConstraints` | 1078 | public 存取入口、快取與狀態檢查 |
+| `tests/OptimFoundation.Cplex.Tests/Integration/ModelImportIntegrationTests.cs` | `ReadModel_Infeasible_RunsConflictAnalysis` | 184 | 匯入 infeasible 模型後讀取衝突名稱 |
+
+### Review Scope Notes
+
+比較 visibility、觸發條件、快取、例外傳遞、回傳內容與分析成本。僅靜態追蹤，不執行 solver。
+
+## Focused Scope — Set / Param 與 List（2026-10-04）
+
+範圍為現有 API 的對稱性定位，非 branch diff；以下行號以本次掃描版本為準。僅建立地圖，未包含 review 結論。
+
+### File Index
+
+| 檔案 | +行 | -行 | 語言 | 關鍵 Symbol |
+| --- | --- | --- | --- | --- |
+| `src/OptimFoundation.Core/IO/IDataSource.cs` | N/A | N/A | C# | `IDataSource.Load<T>` |
+| `src/OptimFoundation.Core/IO/ModelRowMapper.cs` | N/A | N/A | C# | `MapTable`, `MapRows` |
+| `src/OptimFoundation.Core/IO/csv/CsvDataSource.cs` | N/A | N/A | C# | `CsvDataSource.LoadData` |
+| `src/OptimFoundation.Core/IO/InMemoryDataSource.cs` | N/A | N/A | C# | `AddRows<T>`, `LoadData` |
+| `src/OptimFoundation.Core/IO/db/DbDataSource.cs` | N/A | N/A | C# | `DbDataSource.Load<T>` |
+| `src/OptimFoundation.Core/ModelElementBase.cs` | N/A | N/A | C# | `SetRowBase`, `ParameterBase` |
+| `src/OptimFoundation.Core/DataContext.cs` | N/A | N/A | C# | `RegisterSet`, `RegisterParam`, `ParameterLookupExtensions` |
+| `src/OptimFoundation.Generators/AutoSetsGenerator.cs` | N/A | N/A | C# | `AutoSetsGenerator`, generated conversion members |
+| `Templates/Template/Data/Dataload.cs` | N/A | N/A | C# | `Dataload` |
+| `tests/OptimFoundation.Cplex.Tests/Unit/GeneratorNumericCoverageTests.cs` | N/A | N/A | C# | `GncDataload`, CSV load tests |
+| `specs/developer-guide.md` | N/A | N/A | Markdown | data loading examples |
+
+### Dependency Graph
+
+箭頭表示實際型別／方法依賴；同 namespace 的呼叫也列入。節點與 File Index 對應：介面 = IDataSource、映射 = ModelRowMapper、資料列 = ModelElementBase、記憶體 = InMemoryDataSource、生成器 = AutoSetsGenerator、註冊 = DataContext、範例 = Dataload、測試 = GeneratorNumericCoverageTests、指南 = developer-guide。
+
+```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#eef2ff','primaryTextColor':'#1e293b','primaryBorderColor':'#6366f1','lineColor':'#94a3b8','fontFamily':'Segoe UI','fontSize':'14px'},'flowchart':{'curve':'basis','nodeSpacing':50,'rankSpacing':55}}}%%
+flowchart LR
+    EX["範例"] -->|呼叫| API["介面"]
+    TEST["測試"] -->|呼叫| API
+    CSV["CSV"] -->|實作| API
+    MEM["記憶體"] -->|實作| API
+    DB["DB"] -->|實作| API
+    API -->|映射| MAP["映射"]
+    DB -->|映射| MAP
+    MAP -->|建立| ROW["資料列"]
+    MEM -->|讀取| ROW
+    GEN["生成器"] -->|生成繼承| ROW
+    GEN -->|生成註冊| CTX["註冊"]
+    EX -->|繼承| CTX
+    TEST -->|繼承| CTX
+    DOC["指南"]
+    classDef primary fill:#eef2ff,stroke:#6366f1,stroke-width:2px,color:#3730a3;
+    classDef success fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#065f46;
+    classDef warn fill:#fffbeb,stroke:#f59e0b,stroke-width:2px,color:#92400e;
+    classDef error fill:#fef2f2,stroke:#ef4444,stroke-width:2px,color:#991b1b;
+    classDef decision fill:#fefce8,stroke:#eab308,stroke-width:2px,color:#854d0e;
+    classDef accent fill:#eff6ff,stroke:#3b82f6,stroke-width:2px,color:#1e40af;
+    classDef muted fill:#f8fafc,stroke:#cbd5e1,stroke-width:1px,color:#64748b;
+    class API,MAP,ROW,CTX primary;
+    class CSV,MEM,DB,GEN accent;
+    class EX,TEST success;
+    class DOC muted;
+```
+
+### Symbol Index
+
+| 檔案 | Symbol | 行號 | 定位用途 |
+| --- | --- | --- | --- |
+| `src/OptimFoundation.Core/IO/IDataSource.cs` | `Load<T>` | 26 | Set / Parameter 共用的 `List<T>` 載入入口 |
+| `src/OptimFoundation.Core/IO/ModelRowMapper.cs` | `MapTable<T>`, `MapRows<T>` | 14, 21 | 表格轉 model row list |
+| `src/OptimFoundation.Core/IO/csv/CsvDataSource.cs` | `LoadData` | 32 | CSV 表格來源 |
+| `src/OptimFoundation.Core/IO/InMemoryDataSource.cs` | `AddRows<T>`, `LoadData` | 16, 68 | row sequence 註冊與表格讀取 |
+| `src/OptimFoundation.Core/IO/db/DbDataSource.cs` | `Load<T>` | 25 | SQL 與 bind parameters 載入 |
+| `src/OptimFoundation.Core/ModelElementBase.cs` | `InitClassBySets`, `SetRowBase`, `ParameterBase` | 21, 83, 91 | row 初始化與基底 |
+| `src/OptimFoundation.Core/DataContext.cs` | `RegisterSet`, `RegisterParam`, `FindParameterOrLog<T>` | 234, 248, 314 | list 註冊與 parameter 查找 |
+| `src/OptimFoundation.Generators/AutoSetsGenerator.cs` | `AutoSetsGenerator.Initialize` | 126 | generator 入口；生成 member 區塊見 485，單維 implicit operator 見 492，多維 Deconstruct 見 499 |
+| `Templates/Template/Data/Dataload.cs` | `Dataload(IDataSource)` | 18 | 20–25 並列載入 Set 與 Parameter list |
+| `Templates/Template/Data/Dataload.cs` | `CreateScaledSource` | 103 | typed rows 回寫 InMemoryDataSource |
+| `tests/OptimFoundation.Cplex.Tests/Unit/GeneratorNumericCoverageTests.cs` | `GncDataload` | 46 | 53–54 並列 primitive sequence 投影成 Set rows 與 Parameter rows.ToList |
+| `tests/OptimFoundation.Cplex.Tests/Unit/GeneratorNumericCoverageTests.cs` | `CsvSource_Load_UsesExplicitFileNameInsteadOfRowClassName` | 78 | 90 載入 Set list；69 為 Parameter 載入 helper |
+| `tests/OptimFoundation.Cplex.Tests/Unit/GeneratorNumericCoverageTests.cs` | `DuplicateSetKey_IsRegisteredByGeneratorAndReportedWithoutBlocking` | 156 | Set list 註冊測試 |
+| `specs/developer-guide.md` | data loading | 792, 802, 896 | Set / Parameter list 宣告、呼叫與共用入口說明 |
+
+### Review Scope Notes
+
+需區分「來源資料載入 `List<Set_X>`」與「`List<Set_X>` 投影成 primitive list」，並檢視反向 primitive sequence 建立 Set rows 的寫法。單筆 row 的 implicit conversion 與整個 generic list 的轉換分別定位。Generated outputs 不列入索引；solver 執行不在本次範圍。
+
+### 維度比較擴充（零維、單維、雙維）
+
+| File Index / Symbol Index | 宣告行號 | 生成的 public properties |
+| --- | --- | --- |
+| `Templates/Template/Set/Set_StringKey.cs` / `Set_StringKey` | 5–7 | `string Key` |
+| `Templates/Template/Set/Set_SparsePair.cs` / `Set_SparsePair` | 5–8 | `string Key`, `DateTime Date` |
+| `Templates/Template/Parameter/Parameter_Scalar.cs` / `Parameter_Scalar` | 5–6 | `double QTY` |
+| `Templates/Template/Parameter/Parameter_OneDim.cs` / `Parameter_OneDim` | 5–7 | `string Key`, `double QTY` |
+| `Templates/Template/Parameter/Parameter_TwoDim.cs` / `Parameter_TwoDim` | 5–8 | `string Key`, `DateTime Date`, `double QTY` |
+
+Dependency Graph 補充：這五個宣告透過 `using OptimFoundation.Modeling` 使用 generator 產生的 attributes；`Dataload` 的同 namespace 型別引用指向這五個 rows。它們分別生成繼承 `SetRowBase` 或 `ParameterBase`。
+
+零維 Set 的定位：`AutoSetsGenerator.cs:62` 定義 Error diagnostic `OPTF008`，`:194` 依 `hasDims` 選用；零維 Parameter 由 `ExtractParam`（`:173`）允許。Row 建立例子見 `Dataload.cs:68–90`。Generator 在 `:475` 產生維度 properties、`:482` 補 Parameter `QTY`、`:509` 依 AddCtors 生成 Parameter constructors。迴圈與參數取值例子見 `Templates/Template/Objective/ObjectiveFunction.cs:27–33`、`Templates/Template/Constraint/Constraint_Equal.cs:27–36`。
+
 ## File Index
 
 索引涵蓋 tracked source、tests、Templates 與 project；排除 generated、外部套件與未追蹤 probe。
@@ -224,7 +353,6 @@
 | `tests/OptimFoundation.Cplex.Tests/Unit/OracleSolutionSinkTests.cs` | `OracleSolutionSinkTests` |
 | `tests/OptimFoundation.Cplex.Tests/Unit/PoolSemanticsAndMipStartTests.cs` | `PoolSemanticsAndMipStartTests` |
 | `tests/OptimFoundation.Cplex.Tests/Unit/RunnerSymmetryTests.cs` | `RunnerSymmetryTests` |
-| `tests/OptimFoundation.Cplex.Tests/Unit/ScaleGuardTests.cs` | `ScaleGuardTests` |
 | `tests/OptimFoundation.Cplex.Tests/Unit/StringOverloadParityTests.cs` | `StringOverloadParityTests` |
 | `tests/OptimFoundation.Cplex.Tests/Unit/VariableManagerTests.cs` | `VariableManagerTests` |
 

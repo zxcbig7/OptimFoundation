@@ -2237,7 +2237,6 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 | `int? Presolve { get; set; }` | presolve 設定；0 表示關閉。 |
 | `double? HeuristicEffort { get; set; }` | heuristic effort。 |
 | `double? MemoryLimitMb { get; set; }` | solver work memory 上限 MB。 |
-| `int ScaleWarnThreshold { get; }` | 變數數量警告門檻；預設 10,000,000，只警告不阻止 solve。 |
 
 這些 properties 由 solver config 實作。讀寫本身不建立模型；`LoadConfig`/`Build` 才把值套進 solver。
 
@@ -2245,7 +2244,7 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 
 | Signature | 行為、state 與回傳值 |
 | --- | --- |
-| `ISolverConfig Config { get; }` | 目前 engine 設定。 |
+| `ISolverConfig SolverConfig { get; }` | 目前 engine 設定。 |
 | `SolveStatus Status { get; }` | 最近求解狀態；尚未 solve 為 `NotSolved`。 |
 | `SolveMetrics LastMetrics { get; }` | 最近一次 solve snapshot；尚未 solve 為 null。 |
 | `ModelType ModelType { get; }` | 依目前 native model 判定 LP/MILP/IP/BP；build 後可讀。 |
@@ -2396,7 +2395,7 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 - `public abstract class EngineBase<TModel, TVar, TExpr, TConstr> : ISolverEngine, ITrajectorySource` | `OptimFoundation.Core/EngineBase.cs:203`
 - `public int VariableCount` | `OptimFoundation.Core/EngineBase.cs:215`
 - `public ModelType ModelType` | `OptimFoundation.Core/EngineBase.cs:229`
-- `public ISolverConfig Config` | `OptimFoundation.Core/EngineBase.cs:232`
+- `public ISolverConfig SolverConfig` | `OptimFoundation.Core/EngineBase.cs:218`
 - `public SolveStatus Status` | `OptimFoundation.Core/EngineBase.cs:235`
 - `public double BestObjValue` | `OptimFoundation.Core/EngineBase.cs:238`
 - `public double MIPGap` | `OptimFoundation.Core/EngineBase.cs:241`
@@ -2515,7 +2514,7 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 - `public DateTime RunTime` | `OptimFoundation.Core/Experiments/Experiment.cs:134`
 - `public ConfigSnapshot Config` | `OptimFoundation.Core/Experiments/Experiment.cs:137`
 - `public SolveMetrics Metrics` | `OptimFoundation.Core/Experiments/Experiment.cs:140`
-- `public static Trial Capture(ISolverEngine engine, string label, Func<bool> solveAction, bool captureTrajectory = true)` | `OptimFoundation.Core/Experiments/Experiment.cs:182` | 要求非 null engine 與 action；先從 `engine.Config` 建 `ConfigSnapshot`，若要求 trajectory 且 engine 實作並支援 `ITrajectorySource`，在求解前呼叫 `EnableTrajectory()`。接著實際呼叫一次 `solveAction()`；其 bool 回傳不決定是否建 Trial。action 正常返回後讀 `engine.LastMetrics`，若為 null 則以當下 `engine.Status` 建最小 metrics，再連同 label、目前時間、snapshot 組成新 Trial；trajectory 由 solve 後的 `LastMetrics.Convergence` 一併保存。action 或 capture 失敗時記 `[試跑擷取失敗]` 並原例外重拋，不回傳 Trial；此方法不呼叫 `Dispose()`，engine lifecycle 仍由呼叫端管理。
+- `public static Trial Capture(ISolverEngine engine, string label, Func<bool> solveAction, bool captureTrajectory = true)` | `OptimFoundation.Core/Experiments/Experiment.cs:182` | 要求非 null engine 與 action；先從 `engine.SolverConfig` 建 `ConfigSnapshot`，若要求 trajectory 且 engine 實作並支援 `ITrajectorySource`，在求解前呼叫 `EnableTrajectory()`。接著實際呼叫一次 `solveAction()`；其 bool 回傳不決定是否建 Trial。action 正常返回後讀 `engine.LastMetrics`，若為 null 則以當下 `engine.Status` 建最小 metrics，再連同 label、目前時間、snapshot 組成新 Trial；trajectory 由 solve 後的 `LastMetrics.Convergence` 一併保存。action 或 capture 失敗時記 `[試跑擷取失敗]` 並原例外重拋，不回傳 Trial；此方法不呼叫 `Dispose()`，engine lifecycle 仍由呼叫端管理。
 - `public sealed class ConfigSummary` | `OptimFoundation.Core/Experiments/Experiment.cs:246`
 - `public string RunId` | `OptimFoundation.Core/Experiments/Experiment.cs:249` | 批次識別（同 `Trial.ExperimentId`），不寫進 CSV。
 - `public string Model` | `OptimFoundation.Core/Experiments/Experiment.cs:220`

@@ -41,7 +41,6 @@ namespace OptimFoundation.Cplex
 
             if (_projectConfig.EnableSolverLog)
             {
-                _enableLog = true;
                 var tee = new TeeWriter(Console.Out, _solverLogWriter);
                 Model.SetOut(tee);
                 Model.SetWarning(tee);
@@ -59,19 +58,16 @@ namespace OptimFoundation.Cplex
 
             if (_projectConfig.ExportLP)
             {
-                _exportLp = true;
                 Logging.Info("[模型檔匯出設定] 已啟用 | 格式=lp");
             }
 
             if (_projectConfig.ExportMPS)
             {
-                _exportMps = true;
                 Logging.Info("[模型檔匯出設定] 已啟用 | 格式=mps");
             }
 
             if (_projectConfig.ExportSol)
             {
-                _exportSol = true;
                 Logging.Info("[解檔匯出設定] 已啟用 | 格式=sol");
             }
             #endregion

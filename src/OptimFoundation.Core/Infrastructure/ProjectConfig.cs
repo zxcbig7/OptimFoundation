@@ -24,7 +24,7 @@ namespace OptimFoundation.Core
         /// <summary>求解成功後把解匯出成 .sol 檔，存入 FolderDir.Solution。</summary>
         public bool ExportSol { get; set; } = false;
 
-        /// <summary>預留的 IIS 匯出開關；目前框架沒有讀取此屬性，設定後不會影響輸出。</summary>
+        /// <summary>Infeasible 時把衝突分析（IIS）匯出成 .ilp 檔，存入 FolderDir.IIS；衝突限制式名稱不論開關都會記錄。</summary>
         public bool ExportIIS { get; set; } = false;
     }
 }

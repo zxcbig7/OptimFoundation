@@ -43,9 +43,6 @@ namespace OptimFoundation.Core
 
         /// <summary>記憶體上限 MB（CPLEX workMemory）。</summary>
         double? MemoryLimitMb { get; set; }
-
-        /// <summary>求解前的變數數量警告門檻。VariableCount 超過門檻時只記錄警告，仍會繼續求解；未覆寫時使用此預設值。</summary>
-        int ScaleWarnThreshold => 10_000_000;
     }
 
 
@@ -53,7 +50,7 @@ namespace OptimFoundation.Core
     public interface ISolverEngine : IDisposable
     {
         /// <summary>本引擎使用的求解設定。</summary>
-        ISolverConfig Config { get; }
+        ISolverConfig SolverConfig { get; }
 
         /// <summary>求解狀態；未求解為 NotSolved。</summary>
         SolveStatus Status { get; }
@@ -218,7 +215,7 @@ namespace OptimFoundation.Core
         public ModelType ModelType => ResolveModelType(ReadModelComposition());
 
         /// <summary>建構時傳入的求解器組態；由各 engine 在 LoadConfig() 內逐項套用到 solver。</summary>
-        public ISolverConfig Config { get; protected set; }
+        public ISolverConfig SolverConfig { get; protected set; }
 
         /// <summary>求解狀態；各 engine 完成 SolveCore() 後會寫入結果，未求解前為 NotSolved。</summary>
         public SolveStatus Status { get; protected set; } = SolveStatus.NotSolved;
@@ -333,10 +330,10 @@ namespace OptimFoundation.Core
         /// <summary>
         /// 建立引擎時只保存設定；呼叫 <see cref="Build"/> 才會建立求解器模型。
         /// </summary>
-        /// <param name="config">求解器組態；傳 null 時 PreSolveGuard 的規模檢查會被跳過。</param>
+        /// <param name="config">求解器組態。</param>
         protected EngineBase(ISolverConfig config)
         {
-            Config = config;
+            SolverConfig = config;
         }
 
         #region Solver Contract
@@ -403,7 +400,7 @@ namespace OptimFoundation.Core
         }
 
         /// <summary>
-        /// 記錄建模摘要與警告後呼叫 SolveCore；未引用變數與規模超標不阻擋求解。
+        /// 記錄建模摘要與警告後呼叫 SolveCore；未引用變數不阻擋求解。
         /// </summary>
         public bool Solve()
         {
@@ -411,7 +408,6 @@ namespace OptimFoundation.Core
             {
                 LogBuildSummary();
                 WarnUnreferencedVariables();
-                PreSolveGuard();
                 return SolveCore();
             }
             catch (Exception ex)
@@ -437,14 +433,6 @@ namespace OptimFoundation.Core
 
         /// <summary>各 engine 的求解實作；由 <see cref="Solve"/> 呼叫。回傳 true 代表取得 Optimal 或 Feasible 解。</summary>
         protected abstract bool SolveCore();
-
-        // 檢查整個 Variables 池（含彈性與匯入變數）；超標只警告，未設定 Config 則略過。
-        private void PreSolveGuard()
-        {
-            if (Config == null) return;
-            if (VariableCount > Config.ScaleWarnThreshold)
-                Logging.Warn($"[模型規模過大] 變數數量超過警告門檻 | 數量={VariableCount} 門檻={Config.ScaleWarnThreshold} 結果=繼續");
-        }
 
         /// <summary>取得目標式解值。必須在 Solve() 回傳 true 後呼叫，否則求解器可能拋出例外。</summary>
         public abstract double GetObjectiveValue();

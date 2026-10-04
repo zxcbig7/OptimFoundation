@@ -56,6 +56,17 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.Contains("[CPLEX 求解日誌設定] 只寫出到框架日誌檔", log);
         }
 
+        [Fact(DisplayName = "CplexConfig 傳 null：沿用 CPLEX 預設值，Build 不會因 Config 為 null 失敗")]
+        public void NullCplexConfig_FallsBackToDefaults()
+        {
+            if (!CplexAvailable) return;
+
+            using var engine = new OptEngine(null, new ProjectConfig { EnableSolverLog = false });
+
+            Assert.IsType<CplexConfig>(engine.SolverConfig);
+            engine.Build();
+        }
+
 
         [Fact(DisplayName = "簡單 LP：min x s.t. x >= 3，解 = 3")]
         public void SimpleLP_MinX_GreaterEqual3_SolvesOptimal()

@@ -78,7 +78,7 @@ namespace OptimFoundation.Cplex.Tests.Mocks
         // 模擬 import：繞過 Build*Vs 直接建變數，只進 Variables、不記建立統計
         public string AddUnregisteredVar(string name) => AddVariable(name, 0, OptBounds.Infinity, VarType.Continuous);
 
-        protected override void BuildCore() => LoadConfig(Config);
+        protected override void BuildCore() => LoadConfig(SolverConfig);
         protected override bool SolveCore() => true;
         public override double GetObjectiveValue() => 0;
         public override double GetVariableValue(string name) => 0;
