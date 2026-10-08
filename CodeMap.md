@@ -370,3 +370,50 @@ CPLEX 由 `CplexDir` 指定；預設為 `C:\IBM\ILOG\CPLEX_Studio2211`。Templat
 - 註解調整須保留 API 契約、數學式、單位、參數範圍、非直觀原因及平台限制。
 - Generator 字串只有輸出註解可調整；不得改變 executable tokens 或 diagnostics。
 - 不修改 Markdown 規格正文、TuningHistory、generated、外部套件或相鄰 AI-Modeling。
+
+## Focused Scope — Tuning Evidence（2026-10-08）
+
+本節依 `/code-review` Phase 1 建立資訊盤點地圖，供相鄰 AI-Modeling 的 tuning 攻略定位現行能力；沒有 code review 結論。範圍為現行 source，非 branch diff，+/- 行數不適用。保留本檔原有範圍。
+
+### File Index
+
+| 檔案 | +行 | -行 | 語言 | 關鍵 Symbol |
+| --- | --- | --- | --- | --- |
+| `src/OptimFoundation.Cplex/OptExperiment.cs` | N/A | N/A | C# | `OptExperiment`, `Run`, `RunCore` |
+| `src/OptimFoundation.Cplex/OptEngine.cs` | N/A | N/A | C# | `RunModel`, `TrajectoryCallback`, `SolveCore`, `ReadBoundAndGap` |
+| `src/OptimFoundation.Cplex/OptEngine.Configuration.cs` | N/A | N/A | C# | `LoadConfig` |
+| `src/OptimFoundation.Cplex/CplexConfig.cs` | N/A | N/A | C# | `CplexConfig`, `Clone` |
+| `src/OptimFoundation.Cplex/OptProject.cs` | N/A | N/A | C# | `OptProject`, `Solve`, `Experiment` |
+| `src/OptimFoundation.Core/Experiments/Experiment.cs` | N/A | N/A | C# | `Experiment`, `Trial`, `ConfigSummary`, `BaselineComparer` |
+| `src/OptimFoundation.Core/Experiments/SolveMetrics.cs` | N/A | N/A | C# | `SolveMetrics`, `ConvergencePoint` |
+| `src/OptimFoundation.Core/Experiments/ConfigSnapshot.cs` | N/A | N/A | C# | `ConfigSnapshot.From` |
+| `src/OptimFoundation.Core/Experiments/ExpCsvWriter.cs` | N/A | N/A | C# | `CsvExperimentWriter`, `MetaCsvWriter`, `SummaryCsvWriter`, `TrajectoryCsvWriter`, `ExperimentCsv` |
+
+### Dependency Graph
+
+| Caller / 來源 | Callee / 依賴 | 關係 |
+| --- | --- | --- |
+| `OptProject` | `OptExperiment` | 建立實驗入口 |
+| `OptExperiment.RunCore` | `CplexConfig.Clone`, `OptEngine.RunModel`, `Experiment.Save` | 每個模型與設定組合建立引擎、記錄並寫出 |
+| `OptEngine.RunModel` | `Trial.Capture`, `OptModel.ApplyTo` | 建模與求解生命週期 |
+| `Trial.Capture` | `ConfigSnapshot.From`, `ITrajectorySource`, `SolveMetrics` | 設定快照與結果擷取 |
+| `OptEngine.SolveCore` | `TrajectoryCallback`, `SolveMetrics`, `ILOG.CPLEX.Cplex` | SDK 求解與指標擷取 |
+| `Experiment.Save` | 四個 CSV writers | artifact 序列化 |
+| `CsvExperimentWriter`, `ConfigSummary` | `BaselineComparer` | 同批次、模型、seed 比較 |
+| Cplex source 的 `using OptimFoundation.Core` | Core experiment types | adapter → solver-neutral contract |
+
+### Symbol Index
+
+| 檔案 | Symbol | 行號 | 定位用途 |
+| --- | --- | --- | --- |
+| `src/OptimFoundation.Cplex/OptExperiment.cs` | `LoadConfig`, `CaptureTrajectory`, `AddModel`, `AddConfig`, `AddTrial`, `Run`, `RunCore` | 52, 64, 71, 82, 98, 114, 128 | 實驗 API 與執行流程 |
+| `src/OptimFoundation.Cplex/OptEngine.cs` | `RunModel`, `EnableTrajectory`, `TrajectoryCallback`, `SolveCore`, `ReadBoundAndGap` | 93, 136, 142, 649, 763 | 計時、軌跡、solver metrics |
+| `src/OptimFoundation.Core/Experiments/Experiment.cs` | `Experiment`, `Trial.Capture`, `ConfigSummary.From`, `BaselineComparer.Compare` | 12, 179, 287, 404 | 儲存、彙總與基準比較 |
+| `src/OptimFoundation.Core/Experiments/SolveMetrics.cs` | `SolveMetrics`, `ConvergencePoint` | 8, 136 | 指標資料結構 |
+| `src/OptimFoundation.Core/Experiments/ConfigSnapshot.cs` | `From` | 23 | 設定快照 |
+| `src/OptimFoundation.Core/Experiments/ExpCsvWriter.cs` | `CsvExperimentWriter`, `MetaCsvWriter`, `SummaryCsvWriter`, `TrajectoryCsvWriter`, `ExperimentCsv` | 14, 222, 315, 373, 441 | CSV 契約 |
+
+### Scope Notes
+
+- 追蹤 experiment、solver diagnostics、參數套用、baseline 與 CSV 語意；相關 tests 與 developer guide 僅作契約交叉定位。
+- 略過 `.git`、`bin`、`obj`、generated、外部 solver DLL 實作、無關 Templates；本次不執行 solver、不修改 production code。
