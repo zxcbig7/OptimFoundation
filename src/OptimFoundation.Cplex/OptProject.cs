@@ -31,7 +31,11 @@ namespace OptimFoundation.Cplex
 
             try
             {
-                Initialize();
+                // 初始化 Logging 與 FolderDir，之後每次 Solve 或 Experiment 都會使用同一個專案資料夾。
+                Logging.SetLogFileName(Name);
+                FolderDir.CreateAll();
+                int purged = FolderDir.PurgeAllOutputs(RetentionDays);
+                Logging.Info($"[專案初始化完成] 名稱={Name} 保留天數={RetentionDays} 資料夾={FolderDir.ProjFolder.ProjectPath} 清除檔案數量={purged}");
             }
             catch (Exception ex)
             {
@@ -47,13 +51,6 @@ namespace OptimFoundation.Cplex
         /// <summary>輸出檔保留天數；&lt;= 0 表示不清理。</summary>
         public int RetentionDays { get; } = 30;
 
-        private void Initialize()
-        {
-            Logging.SetLogFileName(Name);
-            FolderDir.CreateAll();
-            int purged = FolderDir.PurgeAllOutputs(RetentionDays);
-            Logging.Info($"[專案初始化完成] 名稱={Name} 保留天數={RetentionDays} 資料夾={FolderDir.ProjFolder.ProjectPath} 清除檔案數量={purged}");
-        }
 
         #region 正式求解
 
