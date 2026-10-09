@@ -7,11 +7,7 @@ using OptimFoundation.Core;
 
 namespace OptimFoundation.Cplex
 {
-    /// <summary>
-    /// 保存建立變數、目標式與限制式的步驟，由 ApplyTo() 依序套用到 OptEngine。
-    /// 本身不執行求解；由 <see cref="OptProject"/> 或 <see cref="OptExperiment"/> 建立引擎並執行這些步驟。
-    /// 也可先讀入 .lp / .mps / .sav 模型檔，再執行額外的建模步驟。
-    /// </summary>
+    /// <summary>保存建模步驟，由 <see cref="ApplyTo"/> 依序套用到 OptEngine。</summary>
     public sealed class OptModel
     {
         /// <summary>模型名稱，用來區分求解與實驗紀錄。</summary>
@@ -39,10 +35,7 @@ namespace OptimFoundation.Cplex
             return this;
         }
 
-        /// <summary>
-        /// 加入一個建立變數的步驟，套用時呼叫 <see cref="EngineBase{TModel, TVar, TExpr, TConstr}.BuildVars{TVariable}"/>；
-        /// 型別由類別名前綴決定，sets 依 TVariable 的維度順序傳入，零維變數不傳。
-        /// </summary>
+        /// <summary>加入建立變數的步驟；sets 順序須和 TVariable 維度一致。</summary>
         public OptModel AddVariables<TVariable>(params object[] sets)
             => AddVariables(engine => engine.BuildVars<TVariable>(sets));
 
@@ -65,10 +58,7 @@ namespace OptimFoundation.Cplex
         }
 
 
-        /// <summary>
-        /// 回傳一行模型定義摘要：模型名，以及變數、目標式、限制式、起始解各註冊了幾個步驟。
-        /// 數的是 AddXxx 呼叫次數，不是變數或限制式的實際數量（一個 AddVariables 可能建出上千顆變數）；實際數量在套用後由 CPLEX 提供，見 Trial。
-        /// </summary>
+        /// <summary>回傳已註冊的變數、目標式、限制式與起始解步驟數，不代表實際建立數。</summary>
         /// <returns>例：<c>模型=Canonical | 變數=3 目標式=1 限制式=4 起始解=0</c>。</returns>
         public string ModelSummary()
         {
@@ -79,21 +69,15 @@ namespace OptimFoundation.Cplex
         }
 
 
-        /// <summary>
-        /// 加入一個建立目標式的步驟：當下以 args 建立 TObjective，套用時呼叫它的 Build(OptEngine)。
-        /// args 依建構子參數順序傳入；型別在執行期比對，找不到符合的建構子或 Build(OptEngine) 時當場丟例外。
-        /// </summary>
+        /// <summary>以 args 建立 TObjective，套用時呼叫其 Build(OptEngine)。</summary>
         public OptModel AddObjective<TObjective>(params object[] args)
             => AddObjective(CreateBuildStep(typeof(TObjective), args, nameof(AddObjective)));
 
-        /// <summary>
-        /// 加入一個建立限制式的步驟：當下以 args 建立 TConstraint，套用時呼叫它的 Build(OptEngine)。
-        /// args 依建構子參數順序傳入；型別在執行期比對，找不到符合的建構子或 Build(OptEngine) 時當場丟例外。
-        /// </summary>
+        /// <summary>以 args 建立 TConstraint，套用時呼叫其 Build(OptEngine)。</summary>
         public OptModel AddConstraints<TConstraint>(params object[] args)
             => AddConstraints(CreateBuildStep(typeof(TConstraint), args, nameof(AddConstraints)));
 
-        // 物件在組裝時建立一次，實驗的每個 trial 都對同一個物件呼叫 Build。
+        // 每個 trial 都重用同一個建模物件。
         private Action<OptEngine> CreateBuildStep(Type type, object[] args, string caller)
         {
             MethodInfo build = type.GetMethod("Build", BindingFlags.Public | BindingFlags.Instance, null, new[] { typeof(OptEngine) }, null);

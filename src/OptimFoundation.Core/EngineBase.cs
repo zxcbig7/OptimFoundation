@@ -46,7 +46,7 @@ namespace OptimFoundation.Core
     }
 
 
-    /// <summary>求解引擎共用的操作：建立模型、求解，以及讀取解值與求解紀錄。EngineBase 提供共用實作。</summary>
+    /// <summary>求解引擎的共用操作：建模、求解、讀解與取得紀錄。</summary>
     public interface ISolverEngine : IDisposable
     {
         /// <summary>本引擎使用的求解設定。</summary>
@@ -58,7 +58,7 @@ namespace OptimFoundation.Core
         /// <summary>最近一次 Solve() 記錄的求解狀態、耗時與結果；尚未求解為 null。</summary>
         SolveMetrics LastMetrics { get; }
 
-        /// <summary>目前模型的問題類型（LP / MILP / IP / BP）。每次讀取都依求解器內的變數與特殊結構重新判定，求解前即可讀取。</summary>
+        /// <summary>目前模型類型（LP、MILP、IP 或 BP），建模後即可讀取。</summary>
         ModelType ModelType { get; }
 
         /// <summary>建立求解器模型並套用設定；建立變數或限制式前必須先呼叫。</summary>
@@ -73,18 +73,15 @@ namespace OptimFoundation.Core
         /// <summary>依變數全名取得解值（TypeName@s1@s2@…）；必須在求解成功後呼叫。</summary>
         double GetVariableValue(string name);
 
-        /// <summary>取解結果字典；varTypeName = null 回傳所有變數，否則只回該型別（名稱為 TypeName 或以 "TypeName@" 開頭）。</summary>
+        /// <summary>取得解值；未指定型別時回傳全部變數。</summary>
         IReadOnlyDictionary<string, double> GetSolution(string varTypeName = null);
 
-        /// <summary>
-        /// 以「變數全名 → 值」提供一組 MIP start；名稱格式同 <see cref="GetSolution"/>，可直接把上一個 engine 的解接過來。
-        /// 必須在模型建完、Solve() 之前呼叫。LP 模型不使用 MIP start，會記錄警告後略過。
-        /// </summary>
-        /// <returns>實際套用的變數數；略過時為 0。</returns>
+        /// <summary>設定 MIP start，可直接使用另一個 engine 的解；請在建模後、Solve 前呼叫。</summary>
+        /// <returns>實際套用的變數數；未套用時為 0。</returns>
         int AddMIPStart(IReadOnlyDictionary<string, double> values, string name = null);
     }
 
-    /// <summary>特殊限制式的選用介面（SOS1/2、indicator、lazy）；只有支援的 solver 實作。</summary>
+    /// <summary>支援特殊限制式的 solver 才會實作此介面。</summary>
     public interface ISpecialConstraints<TVar, TExpr>
     {
         /// <summary>SOS1：這組變數中最多只有一個可以非零。</summary>
@@ -189,10 +186,7 @@ namespace OptimFoundation.Core
         public const double Infinity = 1E20;
     }
 
-    /// <summary>
-    /// 管理變數、雙側 expression pool 與軟性罰分；子類別實作求解器操作。
-    /// TModel/TVar/TExpr/TConstr 分別為原生模型、變數、運算式與限制式型別。
-    /// </summary>
+    /// <summary>求解引擎基底類別；子類別負責實際呼叫 solver。</summary>
     public abstract class EngineBase<TModel, TVar, TExpr, TConstr> : ISolverEngine, ITrajectorySource
     {
         /// <summary>各 solver 的模型物件（CPLEX->Cplex …）；LoadConfig() 建立、Dispose() 釋放。</summary>
@@ -206,33 +200,28 @@ namespace OptimFoundation.Core
         /// <summary>Variables 字典中的變數總數，包含軟性限制式自動加入的彈性變數。</summary>
         public int VariableCount => Variables.Count;
 
-        /// <summary>
-        /// 目前模型的問題類型：無 Integer / Binary → LP；連續與 Integer / Binary 並存 → MILP；
-        /// 全為 Binary → BP；無連續且含 Integer → IP。
-        /// 每次從求解器模型重新判定，適用於自建與匯入模型，求解前即可讀取。
-        /// 軟性限制式的彈性變數是連續變數，因此 IP / BP 模型加了軟性限制式會判定為 MILP。
-        /// </summary>
+        /// <summary>依 solver 模型重新判定問題類型，因此匯入模型也適用；加入軟性限制式後，IP/BP 會成為 MILP。</summary>
         public ModelType ModelType => ResolveModelType(ReadModelComposition());
 
-        /// <summary>建構時傳入的求解器組態；由各 engine 在 LoadConfig() 內逐項套用到 solver。</summary>
+        /// <summary>建構時傳入的求解器設定。</summary>
         public ISolverConfig SolverConfig { get; protected set; }
 
-        /// <summary>求解狀態；各 engine 完成 SolveCore() 後會寫入結果，未求解前為 NotSolved。</summary>
+        /// <summary>求解狀態；未求解前為 NotSolved。</summary>
         public SolveStatus Status { get; protected set; } = SolveStatus.NotSolved;
 
-        /// <summary>求得的最佳目標值；SolveCore() 完成後會寫入結果，未求解前為 0。</summary>
+        /// <summary>求得的最佳目標值；未求解前為 0。</summary>
         public double BestObjValue { get; protected set; }
 
-        /// <summary>求解結束時的 MIP gap（相對誤差）；SolveCore() 完成後會寫入結果，LP 問題為 0。</summary>
+        /// <summary>求解結束時的 MIP gap；LP 問題為 0。</summary>
         public double MIPGap { get; protected set; }
 
-        /// <summary>最近一次 Solve() 的狀態、耗時與結果，由各求解器引擎填入。</summary>
+        /// <summary>最近一次求解的狀態、耗時與結果。</summary>
         public SolveMetrics LastMetrics { get; protected set; }
 
         /// <summary>已建立的限制式數量；預設為 0，由需要提供此數量的引擎覆寫。</summary>
         public virtual int ConstraintCount => 0;
 
-        // Expected 為預期建立數，Actual 為成功建立數。
+        // Expected 是預期建立數，Actual 是成功建立數。
         private sealed class BuildCount
         {
             /// <summary>預期建立數：各維度所有組合的變數數量，或嘗試建立的限制式條數。</summary>
@@ -249,20 +238,15 @@ namespace OptimFoundation.Core
         // 追蹤引用以列出 CPLEX 未收進模型的變數名稱。
         private readonly HashSet<TVar> _referencedVariables = new HashSet<TVar>();
 
-        /// <summary>
-        /// 各變數型別的預期與實際建立數，與摘要 log 相同。
-        /// 每次讀取都回傳當下的複本，修改複本不影響引擎。
-        /// </summary>
+        /// <summary>各變數型別的預期與實際建立數；每次讀取都回傳複本。</summary>
         public IReadOnlyDictionary<string, (int Expected, int Actual)> VariableBuildCounts
             => _variableBuildCounts.ToDictionary(kv => kv.Key, kv => (kv.Value.Expected, kv.Value.Actual));
 
-        /// <summary>各限制式群組的「預期 / 實際」建立數；和 <see cref="VariableBuildCounts"/> 一樣，每次讀取都回傳當下的複本。</summary>
+        /// <summary>各限制式群組的預期與實際建立數；每次讀取都回傳複本。</summary>
         public IReadOnlyDictionary<string, (int Expected, int Actual)> ConstraintBuildCounts
             => _constraintBuildCounts.ToDictionary(kv => kv.Key, kv => (kv.Value.Expected, kv.Value.Actual));
 
-        /// <summary>
-        /// 依序嘗試無參數統計方法；皆不存在或呼叫失敗時回傳 null。
-        /// </summary>
+        /// <summary>依序嘗試統計方法；皆不可用時回傳 null。</summary>
         protected static long? TryInvokeLong(object target, params string[] methodNames)
         {
             if (target == null) return null;

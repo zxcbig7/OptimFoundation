@@ -94,7 +94,7 @@ namespace OptimFoundation.Core
             }
         }
 
-        // key 值不合法（與模型命名同一套規則）→ 記 InvalidKey 並回 null，該列不參與重複比對
+        // 不合法的 key 會記錄問題，並略過重複檢查。
         private static string ComposeKey(
             string source, string[] indexFields, int row, IReadOnlyList<object> values, List<DataIssue> issues)
         {
@@ -130,10 +130,10 @@ namespace OptimFoundation.Core
     #endregion
 
     #region Data 內容
-    /// <summary>呼叫專案提供的 factory 載入資料；若結果是 DataContext，會驗證資料並禁止再透過框架方法修改。</summary>
+    /// <summary>透過 factory 載入資料；DataContext 會先驗證再凍結。</summary>
     public static class OptData
     {
-        /// <summary>呼叫 factory 取得資料；結果是 <see cref="DataContext"/> 時先登記並驗證資料，再凍結。</summary>
+        /// <summary>載入資料；DataContext 會先驗證再凍結。</summary>
         public static T Load<T>(System.Func<T> factory)
         {
             if (factory == null)
@@ -161,7 +161,7 @@ namespace OptimFoundation.Core
         }
     }
 
-    /// <summary>把一筆 Parameter 的維度值與數值欄位分開保存，供資料驗證與問題回報使用。</summary>
+    /// <summary>Parameter 的維度值與數值欄位。</summary>
     public sealed class ParamRow
     {
         /// <summary>依維度順序排列的 key 值。</summary>
@@ -178,7 +178,7 @@ namespace OptimFoundation.Core
         }
     }
 
-    /// <summary>保存 Set 的維度欄名與各列的維度值，供資料驗證使用。</summary>
+    /// <summary>供資料驗證使用的 Set 註冊資料。</summary>
     public sealed class SetRegistration
     {
         /// <summary>Set row 類別名稱。</summary>
@@ -199,7 +199,7 @@ namespace OptimFoundation.Core
         }
     }
 
-    /// <summary>保存 Parameter 的維度欄名與各列資料，供資料驗證使用。</summary>
+    /// <summary>供資料驗證使用的 Parameter 註冊資料。</summary>
     public sealed class ParamRegistration
     {
         /// <summary>Parameter row 類別名稱。</summary>
@@ -220,17 +220,17 @@ namespace OptimFoundation.Core
         }
     }
 
-    /// <summary>Dataload 的基底類別，負責登記與驗證資料；Set 和 Parameter 清單由專案以 List&lt;T&gt; 保存。</summary>
+    /// <summary>Dataload 的基底類別，負責登記與驗證資料。</summary>
     public abstract class DataContext
     {
         private bool _isFrozen;
         private readonly List<SetRegistration> _sets = new();
         private readonly List<ParamRegistration> _params = new();
 
-        /// <summary>載入時資料驗證發現的問題；每筆都已寫成 Warning，不阻擋後續建模。</summary>
+        /// <summary>資料驗證發現的問題；只記 Warning，不中斷建模。</summary>
         public IReadOnlyList<DataIssue> DataIssues { get; private set; } = Array.Empty<DataIssue>();
 
-        /// <summary>登記 Set 資料與維度欄名，用來檢查重複維度組合並輸出資料摘要。</summary>
+        /// <summary>登記 Set 資料，供重複 key 檢查與摘要使用。</summary>
         protected void RegisterSet<T>(
             IReadOnlyList<T> rows,
             string[] indexFields,
@@ -244,7 +244,7 @@ namespace OptimFoundation.Core
                 rows.Select(indexOf).ToArray()));
         }
 
-        /// <summary>登記 Parameter 資料、維度欄名與數值欄位，用來檢查重複 key、數值合理性並輸出資料摘要。</summary>
+        /// <summary>登記 Parameter 資料，供資料檢查與摘要使用。</summary>
         protected void RegisterParam<T>(
             IReadOnlyList<T> rows,
             string[] indexFields,
@@ -259,7 +259,7 @@ namespace OptimFoundation.Core
                 rows.Select(row => new ParamRow(indexOf(row), numbersOf(row))).ToArray()));
         }
 
-        /// <summary>由 Generator 產生的覆寫逐一呼叫 RegisterSet / RegisterParam；<see cref="OptData.Load{T}"/> 載入資料時呼叫。</summary>
+        /// <summary>Generator 在載入時覆寫此方法，逐一登記 Set 和 Parameter。</summary>
         protected virtual void RegisterAll() { }
 
         internal void Initialize()
@@ -279,7 +279,7 @@ namespace OptimFoundation.Core
                     "資料內容已凍結", "建立模型階段不可修改", nameof(GuardMutation), member, "資料內容已凍結");
         }
 
-        /// <summary>驗證已登記的資料：問題逐筆寫 Warning、不阻擋建模，最後印資料摘要。</summary>
+        /// <summary>驗證已登記的資料，記錄問題並輸出摘要。</summary>
         protected void ValidateData()
         {
             DataIssues = DataValidator.Validate(_sets, _params);
@@ -296,7 +296,7 @@ namespace OptimFoundation.Core
                 Logging.Info($"[參數載入完成] 名稱={parameter.Name} 索引={FormatIndex(parameter.IndexFields)} 資料列數量={parameter.RowCount}");
         }
 
-        // 多個維度欄名用 | 分隔；scalar 參數沒有維度
+        // Scalar 參數沒有維度欄名。
         private static string FormatIndex(IEnumerable<string> fields)
         {
             string joined = string.Join("|", fields);

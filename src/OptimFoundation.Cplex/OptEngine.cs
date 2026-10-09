@@ -64,10 +64,7 @@ namespace OptimFoundation.Cplex
         /// <summary>使用空的 CplexConfig 與預設 ProjectConfig 建立引擎；求解器參數沿用 CPLEX 預設值。</summary>
         public OptEngine() : this(new CplexConfig(), new ProjectConfig()) { }
 
-        /// <summary>
-        /// 指定 CPLEX 如何檢查或補齊 <see cref="EngineBase{TModel, TVar, TExpr, TConstr}.AddMIPStart"/> 傳入的起始解。
-        /// 預設 Auto；前段解只含部分變數時可用 SolveFixed / Repair 讓 CPLEX 補齊。檔案讀入的 start（<see cref="ReadSolution"/>）以檔案內容為準。
-        /// </summary>
+        /// <summary>指定 CPLEX 處理 AddMIPStart 起始解的方式；部分解可用 SolveFixed 或 Repair 補齊。</summary>
         public MIPStartEffort MipStartEffort { get; set; } = MIPStartEffort.Auto;
 
         #region 跑一次 OptModel（OptProject.Production 與 OptExperiment 共用的唯一執行路徑）
@@ -81,10 +78,7 @@ namespace OptimFoundation.Cplex
         /// <summary>從最近一次 <see cref="RunModel"/> 建好 CPLEX 模型起，到現在經過的時間（CPLEX 時鐘）。</summary>
         internal TimeSpan ElapsedSinceRunStart => TimeSpan.FromSeconds(Model.GetCplexTime() - _runStartCplexTime);
 
-        /// <summary>
-        /// 依序初始化引擎、套用模型、執行 beforeSolve、求解，最後回傳含模型名稱的 <see cref="Trial"/> 紀錄。
-        /// 呼叫端負責複製設定、建立與釋放引擎；正式環境會保留引擎供取解，實驗則在記錄結果後釋放。
-        /// </summary>
+        /// <summary>建立引擎、套用模型、執行 beforeSolve 後求解，並回傳 Trial。</summary>
         /// <param name="model">要套用的模型定義。</param>
         /// <param name="label">Trial 標籤（AddSolverConfig / AddTrial 給的設定名）。</param>
         /// <param name="captureTrajectory">是否開收斂軌跡；callback 會改變搜尋路徑，正式環境不開。</param>
@@ -128,17 +122,10 @@ namespace OptimFoundation.Cplex
         /// <summary>CPLEX 以 MIPInfoCallback 支援收斂軌跡，恆為 true。</summary>
         public override bool SupportsTrajectory => true;
 
-        /// <summary>
-        /// 開始記錄求解期間的目標值、best bound 與 MIP gap；必須在 Solve() 前呼叫。
-        /// 記錄用的 MIPInfoCallback 不會關閉 dynamic search，但會改變搜尋路徑、通常讓求解變慢，因此預設不開啟。
-        /// 只記 CPLEX 實際呼叫 callback 時觀察到的點；presolve 或 root 就解完時 callback 不會被呼叫，軌跡為空。
-        /// </summary>
+        /// <summary>開始記錄目標值、best bound 與 MIP gap；須在 Solve 前呼叫，callback 可能增加求解時間。</summary>
         public override void EnableTrajectory() => _captureTrajectory = true;
 
-        /// <summary>
-        /// CPLEX 在分支定界搜尋（B&amp;B）期間定期呼叫此 callback，記錄求解進度。
-        /// 已知最佳可行解改善，或距上次記錄已達 MinIntervalMs 時新增一筆；最多記錄 MaxPoints 筆，並用 lock 避免多執行緒同時修改。
-        /// </summary>
+        /// <summary>CPLEX 的 branch-and-bound callback；限制取樣頻率與筆數，避免記錄過多。</summary>
         private sealed class TrajectoryCallback : ILOG.CPLEX.Cplex.MIPInfoCallback
         {
             private const double MinIntervalMs = 200.0;
@@ -249,13 +236,9 @@ namespace OptimFoundation.Cplex
             Logging.Info($"[模型匯出完成] 路徑={path} 格式={format}");
         }
 
-        /// <summary>
-        /// 從檔案讀入模型。必須先呼叫 <c>Build()</c>，建立 CPLEX 物件並套用 CplexConfig；
-        /// 本方法只換模型內容，不動任何 solver 參數。
-        /// </summary>
+        /// <summary>從檔案讀入模型；只替換模型內容，不會重設 solver 參數。</summary>
         /// <remarks>
-        /// 取代目前模型並重建變數與限制式索引，保留取解、統計與 IIS 功能。
-        /// 型別化取解須符合 TypeName@… 命名；不符時回空，請改用 GetVariableValue(name) 或 GetSolution()。
+        /// 讀入後會重建變數與限制式索引；型別化取解須符合 TypeName@… 命名。
         /// </remarks>
         /// <param name="fileName">
         /// 檔名或相對路徑，以 FolderDir.Model 為基準；絕對路徑原樣使用。
@@ -382,14 +365,10 @@ namespace OptimFoundation.Cplex
 
         #region 解匯入 / 匯出（.sol / .mst，MIP start pipeline）
 
-        /// <summary>
-        /// 讀入解檔，供目前模型從既有的解開始搜尋；不會取代模型內容。
-        /// .mst → CPLEX ReadMIPStarts（可含多組 start 與各自 effort）；其餘（.sol）→ CPLEX ReadSolution。
-        /// </summary>
+        /// <summary>讀入解檔作為起始解，不會取代目前模型。</summary>
         /// <remarks>
-        /// 必須在模型建好、Solve() 前呼叫；檔內的變數依名稱對應，CPLEX 會忽略模型裡不存在的名稱。
-        /// LP 讀入 .sol 後會作為後續求解的起始資訊；.mst 只適用於 MIP，LP 會記錄警告並略過。
-        /// CplexConfig.AdvancedStart = 0 時，CPLEX 不會使用起始解；本方法仍會讀檔並記錄警告。
+        /// 請在建模完成、Solve 前呼叫；找不到對應變數的項目會被忽略。
+        /// .mst 只適用於 MIP；AdvancedStart = 0 時 CPLEX 不會採用起始解。
         /// </remarks>
         /// <param name="fileName">檔名或相對路徑，以 FolderDir.Solution 為基準；絕對路徑原樣使用。</param>
         /// <returns>讀入後模型持有的 MIP start 數；LP 為 0。</returns>
@@ -617,10 +596,7 @@ namespace OptimFoundation.Cplex
             else Model.AddMIPStart(vars, vals, MipStartEffort, name);
         }
 
-        /// <summary>
-        /// 從 CPLEX 取得模型規模與 IsMIP（含半連續變數及 SOS）。
-        /// 未引用變數不計入，數量可能少於框架 VariableCount；連續變數數量以 Ncols 扣除二元及整數變數計算。
-        /// </summary>
+        /// <summary>讀取 CPLEX 實際採用的模型規模與是否含離散結構。</summary>
         protected override (int Continuous, int Integer, int Binary, bool HasDiscreteStructure) ReadModelComposition()
         {
             if (Model == null) return (0, 0, 0, false);

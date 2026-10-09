@@ -4,13 +4,7 @@ using OptimFoundation.Core;
 
 namespace OptimFoundation.Cplex
 {
-    /// <summary>
-    /// 管理求解、實驗及其輸出資源。
-    /// 建立專案時會設定 log 檔、建立所需資料夾，並刪除超過保留天數的輸出檔；實驗紀錄不會刪除。
-    /// <see cref="Production"/> 與 <see cref="Experiment"/> 回傳同一種 <see cref="OptExperiment"/>，寫法相同。
-    /// 可多次 Production；Engine / IsSuccess / Trial 保留最近一次結果，下次 Production 時釋放前一次引擎。
-    /// 多個專案需依序執行，因為 Logging 與 FolderDir 由整個 process 共用。
-    /// </summary>
+    /// <summary>管理求解、實驗與輸出檔。Logging 與 FolderDir 為 process 共用，多個專案請依序執行。</summary>
     public sealed class OptProject : IDisposable
     {
         /// <summary>建立專案。</summary>
@@ -86,20 +80,12 @@ namespace OptimFoundation.Cplex
         /// <summary>正式環境紀錄的實驗名：檔名為 {專案名}-production-trial.csv 等。</summary>
         public const string ProductionExperimentName = "production";
 
-        /// <summary>
-        /// 建立正式環境：與 <see cref="Experiment"/> 用同一組 AddProjectConfig / AddModel / AddSolverConfig / AddTrial / OnSolved / Run，差別只在預設值。
-        /// 只能一組模型 × 一組設定，多了在 Run 時丟例外、不執行；engine 留在 <see cref="Engine"/> 供取解，不開收斂軌跡，
-        /// ProjectConfig 預設 <c>new ProjectConfig()</c>，紀錄寫成 Experiment/{專案名}-production-trial.csv 與 -meta.csv（每次覆寫，不寫 -summary.csv），log 寫在專案 log。
-        /// </summary>
+        /// <summary>建立正式求解流程：只允許一組模型與設定，保留 engine 供取解，不記錄收斂軌跡。</summary>
         /// <param name="description">寫進 -meta.csv 的說明；省略時寫「正式環境紀錄：{模型名}」。</param>
         public OptExperiment Production(string description = null)
             => new OptExperiment(this, ProductionExperimentName, description, isProduction: true);
 
-        /// <summary>
-        /// 建立實驗，讓每個模型分別搭配每組求解器設定，並以 Trial 保存每次結果。
-        /// 每組跑完就釋放 engine，預設開收斂軌跡，ProjectConfig 預設 <see cref="ProjectConfig.Quiet"/>。
-        /// 建立時就把 log 切到 {專案名}-{實驗名}_exp，之後的前置動作（例：warm-up）也收在同一檔。
-        /// </summary>
+        /// <summary>建立實驗，讓每個模型搭配每組求解器設定，並保存每次結果。</summary>
         /// <param name="name">實驗名，輸出檔為 {專案名}-{實驗名}-trial.csv 等（<see cref="ProductionExperimentName"/> 留給正式環境）；同名實驗再跑一次整組覆寫。</param>
         /// <param name="description">實驗目的，寫進 -meta.csv。</param>
         public OptExperiment Experiment(string name, string description = null)

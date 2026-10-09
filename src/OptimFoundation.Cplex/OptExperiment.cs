@@ -5,14 +5,7 @@ using OptimFoundation.Core;
 
 namespace OptimFoundation.Cplex
 {
-    /// <summary>
-    /// 把每個模型分別配上每組求解器設定，各求解一次；也可用 <see cref="AddTrial"/> 指定單一模型與設定組合。
-    /// 每次求解都建立新的引擎，透過 <see cref="OptEngine.RunModel"/> 執行並留下 <see cref="Trial"/> 紀錄。
-    /// 由 <see cref="OptProject.Production"/>（正式環境）或 <see cref="OptProject.Experiment"/>（實驗）建立，寫法相同，只差預設值：
-    /// 正式環境只能一組模型 × 一組設定（多了在 Run 時丟例外、不執行），保留 engine、不開收斂軌跡、不寫 -summary.csv；
-    /// 實驗可以一對一或多對多，每組跑完就釋放 engine、開收斂軌跡、寫四個檔。
-    /// 紀錄寫成 Experiment/{FullName}-trial.csv 等，同名再跑一次整組覆寫。
-    /// </summary>
+    /// <summary>執行模型與求解器設定的組合，並把每次結果存成 Trial。</summary>
     public sealed class OptExperiment
     {
         private readonly OptProject _project;
@@ -50,19 +43,16 @@ namespace OptimFoundation.Cplex
             Logging.SetLogFileName(LogName);
         }
 
-        /// <summary>實驗名（建立時給的名稱，不含專案名）；正式環境固定為 <see cref="OptProject.ProductionExperimentName"/>。</summary>
+        /// <summary>實驗名；正式環境固定為 <see cref="OptProject.ProductionExperimentName"/>。</summary>
         public string Name { get; }
 
-        /// <summary>{專案名}-{實驗名}：實驗紀錄的檔名前綴（{FullName}-trial.csv 等），實驗的 log 檔名前綴為 {FullName}_exp。</summary>
+        /// <summary>實驗紀錄的檔名前綴：{專案名}-{實驗名}。</summary>
         public string FullName => $"{_project.Name}-{Name}";
 
         // 正式環境寫專案 log，實驗寫自己的 _exp log。
         private string LogName => _isProduction ? _project.Name : $"{FullName}_exp";
 
-        /// <summary>
-        /// 加入專案設定（solver log、LP / MPS / Sol 匯出），所有組共用，每次求解前各複製一份。
-        /// 只有一份：再加一次會覆蓋前一份並 WARN。正式環境預設 <c>new ProjectConfig()</c>，實驗預設 <see cref="ProjectConfig.Quiet"/>。
-        /// </summary>
+        /// <summary>設定所有組合共用的專案選項；重複設定會覆蓋前一份並記錄警告。</summary>
         public OptExperiment AddProjectConfig(ProjectConfig config)
         {
             if (config == null)
@@ -76,10 +66,7 @@ namespace OptimFoundation.Cplex
             return this;
         }
 
-        /// <summary>
-        /// 是否記錄目標值、最佳界限與 MIP gap 的變化；正式環境預設 false，實驗預設 true。
-        /// callback 影響搜尋路徑與耗時；與正式環境比較時應關閉。
-        /// </summary>
+        /// <summary>是否記錄目標值、最佳界限與 MIP gap 的變化；callback 可能增加求解時間。</summary>
         public OptExperiment CaptureTrajectory(bool enabled)
         {
             _captureTrajectory = enabled;
