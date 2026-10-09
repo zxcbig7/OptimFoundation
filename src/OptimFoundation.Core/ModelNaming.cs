@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Text;
 
 namespace OptimFoundation.Core
 {
@@ -19,12 +20,16 @@ namespace OptimFoundation.Core
         /// <summary>解析日期 token 時可接受的格式：帶時分秒與純日期兩種。</summary>
         internal static readonly string[] DateFormats = [DateTimeFormat, DateFormat];
 
+        /// <summary>名稱上限（UTF-8 位元組）：CPLEX 讀 .lp 時超過就截斷，截斷後不同名稱可能撞名。</summary>
+        internal const int MaxNameBytes = 254;
+
+        // 匯出 .lp 時 CPLEX 不接受的字元：只要有一個名稱含這些字元，整份 .lp 的名稱都會被改掉。@ 是維度分隔符。
         private static readonly char[] InvalidTokenCharacters =
         [
-            '+', '-', '*', '/', '^', '<', '>', '=', ':', ',', '\\', Separator
+            '+', '-', '*', '/', '^', '<', '>', '=', ':', '\\', '[', ']', '|', Separator
         ];
 
-        /// <summary>把一個維度值轉成名稱片段，並檢查是否含空白或保留字元；不合法時拋出例外。</summary>
+        /// <summary>把一個維度值轉成名稱片段，並檢查是否含空白、控制字元或保留字元；不合法時拋出例外。</summary>
         internal static string Token(string context, object? value)
         {
             if (!TryToken(value, out string? token, out string? reason))
@@ -105,7 +110,7 @@ namespace OptimFoundation.Core
         internal static string Compose(string head, params object?[] dims)
         {
             ValidateToken("模型名稱開頭", head);
-            if (char.IsDigit(head[0]) || head[0] == '.')
+            if (IsInvalidLeadingCharacter(head[0]))
                 ThrowInvalid("模型名稱開頭", head, "開頭字元不合法");
             if (dims == null)
                 ThrowInvalid(head, null, "維度陣列為空");
@@ -133,9 +138,11 @@ namespace OptimFoundation.Core
                 }
             }
 
-            return tokens.Count == 0
+            string name = tokens.Count == 0
                 ? head
                 : head + Separator + string.Join(Separator, tokens);
+            ValidateLength(head, name);
+            return name;
         }
 
         /// <summary> 檢查呼叫端直接傳入的完整名稱，包括開頭與 @ 分隔的每一段；合法時原樣回傳。</summary>
@@ -146,13 +153,27 @@ namespace OptimFoundation.Core
 
             string[] tokens = name.Split(Separator);
             ValidateToken($"{context} 開頭", tokens[0]);
-            if (char.IsDigit(tokens[0][0]) || tokens[0][0] == '.')
+            if (IsInvalidLeadingCharacter(tokens[0][0]))
                 ThrowInvalid($"{context} 開頭", tokens[0], "開頭字元不合法");
 
             for (int index = 1; index < tokens.Length; index++)
                 ValidateToken($"{context} 片段 #{index}", tokens[index]);
 
+            ValidateLength(context, name);
             return name;
+        }
+
+        // .lp 會把數字、句點、e/E 開頭的名稱改名（e/E 保留給科學記號）。
+        // 非 ASCII 首字元的 UTF-16 低位元組落在控制字元區（例：上 U+4E0A、三 U+4E09）時，
+        // CPLEX 建模直接報 Error 1236 Control character，只有開頭會這樣，放在中間沒事。
+        private static bool IsInvalidLeadingCharacter(char c)
+            => char.IsDigit(c) || c == '.' || c == 'e' || c == 'E'
+                || (c > 0x7F && (c & 0xFF) is (>= 0x01 and <= 0x1F) or 0x7F);
+
+        private static void ValidateLength(string context, string name)
+        {
+            if (Encoding.UTF8.GetByteCount(name) > MaxNameBytes)
+                ThrowInvalid(context, name, $"超過{MaxNameBytes}位元組");
         }
 
         /// <summary>驗證已格式化 token；違規時先記 Error Log 再拋例外。</summary>
@@ -172,8 +193,12 @@ namespace OptimFoundation.Core
                 return "含保留字元";
 
             for (int index = 0; index < token.Length; index++)
+            {
                 if (char.IsWhiteSpace(token[index]))
                     return "含空白字元";
+                if (char.IsControl(token[index]))
+                    return "含控制字元";
+            }
 
             return null;
         }

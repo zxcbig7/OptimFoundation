@@ -1233,6 +1233,16 @@ public sealed class Constraint_ProduceOnlyWhenOpen : ConstraintBase
 
 日期維度在模型名稱裡寫成 `yyyy_MM_dd`，帶時分秒時為 `yyyy_MM_dd_HH_mm_ss`；CSV 的日期對應 `yyyy-MM-dd` 與 `yyyy-MM-dd HH:mm:ss`。粒度到秒，秒以下精度會被拒絕（捨去後不同時刻會撞名）。
 
+名稱規則依 CPLEX 匯出 `.lp` 的實測：只要有一個名稱 CPLEX 不接受，整份 `.lp` 的名稱都會被改成 `名稱#序號`，讀回後全部對不上。所以框架在建立變數與限制式時就擋下，記錯誤日誌後丟 `ArgumentException`：
+
+| 位置 | 擋下 |
+| --- | --- |
+| 任何位置 | `+ - * / ^ < > = : \ [ ] \|`、`@`（維度分隔符）、空白、控制字元 |
+| 名稱開頭（類別名或明確傳入的名稱） | 數字、`.`、`e` / `E`（例：`Energy`）、UTF-16 低位元組落在控制字元區的非 ASCII 字（例：`上`、`三`，CPLEX 建模直接報 Error 1236） |
+| 整個名稱 | 超過 254 位元組（UTF-8）；`.lp` 讀回時會截斷 |
+
+其餘都放行，例如 `,`、`! " # $ % & ' ( ) ; ? _ { } ~`、不在開頭的 `.`、中文。中文靠 `CplexConfig.FileEncoding`：沒指定時框架設成 UTF-8（CPLEX 本身預設 ISO-8859-1，會把中文改成 `_`）。
+
 ---
 
 ## 14. 實作資料驗收與解驗證

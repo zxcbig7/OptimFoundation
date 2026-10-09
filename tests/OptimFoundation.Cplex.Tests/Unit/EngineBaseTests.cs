@@ -403,7 +403,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
         public void CreateEqual_EmptyPool_ReturnsFalse()
         {
             var engine = NewEngine();
-            bool result = engine.CreateEqual("EmptyCon");
+            bool result = engine.CreateEqual("NoTermCon");
             Assert.False(result);
             Assert.Empty(engine.BuiltConstraints);
         }

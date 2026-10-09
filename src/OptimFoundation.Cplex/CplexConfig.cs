@@ -948,7 +948,7 @@ namespace OptimFoundation.Cplex
 
         /// <summary>
         /// <c>Param.Read.FileEncoding</c>：讀寫檔案的編碼。
-        /// <para>值：有效的編碼名稱（code page）；預設 ISO-8859-1 或空字串。</para>
+        /// <para>值：有效的編碼名稱（code page）；null = 框架用 UTF-8（CPLEX 本身預設 ISO-8859-1，匯出時會把中文名稱改成 _）。</para>
         /// </summary>
         public string FileEncoding { get; set; }
 

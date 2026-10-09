@@ -157,6 +157,40 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.Equal(4.0, solution["VarS@a"], 6);
         }
 
+        [Theory(DisplayName = "名稱含逗號、中文與 LP 可用符號：匯出再讀入名稱不變")]
+        [InlineData(".lp")]
+        [InlineData(".mps")]
+        public void ReadModel_NamesWithCommaAndChinese_RoundTripUnchanged(string extension)
+        {
+            if (!CplexAvailable) return;
+
+            var dims = new List<string> { "台北", "a,b", "x!\"#$%&'()?{}~`;_." };
+            string fileName = $"ImportNameTest_{Guid.NewGuid():N}{extension}";
+            string[] expected;
+            using (var source = NewEngine())
+            {
+                source.BuildCVs<VarS>(0, 100, dims);
+                expected = source.GetAllVarNames();
+                foreach (string dim in dims)
+                    source.AddLHS(1.0, new VarS { S = dim });
+                source.CreateGreaterEqual(10, "需求,總量");
+                foreach (string dim in dims)
+                    source.AddLHS(1.0, new VarS { S = dim });
+                source.CreateMinimize();
+                source.ExportModel(fileName);
+            }
+
+            string text = File.ReadAllText(FolderDir.Model.GetPathFile(fileName));
+            Assert.Contains("需求,總量", text);
+            Assert.DoesNotContain("#0", text);
+
+            using var engine = NewEngine();
+            engine.ReadModel(fileName);
+            Assert.Equal(expected.Order(StringComparer.Ordinal), engine.GetAllVarNames().Order(StringComparer.Ordinal));
+            Assert.True(engine.Solve());
+            Assert.Equal(10.0, engine.GetObjectiveValue(), 6);
+        }
+
         [Fact(DisplayName = "匯入後依 solver 型別分類取解可用；名稱沿用 TypeName@dim 時型別化取解也可用")]
         public void ReadModel_TypeBasedAndTypedSetSolutionBothWork()
         {
@@ -284,7 +318,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
                 .AddConstraints(engine =>
                 {
                     engine.AddLHS(1.0, "VarS@a");
-                    engine.CreateGreaterEqual(4, "ExtraFloor");
+                    engine.CreateGreaterEqual(4, "AddedFloor");
                 });
 
             using var project = new OptProject("ImportAppend_" + Guid.NewGuid().ToString("N"), retentionDays: 0);

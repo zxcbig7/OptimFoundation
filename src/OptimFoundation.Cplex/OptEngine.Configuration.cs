@@ -1029,11 +1029,10 @@ namespace OptimFoundation.Cplex
                 Model.SetParam(Param.Read.DataCheck, config.DataCheck.Value);
                 Logging.Info($"[CPLEX 參數設定] DataCheck={config.DataCheck.Value}");
             }
-            if (!string.IsNullOrWhiteSpace(config.FileEncoding))
-            {
-                Model.SetParam(Param.Read.FileEncoding, config.FileEncoding);
-                Logging.Info($"[CPLEX 參數設定] FileEncoding={config.FileEncoding}");
-            }
+            // 沒指定時用 UTF-8：CPLEX 預設 ISO-8859-1 會把中文名稱改成 _，並連帶讓整份模型檔改名；讀檔也依這個編碼解碼。
+            string fileEncoding = string.IsNullOrWhiteSpace(config.FileEncoding) ? "UTF-8" : config.FileEncoding;
+            Model.SetParam(Param.Read.FileEncoding, fileEncoding);
+            Logging.Info($"[CPLEX 參數設定] FileEncoding={fileEncoding}");
             if (!string.IsNullOrWhiteSpace(config.IntSolFilePrefix))
             {
                 Model.SetParam(Param.Output.IntSolFilePrefix, config.IntSolFilePrefix);
