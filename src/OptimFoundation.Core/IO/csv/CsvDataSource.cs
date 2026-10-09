@@ -24,7 +24,8 @@ namespace OptimFoundation.Core.IO
                     new ArgumentNullException(nameof(fileName), "fileName 不得為空"),
                     "CSV 資料來源不合法", null, nameof(LoadRows), fileName, "檔名為空");
 
-            using var reader = new StreamReader(FolderDir.Input.GetPathFile(EnsureCsv(fileName)), Encoding.UTF8);
+            // 遇到非 UTF-8 位元組直接丟例外，不讓中文 key 悄悄變成 U+FFFD；有 BOM 時依 BOM 判斷。
+            using var reader = new StreamReader(FolderDir.Input.GetPathFile(EnsureCsv(fileName)), StrictUtf8);
             foreach (var row in CsvCtrl.ParseCsv(reader))
                 yield return row;
         }
@@ -40,6 +41,12 @@ namespace OptimFoundation.Core.IO
             {
                 return TabularData.ToDataTable(LoadRows(fileName), fileName);
             }
+            catch (DecoderFallbackException ex)
+            {
+                throw Logging.ErrorOnce(
+                    new InvalidDataException($"CSV 不是 UTF-8 編碼：{fileName}；請另存成 UTF-8（Excel 選「CSV UTF-8」）", ex),
+                    "CSV 編碼不合法", null, nameof(LoadData), fileName, "不是UTF-8編碼");
+            }
             catch (Exception ex)
             {
                 Logging.ErrorOnce(ex, "CSV 載入失敗", null, nameof(LoadData), fileName,
@@ -47,6 +54,8 @@ namespace OptimFoundation.Core.IO
                 throw;
             }
         }
+
+        private static readonly Encoding StrictUtf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
         private static string EnsureCsv(string fileName)
             => fileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) ? fileName : fileName + ".csv";

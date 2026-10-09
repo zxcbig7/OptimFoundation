@@ -45,15 +45,15 @@ namespace FJSP_BASIC_BRICK
                 foreach (var op in data.set_Operation)
                 {
                     var matched = data.set_Eqp
-                        .Where(e => assignValues[$"VariableB_Assign@{lot}@{op}@{e}"] > 0.5)
+                        .Where(e => assignValues[new VariableB_Assign { Lot = lot, Operation = op, Eqp = e }.ToString()] > 0.5)
                         .ToList();
                     if (matched.Count != 1)
                         throw new InvalidOperationException(
-                            $"AssignOneEqp 違反 ({lot},{op})：指派了 {matched.Count} 台機台，預期恰好一台。");
+                            $"AssignOneEqp 違反 ({lot.Lot},{op.Operation})：指派了 {matched.Count} 台機台，預期恰好一台。");
 
                     assignedEqp[(lot, op)] = matched[0];
-                    start[(lot, op)] = startValues[$"VariableC_Start@{lot}@{op}"];
-                    complete[(lot, op)] = completeValues[$"VariableC_Complete@{lot}@{op}"];
+                    start[(lot, op)] = startValues[new VariableC_Start { Lot = lot, Operation = op }.ToString()];
+                    complete[(lot, op)] = completeValues[new VariableC_Complete { Lot = lot, Operation = op }.ToString()];
                 }
             }
 
@@ -86,14 +86,14 @@ namespace FJSP_BASIC_BRICK
                     var nextOp = _data.set_Operation[i + 1];
                     if (_start[(lot, nextOp)] < _complete[(lot, op)] - eps)
                         throw new InvalidOperationException(
-                            $"RoutePrecedence 違反 {lot} {op}→{nextOp}：Start {_start[(lot, nextOp)]} < Complete {_complete[(lot, op)]}。");
+                            $"RoutePrecedence 違反 {lot.Lot} {op.Operation}→{nextOp.Operation}：Start {_start[(lot, nextOp)]} < Complete {_complete[(lot, op)]}。");
                 }
 
                 // MakespanDef：Makespan ≥ 最後一道完成
                 var lastOp = _data.set_Operation[_data.set_Operation.Count - 1];
                 if (_makespan < _complete[(lot, lastOp)] - eps)
                     throw new InvalidOperationException(
-                        $"MakespanDef 違反 {lot}：Makespan {_makespan} < Complete {_complete[(lot, lastOp)]}。");
+                        $"MakespanDef 違反 {lot.Lot}：Makespan {_makespan} < Complete {_complete[(lot, lastOp)]}。");
 
                 // CompleteDef：Complete = Start + ProcessTime（所指派機台）
                 foreach (var op in _data.set_Operation)
@@ -103,7 +103,7 @@ namespace FJSP_BASIC_BRICK
                         lot, op, _assignedEqp[(lot, op)])?.QTY ?? 0.0;
                     if (Math.Abs(_complete[(lot, op)] - _start[(lot, op)] - procTime) > 1e-4)
                         throw new InvalidOperationException(
-                            $"CompleteDef 違反 {lot} {op}：Complete {_complete[(lot, op)]} ≠ Start {_start[(lot, op)]} + ProcessTime {procTime}。");
+                            $"CompleteDef 違反 {lot.Lot} {op.Operation}：Complete {_complete[(lot, op)]} ≠ Start {_start[(lot, op)]} + ProcessTime {procTime}。");
                 }
             }
 
@@ -135,7 +135,7 @@ namespace FJSP_BASIC_BRICK
             foreach (var lot in _data.set_Lot)
                 foreach (var op in _data.set_Operation)
                     Console.WriteLine(
-                        $"{lot} {op} -> {_assignedEqp[(lot, op)]}  [{_start[(lot, op)]:0.##}, {_complete[(lot, op)]:0.##}]");
+                        $"{lot.Lot} {op.Operation} -> {_assignedEqp[(lot, op)]}  [{_start[(lot, op)]:0.##}, {_complete[(lot, op)]:0.##}]");
 
             Console.WriteLine($"Makespan = {_makespan:0.##}");
         }

@@ -207,7 +207,7 @@ namespace OptimFoundation.Modeling
                 : badDimType == null ? null : DimensionTypeRule;
 
             return new EmitModel(NamespaceOf(symbol), symbol.Name, SetRowBaseFqn,
-                AddQty: false, AddCtors: false, Meta: string.Empty,
+                AddQty: false, AddCtors: true, Meta: string.Empty,
                 NamingViolation: diag, DiagLocation: symbol.Locations.FirstOrDefault(),
                 Props: props, DiagArg: badDimType ?? symbol.Name, NameIssues: nameIssues);
         }

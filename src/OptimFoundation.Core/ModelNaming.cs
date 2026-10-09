@@ -90,6 +90,10 @@ namespace OptimFoundation.Core
             return token;
         }
 
+        /// <summary>依 <see cref="DateFormats"/> 解析名稱片段格式的日期，讓框架寫出的日期（例：解檔的 2026_06_01）讀得回來。</summary>
+        internal static bool TryParseDate(string text, out DateTime date)
+            => DateTime.TryParseExact(text, DateFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out date);
+
         // 不接受的日期會以保留完整精度的 "O" 格式回傳，供錯誤訊息顯示。
         private static bool TryFormatDate(DateTime value, out string token)
         {
@@ -121,16 +125,11 @@ namespace OptimFoundation.Core
                 object? value = dims[index];
                 if (value is SetRowBase row)
                 {
-                    string rowText = row.ToString();
-                    if (string.IsNullOrEmpty(rowText))
-                        ThrowInvalid($"{head} 維度 #{index + 1}", rowText, "集合資料列沒有任何維度");
-
-                    string[] rowTokens = rowText.Split(Separator);
-                    for (int rowIndex = 0; rowIndex < rowTokens.Length; rowIndex++)
-                    {
-                        ValidateToken($"{head} 維度 #{index + 1}.{rowIndex + 1}", rowTokens[rowIndex]);
-                        tokens.Add(rowTokens[rowIndex]);
-                    }
+                    // 直接取維度值，不經 ToString（Set 的 ToString 含類別名）。
+                    string[] rowTokens = row.KeyParts();
+                    if (rowTokens.Length == 0)
+                        ThrowInvalid($"{head} 維度 #{index + 1}", row.GetType().Name, "集合資料列沒有任何維度");
+                    tokens.AddRange(rowTokens);
                 }
                 else
                 {

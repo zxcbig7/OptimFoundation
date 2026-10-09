@@ -25,15 +25,25 @@ namespace OptimFoundation.Core.IO
                     "資料列映射失敗", null, sourceDescription, null, "資料列集合為空");
 
             var properties = ModelElementBase.GetColumns(typeof(TRow));
-            var normalizedRows = rows
-                .Select(row => row?.Select(cell => (cell ?? string.Empty).Trim()).ToArray()
+            var normalizedRows = new List<string[]>();
+            int position = 0;
+            foreach (var row in rows)
+            {
+                position++;
+                var cells = row?.Select(cell => (cell ?? string.Empty).Trim()).ToArray()
                     ?? throw Logging.ErrorOnce(
                         new InvalidDataException($"{sourceDescription}：資料列不得為 null"),
-                        "資料列映射失敗", null, sourceDescription, null, "資料列為空"))
-                .Where(row => row.Any(cell => cell.Length > 0))
-                .ToArray();
+                        "資料列映射失敗", null, sourceDescription, null, "資料列為空");
+                // 規則同 TabularData：整列空白記警告後略過（DB 查回整列 null 也走這裡）。
+                if (cells.All(cell => cell.Length == 0))
+                {
+                    Logging.Warn($"[資料列為空] 名稱={sourceDescription} 序號={position} 原因=整列空白 結果=略過");
+                    continue;
+                }
+                normalizedRows.Add(cells);
+            }
             var result = new List<TRow>();
-            if (normalizedRows.Length == 0) return result;
+            if (normalizedRows.Count == 0) return result;
 
             var firstRow = normalizedRows[0];
             var columnMap = properties.Select(property => FindColumn(firstRow, property.Name)).ToArray();
@@ -105,7 +115,9 @@ namespace OptimFoundation.Core.IO
             try
             {
                 if (effectiveType == typeof(DateTime))
-                    return DateTime.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.None);
+                    return ModelNaming.TryParseDate(value, out var modelDate)
+                        ? modelDate
+                        : DateTime.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.None);
                 if (effectiveType == typeof(DateOnly))
                     return DateOnly.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.None);
                 if (effectiveType == typeof(TimeOnly))

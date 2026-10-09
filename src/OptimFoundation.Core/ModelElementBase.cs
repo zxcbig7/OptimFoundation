@@ -9,7 +9,6 @@ namespace OptimFoundation.Core
     /// <summary>Set、Parameter 與 Variable 資料列的共用基底類別。</summary>
     public abstract class ModelElementBase
     {
-        internal const char KeySeparator = ModelNaming.Separator;
         private static readonly ConcurrentDictionary<Type, PropertyInfo[]> Dimensions = new();
         private static readonly ConcurrentDictionary<Type, PropertyInfo[]> Columns = new();
 
@@ -46,7 +45,10 @@ namespace OptimFoundation.Core
                 .Where(p => p.CanRead && p.CanWrite && p.GetIndexParameters().Length == 0)
                 .ToArray();
 
-        /// <summary>依資料欄順序初始化，並驗證維度 token。</summary>
+        /// <summary>
+        /// 依資料欄順序初始化，並驗證維度 token；Set 與 Parameter 規則相同，只驗維度欄，
+        /// Parameter 的 QTY 與其他數值欄不當名稱驗證（負數、科學記號都可以）。
+        /// </summary>
         public void InitClassBySets(params object[] values) => Init(values, validateTokens: true);
 
         // 資料載入的維度 token 問題由 DataContext 記錄。
@@ -55,6 +57,8 @@ namespace OptimFoundation.Core
         private void Init(object[] values, bool validateTokens)
         {
             var properties = GetColumns(GetType());
+            // GetColumns 一律維度在前，前 dimensionCount 欄才是會進名稱與 key 的維度。
+            int dimensionCount = validateTokens ? GetDimensions(GetType()).Length : 0;
             if (values.Length != properties.Length)
             {
                 string message = $"{GetType().Name} 需要 {properties.Length} 個值，但收到 {values.Length} 個";
@@ -70,7 +74,7 @@ namespace OptimFoundation.Core
                 try
                 {
                     object converted = ConvertValue(values[index], properties[index].PropertyType);
-                    if (validateTokens)
+                    if (index < dimensionCount)
                         ModelNaming.Token(context, converted);
                     properties[index].SetValue(this, converted);
                 }
@@ -88,9 +92,7 @@ namespace OptimFoundation.Core
         {
             if (value == null) return null;
             if (targetType.IsInstanceOfType(value)) return value;
-            if (targetType == typeof(DateTime) && value is string text
-                && DateTime.TryParseExact(text, ModelNaming.DateFormats, CultureInfo.InvariantCulture,
-                    DateTimeStyles.None, out DateTime modelDate))
+            if (targetType == typeof(DateTime) && value is string text && ModelNaming.TryParseDate(text, out DateTime modelDate))
                 return modelDate;
             return Convert.ChangeType(value, targetType, CultureInfo.InvariantCulture);
         }
@@ -98,23 +100,19 @@ namespace OptimFoundation.Core
         internal static void ValidateKeyToken(string context, string value)
             => ModelNaming.ValidateToken(context, value);
 
-        private protected string[] KeyParts()
+        // 依維度順序轉成名稱片段；限制式名稱傳入 Set 資料列時也用這份展開維度值。
+        internal string[] KeyParts()
             => GetDimensions(GetType())
                 .Select(property => ModelNaming.Token($"{GetType().Name}.{property.Name}", property.GetValue(this)))
                 .ToArray();
 
-        /// <summary>回傳類別名加維度值組成的完整名稱（如 <c>VariableB_Pick@A</c>），供變數、限制式查找與輸出使用。</summary>
+        /// <summary>回傳類別名加維度值組成的完整名稱（如 <c>Set_Arc@A@B</c>、<c>VariableB_Pick@A</c>），供查找、log 與輸出使用。</summary>
         public override string ToString()
             => ModelNaming.Compose(GetType().Name, KeyParts());
     }
 
     /// <summary>一筆 Set 資料代表一組有效的維度值，不包含 QTY。</summary>
-    public abstract class SetRowBase : ModelElementBase
-    {
-        // Set 名稱須與 BuildVars 的維度部分一致，否則查不到解。
-        /// <summary>只用 @ 串接維度值，不含類別名。</summary>
-        public override string ToString() => string.Join(KeySeparator, KeyParts());
-    }
+    public abstract class SetRowBase : ModelElementBase { }
 
     /// <summary>一筆 Parameter 資料包含維度值，以及 Generator 產生的數值欄位 QTY。</summary>
     public abstract class ParameterBase : ModelElementBase { }

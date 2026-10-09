@@ -1,9 +1,20 @@
 using OptimFoundation.Core;
 using OptimFoundation.Cplex.Tests.Mocks;
+using OptimFoundation.Modeling;
 using Xunit;
 
 namespace OptimFoundation.Cplex.Tests.Unit
 {
+    [OptSet]
+    [OptDim<string>("From")]
+    [OptDim<string>("To")]
+    public partial class Set_InitArc { }
+
+    [OptParam]
+    [OptDim<string>("From")]
+    [OptDim<string>("To")]
+    public partial class Parameter_InitArcCost { }
+
     public class ModelElementBaseTests
     {
 
@@ -98,6 +109,53 @@ namespace OptimFoundation.Cplex.Tests.Unit
             var v = new VarDG();
             Assert.Throws<ArgumentException>(() => v.InitClassBySets("2026-01-15", "B@N"));
         }
+
+        [Fact]
+        public void ParameterConstructor_NegativeAndScientificQty_AreNotValidatedAsNames()
+        {
+            var negative = new Parameter_InitArcCost("A", "B", -5.0);
+            Assert.Equal(-5.0, negative.QTY);
+
+            var tiny = new Parameter_InitArcCost("A", "B", "1E-07");
+            Assert.Equal(1e-7, tiny.QTY);
+        }
+
+        [Fact]
+        public void ParameterConstructor_ValidatesDimensionsLikeSet()
+        {
+            // Set 與 Parameter 的維度欄用同一套名稱規則：- 是 .lp 保留字元
+            var setError = Assert.Throws<ArgumentException>(() => new Set_InitArc("A-1", "B"));
+            var parameterError = Assert.Throws<ArgumentException>(() => new Parameter_InitArcCost("A-1", "B", 1.0));
+
+            Assert.Contains("Set_InitArc.From", setError.Message);
+            Assert.Contains("Parameter_InitArcCost.From", parameterError.Message);
+        }
+
+        [Fact]
+        public void SetConstructor_FillsDimensions_AndToStringHasClassName()
+        {
+            var arc = new Set_InitArc("A", "B");
+
+            Assert.Equal("A", arc.From);
+            Assert.Equal("B", arc.To);
+            Assert.Equal("Set_InitArc@A@B", arc.ToString());
+            Assert.Equal("Parameter_InitArcCost@A@B", new Parameter_InitArcCost("A", "B", 1.0).ToString());
+        }
+
+        [Fact]
+        public void ConstraintName_WithSetRow_ExpandsDimensionsWithoutSetClassName()
+        {
+            // 限制式名稱傳 Set 資料列時只展開維度值，不帶 Set_ 類別名
+            var engine = new MockEngine();
+            engine.Build();
+            engine.BuildCVs<VarS>(new[] { "x" });
+            engine.AddLHS(1.0, new VarS { S = "x" });
+
+            Assert.True(engine.CreateLessEqual(new ConstraintArcCap(), new Set_InitArc("A", "B")));
+            Assert.Contains("ConstraintArcCap@A@B", engine.BuiltConstraints);
+        }
+
+        private sealed class ConstraintArcCap : ConstraintBase { }
 
         // ── PropertyInfo 快取（間接驗證：多次呼叫結果一致）────────────────
 

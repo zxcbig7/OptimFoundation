@@ -61,9 +61,9 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         [Fact]
-        public void Set_ToString_UsesDimensionsOnly()
+        public void Set_ToString_IsClassNameAndDimensionsOnly()
         {
-            Assert.Equal("A@B", Arcs()[0].ToString());
+            Assert.Equal("Set_HelperArc@A@B", Arcs()[0].ToString());
         }
 
         [Fact]
@@ -119,7 +119,7 @@ namespace OptimFoundation.Cplex.Tests.Unit
                 Assert.Equal("FROM,TO", File.ReadLines(path).First());
                 IDataSource source = new CsvDataSource();
                 var row = Assert.Single(source.Load<Set_HelperArc>(fileName));
-                Assert.Equal("A@B", row.ToString());
+                Assert.Equal("Set_HelperArc@A@B", row.ToString());
             }
             finally
             {

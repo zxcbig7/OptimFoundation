@@ -5,6 +5,8 @@ using Xunit;
 
 namespace OptimFoundation.Cplex.Tests.Unit
 {
+    // 會建立 OptProject（切換全域 log 檔），與其他讀 log 的測試同一個 collection，避免平行執行時互相蓋掉 log。
+    [Collection("Logging")]
     public class RunnerSymmetryTests
     {
         [Fact]

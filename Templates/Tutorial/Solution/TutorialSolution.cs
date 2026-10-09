@@ -50,7 +50,7 @@ namespace Tutorial
                         d => d.Product == product && d.Date == date,
                         product, date)?.QTY ?? 0.0;
                     if (used < required - 1e-6)
-                        throw new InvalidOperationException($"{product}@{date:yyyy-MM-dd} 違反 Demand：{used} < {required}。");
+                        throw new InvalidOperationException($"{product.Product}@{date.Date:yyyy-MM-dd} 違反 Demand：{used} < {required}。");
                 }
 
             // Capacity：Σ_product MachineHours·Produce ≤ Capacity
@@ -69,7 +69,7 @@ namespace Tutorial
                             c => c.Machine == machine && c.Date == date && c.Shift == shift,
                             machine, date, shift)?.QTY ?? 0.0;
                         if (used > cap + 1e-6)
-                            throw new InvalidOperationException($"{machine}@{date:yyyy-MM-dd}@{shift} 違反 Capacity：{used} > {cap}。");
+                            throw new InvalidOperationException($"{machine.Machine}@{date.Date:yyyy-MM-dd}@{shift.Shift} 違反 Capacity：{used} > {cap}。");
                     }
 
             // BatchDef：Σ_shift Produce = BatchSize·Batch
@@ -86,7 +86,7 @@ namespace Tutorial
                         Date = date
                     }.ToString(), out var b) ? b : 0.0;
                     if (Math.Abs(used - size * batches) > 1e-6)
-                        throw new InvalidOperationException($"{product}@{date:yyyy-MM-dd} 違反 BatchDef：{used} ≠ {size}×{batches}。");
+                        throw new InvalidOperationException($"{product.Product}@{date.Date:yyyy-MM-dd} 違反 BatchDef：{used} ≠ {size}×{batches}。");
                 }
 
             // SetupLink：Produce ≤ BigM·Setup
@@ -102,7 +102,7 @@ namespace Tutorial
                             Shift = shift
                         }.ToString(), out var s) ? s : 0.0;
                         if (qty > data.BigM * opened + 1e-6)
-                            throw new InvalidOperationException($"{product}@{date:yyyy-MM-dd}@{shift} 違反 SetupLink：{qty} > BigM×{opened}。");
+                            throw new InvalidOperationException($"{product.Product}@{date.Date:yyyy-MM-dd}@{shift.Shift} 違反 SetupLink：{qty} > BigM×{opened}。");
                     }
         }
 

@@ -671,6 +671,8 @@ B,C
 
 Set 至少一維，而且沒有 `QTY`。`OptDim<T>` 的泛型參數是 C# 資料型別（`string`、`int`、`DateTime` 等），CSV 欄位依它轉型。
 
+寫法與 Parameter 相同：generator 產生依 `OptDim` 順序的建構子 `new Set_Arc("A", "B")`（維度值照名稱規則檢查，含保留字元會丟例外），也可以用 `new Set_Arc { From = "A", To = "B" }`。`ToString()` 是 `Set_Arc@A@B`，與 Parameter、Variable 同一格式；組變數名或限制式名時傳 Set 資料列，框架只取維度值，不帶 `Set_` 類別名。要在自己的字串裡用維度值，請讀 property（`arc.From`），不要靠 `ToString()`。
+
 每個 `OptDim` 的名稱都會變成 property 名，所以同一個類別裡不能重複（兩個維度都是節點時各取名稱，例：`From` / `To`），要是合法的 C# 識別字，不能跟類別名或 partial class 手寫的成員同名，Parameter 的維度也不能叫 `QTY`。違反時編譯報 `OPTF009`，錯誤直接指向那個 `[OptDim]`。
 
 ---
@@ -921,7 +923,20 @@ MiniProductionSolution.ValidateData(data);
 | `InMemoryDataSource` | 註冊名稱 |
 | `DbDataSource` | 完整 SQL；需要 bind parameters 時用具體 `DbDataSource.Load<T>(sql, parameters)` overload |
 
-所有輸入 CSV 都必須有表頭，欄名與 generated property 名稱、型別、順序一致。
+Set 與 Parameter 讀資料是同一套規則（CSV、InMemory、DB 共用），差別只在必要欄：Set 是維度欄，Parameter 是維度欄 + `QTY` + 手寫的可寫 property。
+
+| 項目 | 規則 |
+| --- | --- |
+| 表頭 | 必須有；欄名不得空白或重複 |
+| 欄名對應 | 依欄名對 property，不分大小寫、不看順序；多的欄忽略，缺必要欄丟例外 |
+| 欄數 | 每列欄數要和表頭一致，否則丟例外 |
+| 空白列 | 整列空白（含 CSV 空行、DB 整列 null）記 `[資料列為空]` warning 後略過 |
+| 值 | 去前後空白；數值與日期用 InvariantCulture 轉型，轉不過丟例外 `[資料值轉型失敗]` |
+| 空白格 | `string` 收空字串；數值 / 日期丟例外；nullable 型別轉成 null |
+| 日期 | 先試框架名稱格式 `2026_06_01` / `2026_06_01_08_30_00`（解檔寫出的格式可原樣讀回），再試一般格式 `2026-06-01` |
+| 編碼 | CSV 一律 UTF-8（有沒有 BOM 都可以）；遇到非 UTF-8 位元組丟例外 `[CSV 編碼不合法]`，例如 Excel 預設的 CP950 / Big5，請另存成「CSV UTF-8」 |
+
+放進 `DataContext` 欄位的資料，載入後還會檢查重複鍵、不合法鍵（Set 與 Parameter 都有），Parameter 另檢查數值（NaN、無限大、超過 1e15），都是 warning 後繼續。
 
 import-data 產出 canonical CSV 時，Set 與 Parameter 都用 `CsvCtrl.WriteRows(rows, "TypeName")`（見上方 `Export()`）。
 
@@ -2415,10 +2430,9 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 ### `OptimFoundation.Core/ModelElementBase.cs`
 
 - `public abstract class ModelElementBase` | `OptimFoundation.Core/ModelElementBase.cs:10`
-- `public void InitClassBySets(params object[] values)` | `OptimFoundation.Core/ModelElementBase.cs:59` | 依資料欄順序轉型並填值：維度（`OptDim` 宣告順序）在前，Parameter 再接 QTY 與手寫可寫 property；數量或型別不合會拋例外。沒有 generator 標記的手寫類別沿用 public 可讀寫 property 的宣告順序。
-- `public override string ToString()` | `OptimFoundation.Core/ModelElementBase.cs:77` | 回傳由型別名與維度 token 組成的 canonical name，供 variable/constraint lookup 與輸出使用。
-- `public abstract class SetRowBase : ModelElementBase` | `OptimFoundation.Core/ModelElementBase.cs:82`
-- `public override string ToString()` | `OptimFoundation.Core/ModelElementBase.cs:87` | 回傳由型別名與維度 token 組成的 canonical name，供 variable/constraint lookup 與輸出使用。
+- `public void InitClassBySets(params object[] values)` | `OptimFoundation.Core/ModelElementBase.cs:52` | 依資料欄順序轉型並填值：維度（`OptDim` 宣告順序）在前，Parameter 再接 QTY 與手寫可寫 property；數量或型別不合會拋例外。只有維度欄照名稱規則驗 token（Set 與 Parameter 相同），QTY 與其他數值欄不驗，負數、科學記號都可以；generator 為 Set 與 Parameter 產生的 `(params object[])` 建構子（例：`new Set_Arc("A", "B")`、`new Parameter_ArcCost("A", "B", 12.5)`）都走這裡。沒有 generator 標記的手寫類別沿用 public 可讀寫 property 的宣告順序。
+- `public override string ToString()` | `OptimFoundation.Core/ModelElementBase.cs:112` | 回傳由型別名與維度 token 組成的 canonical name，Set / Parameter / Variable 同一格式（例：`Set_Arc@A@B`、`Parameter_ArcCost@A@B`、`VariableB_UseArc@A@B`），供 variable/constraint lookup、log 與輸出使用。限制式名稱傳入 Set 資料列時只展開維度值（`Constraint_Cap@A@B`），不帶 `Set_` 類別名。
+- `public abstract class SetRowBase : ModelElementBase` | `OptimFoundation.Core/ModelElementBase.cs:117`
 - `public abstract class ParameterBase : ModelElementBase` | `OptimFoundation.Core/ModelElementBase.cs:91`
 - `public abstract class VariableBase : ModelElementBase` | `OptimFoundation.Core/ModelElementBase.cs:93`
 - `public abstract class ConstraintBase : ModelElementBase` | `OptimFoundation.Core/ModelElementBase.cs:94`
@@ -2487,13 +2501,13 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 - `public bool AddRHS(double coeff, object varSpec)` | `OptimFoundation.Core/EngineBase.cs:1434` | 用途：加入 expression term/constant；建式時呼叫，會修改共用 pool，稍後由 Create* 消耗。
 - `public bool AddRHS(double constant)` | `OptimFoundation.Core/EngineBase.cs:1459` | 用途：加入 expression term/constant；建式時呼叫，會修改共用 pool，稍後由 Create* 消耗。
 - `public bool CreateGreaterEqual(string name)` | `OptimFoundation.Core/EngineBase.cs:1494` | 驗證明確 name，將 pool 正規化為 `(LHS terms - RHS terms) >= (RhsConst - LhsConst)` 並加入 solver model。兩側都沒有變數項時記 `[限制式為空]` warning（列出被丟掉的常數）、清空 pool（含常數）並回傳 false；同名 duplicate 不新增 model object但記 warning、清 pool並回傳 true；成功也清 pool並回傳 true。
-- `public bool CreateGreaterEqual(ConstraintBase owner, params object[] dims)` | `OptimFoundation.Core/EngineBase.cs:1498` | 由 owner type 與 dims 組 canonical name，再把 LHS/RHS pool 建成 `>=` constraint並加入 model。空 variable pool 回傳 false且不清；duplicate 或成功都記 build count、清 pool並回傳 true。
+- `public bool CreateGreaterEqual(ConstraintBase owner, params object[] dims)` | `OptimFoundation.Core/EngineBase.cs:1498` | 由 owner type 與 dims 組 canonical name，再把 LHS/RHS pool 建成 `>=` constraint並加入 model。空 variable pool 時 warning、清空 pool 並回傳 false；duplicate 或成功都記 build count、清 pool並回傳 true。
 - `public bool CreateGreaterEqual(double rhs, string name)` | `OptimFoundation.Core/EngineBase.cs:1506` | 驗證 name；LHS 沒有變數項時 warning、清空 pool（含 RHS 變數項與常數）並回傳 false。否則用 `rhs` 覆寫先前 `AddRHS(constant)` 的 RHS constant，既有 RHS variable terms 仍移到左側，再建立 `>=` constraint；duplicate/成功後清 pool並回傳 true。
 - `public bool CreateLessEqual(string name)` | `OptimFoundation.Core/EngineBase.cs:1525` | 驗證明確 name，建立 `(LHS terms - RHS terms) <= (RhsConst - LhsConst)` 並加入 solver model。兩側無變數項時 warning、清空 pool 並回傳 false；duplicate 不新增但清 pool並回傳 true；成功加入 model後同樣清 pool。
-- `public bool CreateLessEqual(ConstraintBase owner, params object[] dims)` | `OptimFoundation.Core/EngineBase.cs:1529` | 由 owner+dims 產生 canonical name，使用完整 LHS/RHS pool 建 `<=` constraint。空 variable pool warning並回傳 false且不清；duplicate 或成功都清 pool並回傳 true。
+- `public bool CreateLessEqual(ConstraintBase owner, params object[] dims)` | `OptimFoundation.Core/EngineBase.cs:1529` | 由 owner+dims 產生 canonical name，使用完整 LHS/RHS pool 建 `<=` constraint。空 variable pool 時 warning、清空 pool 並回傳 false；duplicate 或成功都清 pool並回傳 true。
 - `public bool CreateLessEqual(double rhs, string name)` | `OptimFoundation.Core/EngineBase.cs:1534` | 驗證 name；若 LHS 沒有變數項則 warning、清空 pool 並回傳 false。否則 `rhs` 取代既有 RHS constant，RHS variable terms 保留並以負係數移到左側，建立 `<=` constraint；duplicate/成功後清 pool並回傳 true。
 - `public bool CreateEqual(string name)` | `OptimFoundation.Core/EngineBase.cs:1553` | 驗證明確 name，把兩側 pool 正規化後建立 equality並加入 solver model。沒有 LHS/RHS variable terms 時 warning、清空 pool 並回傳 false；duplicate 略過新增但清 pool並回傳 true；成功也清 pool。
-- `public bool CreateEqual(ConstraintBase owner, params object[] dims)` | `OptimFoundation.Core/EngineBase.cs:1557` | 由 owner type 與 dims 命名，將完整 pool 建成 equality。空 variable pool 回傳 false且保留；同名 duplicate 或成功建立都記錄結果、清 pool並回傳 true。
+- `public bool CreateEqual(ConstraintBase owner, params object[] dims)` | `OptimFoundation.Core/EngineBase.cs:1557` | 由 owner type 與 dims 命名，將完整 pool 建成 equality。空 variable pool 時 warning、清空 pool 並回傳 false；同名 duplicate 或成功建立都記錄結果、清 pool並回傳 true。
 - `public bool CreateEqual(double rhs, string name)` | `OptimFoundation.Core/EngineBase.cs:1562` | 驗證 name；LHS 沒有變數項時 warning、清空 pool 並回傳 false。否則用參數 `rhs` 覆寫 RHS constant，仍納入原 RHS variable terms，建立 equality；duplicate/成功後清 pool並回傳 true。
 - `public bool CreateRange(double lb, double ub, string name)` | `OptimFoundation.Core/EngineBase.cs:1579` | 只取 LHS terms 建 `lb - LhsConst <= LHS <= ub - LhsConst` 並使用明確 name；RHS terms/constant 不參與，若存在會記 `[右側暫存區略過]` 警告 後捨棄。LHS 沒有變數項時清空 pool 並回傳 false；成功或 duplicate skip 後也清空整個 pool並回傳 true。
 - `public bool CreateRange(double lb, double ub, ConstraintBase owner, params object[] dims)` | `OptimFoundation.Core/EngineBase.cs:1583` | 先由 owner+dims 產生 canonical name，再只消耗 LHS 建範圍限制式；任何 RHS pool 內容都會 warning 並忽略。LHS 空時清 pool、記 build failure 並回傳 false；其他完成路徑清 pool並回傳 true。

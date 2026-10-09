@@ -40,6 +40,12 @@ namespace OptimFoundation.Core.IO
 
             for (var rowIndex = 1; rowIndex < rows.Length; rowIndex++)
             {
+                // 整列空白（含 CSV 空行）不是資料：記警告後略過，不當成欄數不一致。
+                if (rows[rowIndex].All(string.IsNullOrWhiteSpace))
+                {
+                    Logging.Warn($"[資料列為空] 名稱={sourceDescription} 序號={rowIndex + 1} 原因=整列空白 結果=略過");
+                    continue;
+                }
                 if (rows[rowIndex].Length != headers.Length)
                     throw Logging.ErrorOnce(
                         new InvalidDataException($"{sourceDescription}：第 {rowIndex + 1} 資料列有 {rows[rowIndex].Length} 欄，預期 {headers.Length} 欄"),

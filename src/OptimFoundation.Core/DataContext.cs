@@ -353,6 +353,8 @@ namespace OptimFoundation.Core
             return string.Join("@", values.Select(value => value switch
             {
                 null => "<空值>",
+                // Set 資料列只列維度值，跟限制式名稱展開 Set 的方式相同
+                SetRowBase row => string.Join("@", row.KeyParts()),
                 DateTime date => date.ToString(
                     date.TimeOfDay == TimeSpan.Zero ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
                 IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
