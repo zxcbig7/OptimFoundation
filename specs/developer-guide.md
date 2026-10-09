@@ -2770,9 +2770,13 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 
 ### `OptimFoundation.Core/VariableManager.cs`
 
-- `public static class VariableManager` | `OptimFoundation.Core/VariableManager.cs:12`
-- `public static List<string>[] ConvertSetsToTokens(params object[] sets)` | `OptimFoundation.Core/VariableManager.cs:194` | 把 DateTime/int/long/double/decimal/string/enum enumerable 轉成 invariant tokens；null、裸 string 或不支援型別會拋例外。
-- `public static IEnumerable<string> ComposeNames(string typeName, object[] sets)` | `OptimFoundation.Core/VariableManager.cs:255` | 將 sets 轉成 canonical names（typeName@v1@v2…）；不檢查維度數量與型別，泛型 Build*Vs 先檢查再以類別名呼叫這裡。
+- `public static class VariableManager` | `OptimFoundation.Core/VariableManager.cs:14` | 變數的把關與索引，與 solver 無關、不建 engine 就能測。Engine 的 `BuildVars` / `Build*Vs` / `GetSetVarNames` / `GetSetVarValues` / `GetSolution(type)` 內部都轉給它，Engine 只拿算好的名稱去建 solver 變數、登記與讀值。
+- `public static VarType ValidateVariableClass<TVariable>(VarType? requestedType, string operation, object[] sets)` | `OptimFoundation.Core/VariableManager.cs:27` | 把關：決定變數型別並比對維度。`requestedType` 為 null（`BuildVars`）時由類別名前綴判型，判不出丟 `[變數型別不合法]`；有值（`BuildCVs` 等）時前綴宣告不同丟 `[變數型別不一致]`；sets 的維度數量或型別與 `TVariable` 不同丟 `[變數維度數量不一致]` / `[變數維度型別不一致]`。回傳要建立的型別。
+- `public static List<string> SkipDuplicates(string typeName, IReadOnlyList<string> names, Func<string, bool> exists)` | `OptimFoundation.Core/VariableManager.cs:58` | 把關：批內重複或已在變數池（`exists` 回 true）的名稱略過，記 `[變數重複]` 警告；回傳要新建的名稱，順序不變。
+- `public static IEnumerable<string> GetNamesOfType(string typeName, IEnumerable<string> allNames)` | `OptimFoundation.Core/VariableManager.cs:81` | 索引：名稱等於型別名（0 維）或以「型別名@」開頭的變數名；`typeName` 為 null 回空。
+- `public static string GetTypeName(string variableName)` | `OptimFoundation.Core/VariableManager.cs:89` | 索引：變數名第一個 `@` 之前的型別名；空白名稱回 `<未命名>`。
+- `public static List<string>[] ConvertSetsToTokens(params object[] sets)` | `OptimFoundation.Core/VariableManager.cs:271` | 把 DateTime/int/long/double/decimal/string/enum enumerable 轉成 invariant tokens；null、裸 string 或不支援型別會拋例外。
+- `public static IEnumerable<string> ComposeNames(string typeName, object[] sets)` | `OptimFoundation.Core/VariableManager.cs:332` | 索引：將 sets 轉成 canonical names（typeName@v1@v2…）；不檢查維度數量與型別，泛型 Build*Vs 先經 `ValidateVariableClass` 把關再以類別名呼叫這裡。
 
 ### `OptimFoundation.Cplex/CplexConfig.cs`
 

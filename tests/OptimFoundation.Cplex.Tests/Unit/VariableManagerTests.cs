@@ -126,5 +126,75 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Equal("VarS@A", names[0]);
             Assert.Equal("VarS@B", names[1]);
         }
+
+        // ── 把關：不建 engine 就能測 ─────────────────────────────
+
+        [Fact]
+        public void ValidateVariableClass_ResolvesTypeFromPrefix()
+        {
+            var sets = new object[] { new List<string> { "A" } };
+
+            Assert.Equal(VarType.Binary, VariableManager.ValidateVariableClass<VariableB_Pick>(null, "BuildVars", sets));
+            Assert.Equal(VarType.Continuous, VariableManager.ValidateVariableClass<VariableC_Amt>(null, "BuildVars", sets));
+            Assert.Equal(VarType.Integer, VariableManager.ValidateVariableClass<VariableI_Cnt>(null, "BuildVars", sets));
+        }
+
+        [Fact]
+        public void ValidateVariableClass_NoPrefix_RequiresExplicitType()
+        {
+            var sets = new object[] { new List<string> { "A" } };
+
+            var error = Assert.Throws<ArgumentException>(() => VariableManager.ValidateVariableClass<VarS>(null, "BuildVars", sets));
+            Assert.Contains("BuildVars<VarS>", error.Message);
+            // 明確指定型別的入口（BuildCVs 等）可建立沒有正式前綴的類別
+            Assert.Equal(VarType.Integer, VariableManager.ValidateVariableClass<VarS>(VarType.Integer, "BuildIVs", sets));
+        }
+
+        [Fact]
+        public void ValidateVariableClass_PrefixConflictsWithRequestedType_Throws()
+        {
+            var sets = new object[] { new List<string> { "A" } };
+
+            var error = Assert.Throws<ArgumentException>(
+                () => VariableManager.ValidateVariableClass<VariableB_Pick>(VarType.Continuous, "BuildCVs", sets));
+            Assert.Contains("前綴宣告為 Binary", error.Message);
+        }
+
+        [Fact]
+        public void ValidateVariableClass_DimensionCountMismatch_Throws()
+        {
+            var sets = new object[] { new List<string> { "A" }, new List<string> { "B" } };
+
+            Assert.Throws<ArgumentException>(() => VariableManager.ValidateVariableClass<VariableC_Amt>(null, "BuildVars", sets));
+        }
+
+        [Fact]
+        public void SkipDuplicates_DropsExistingAndRepeatedNames_KeepsOrder()
+        {
+            var existing = new HashSet<string> { "VarS@B" };
+
+            var newNames = VariableManager.SkipDuplicates("VarS", new[] { "VarS@A", "VarS@B", "VarS@A", "VarS@C" }, existing.Contains);
+
+            Assert.Equal(new[] { "VarS@A", "VarS@C" }, newNames);
+        }
+
+        // ── 索引 ─────────────────────────────────────────────
+
+        [Fact]
+        public void GetNamesOfType_MatchesExactZeroDimAndPrefix_NotSimilarNames()
+        {
+            var all = new[] { "VarS@A", "VarS", "VarSX@A", "VarDG@2026_01_01@N", "VarS@B" };
+
+            Assert.Equal(new[] { "VarS@A", "VarS", "VarS@B" }, VariableManager.GetNamesOfType("VarS", all));
+            Assert.Empty(VariableManager.GetNamesOfType(null, all));
+        }
+
+        [Fact]
+        public void GetTypeName_IsTextBeforeFirstSeparator()
+        {
+            Assert.Equal("VarDG", VariableManager.GetTypeName("VarDG@2026_01_01@N"));
+            Assert.Equal("VariableC_Makespan", VariableManager.GetTypeName("VariableC_Makespan"));
+            Assert.Equal("<未命名>", VariableManager.GetTypeName(" "));
+        }
     }
 }

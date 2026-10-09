@@ -1,8 +1,8 @@
 ---
 title: 變數索引分層：Model 層管命名與批量規劃，Engine 只認名稱
-status: draft
+status: in-progress
 created: 2026-10-03
-updated: 2026-10-03
+updated: 2026-10-09
 modules: [core, cplex, tests]
 ---
 
@@ -59,12 +59,17 @@ modules: [core, cplex, tests]
 
 ## Acceptance Criteria
 
-- [ ] **AC1 Model 層與 solver 無關**：不引用 `ILOG.*`、`EngineBase`、`OptEngine`；以 grep 驗證。
-- [ ] **AC2 Model 層可獨立測試**：組名、去重、依型別取名稱、前綴判型、從名稱取型別名都有不建 engine 的單元測試。
-- [ ] **AC3 Engine 不含變數命名知識**：`EngineBase.cs` 內 grep `VariablePrefixNaming`、`FilterVarNames`、`SkipDuplicateVariableNames`、`VariableGroup` 為零，改為呼叫 Model 層。
+- [x] **AC1 Model 層與 solver 無關**：不引用 `ILOG.*`、`EngineBase`、`OptEngine`；以 grep 驗證。
+- [x] **AC2 Model 層可獨立測試**：組名、去重、依型別取名稱、前綴判型、從名稱取型別名都有不建 engine 的單元測試。
+- [x] **AC3 Engine 不含變數命名知識**：`EngineBase.cs` 內 grep `VariablePrefixNaming`、`FilterVarNames`、`SkipDuplicateVariableNames`、`VariableGroup` 為零，改為呼叫 Model 層。
 - [ ] **AC4 批次讀值**：`ISolverEngine` 新增 `GetVariableValues(IReadOnlyList<string> names)`；`EngineBase` 預設逐個呼叫 `GetVariableValue`；`OptEngine` 覆寫為單次 `Model.GetValues`。`GetSetVarValues`、`GetSolution()`、`GetSolution(type)` 一律經由它，並以 MockEngine 計數驗證每次取解只呼叫一次。
-- [ ] **AC5 消費端零改動**：`Templates/` 與 AI-Modeling 專案不改一行即可 build；`GetSetVarValues<T>()` 結果與改動前逐值相同。
-- [ ] **AC6 行為不變**：`[變數重複]`、`[變數未引用]` 的 log 事件名與建立統計不變；`dotnet build OptimFoundation.sln` 與 `dotnet test` 全綠。
+- [x] **AC5 消費端零改動**：`Templates/` 與 AI-Modeling 專案不改一行即可 build；`GetSetVarValues<T>()` 結果與改動前逐值相同。
+- [x] **AC6 行為不變**：`[變數重複]`、`[變數未引用]` 的 log 事件名與建立統計不變；`dotnet build OptimFoundation.sln` 與 `dotnet test` 全綠。
+
+> 2026-10-09 進度：AC1–AC3、AC5、AC6 完成（Vic 定調：Engine 支援所有資料情況，VariableManager 負責把關與 indexing）；AC4 批次讀值尚未做。實際 API 與下方草稿的差異：
+> - 前綴判型與維度比對合成一個把關入口 `ValidateVariableClass<TVariable>(VarType? requestedType, string operation, object[] sets)`，回傳要建立的型別；6 個泛型 Build 入口各呼叫一次。不另開 `TryResolveVarType`（只有它在用），`ValidateVariableDimensions` 改 private。
+> - 名稱依命名規則動詞在前：`GetNamesOfType`（草稿 `NamesOfType`）、`GetTypeName`（草稿 `TypeNameOf`）。
+> - 不加 `NameOf(varSpec)`：它只是包一層 `ToString()`。
 
 ## Module Interactions
 

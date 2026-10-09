@@ -2,14 +2,99 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using OptimFoundation.Internal;
 
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 以 Set 笛卡兒積組成 TypeName@維度值名稱，格式同 ModelElementBase.ToString()。
+    /// 變數的把關與索引，與 solver 無關、不建 engine 就能測：
+    /// 把關 = 建立前決定變數型別、比對維度、略過重複名稱；索引 = 由 Set 組出 TypeName@維度值名稱（格式同 ModelElementBase.ToString()）、
+    /// 依型別取名稱、由名稱取型別名。Engine 只拿這裡算好的名稱去建 solver 變數、登記與讀值。
     /// </summary>
     public static class VariableManager
     {
+        #region 把關
+
+        /// <summary>
+        /// 泛型 Build*Vs / BuildVars 建立前的把關：決定變數型別，再依位置比對 sets 與 TVariable 的維度數量與型別。
+        /// requestedType 為 null（BuildVars）時由類別名前綴判型，判不出來丟例外；
+        /// 有值（BuildCVs / BuildIVs / BuildBVs）時前綴宣告的型別與它不同就丟例外，沒有正式前綴的類別照 requestedType 建立。
+        /// </summary>
+        /// <param name="requestedType">建立方法指定的型別；null 表示由前綴決定。</param>
+        /// <param name="operation">呼叫端方法名，用於錯誤訊息與 log 的位置。</param>
+        /// <param name="sets">各維度的集合。</param>
+        /// <returns>要建立的變數型別。</returns>
+        public static VarType ValidateVariableClass<TVariable>(VarType? requestedType, string operation, object[] sets)
+        {
+            string className = typeof(TVariable).Name;
+            VarType declaredType = default;
+            bool hasPrefix = VariablePrefixNaming.TryResolve(className, out var typeName);
+            if (hasPrefix)
+                declaredType = (VarType)Enum.Parse(typeof(VarType), typeName);
+
+            if (requestedType == null && !hasPrefix)
+                throw Logging.ErrorOnce(
+                    new ArgumentException($"{operation}<{className}> 無法從類別名前綴判定變數型別；" +
+                        $"命名天條：{VariablePrefixNaming.NamingGuide}，例：VariableC_Start；" +
+                        "不依天條命名請改用 BuildCVs / BuildIVs / BuildBVs"),
+                    "變數型別不合法", "無法從名稱前綴判定變數型別", operation, className,
+                    "前綴不合法", $"變數類別={className}");
+
+            if (requestedType != null && hasPrefix && declaredType != requestedType)
+                throw Logging.ErrorOnce(
+                    new ArgumentException($"{operation}<{className}> 要建立 {requestedType} 變數，但類別名前綴宣告為 {declaredType}；" +
+                        $"命名規則：{VariablePrefixNaming.NamingGuide}"),
+                    "變數型別不一致", "變數名稱前綴與建立方法指定的型別不一致", operation, className,
+                    "宣告型別與指定型別不一致", $"變數類別={className} 宣告型別={declaredType} 指定型別={requestedType}");
+
+            ValidateVariableDimensions<TVariable>(sets);
+            return requestedType ?? declaredType;
+        }
+
+        /// <summary>
+        /// 略過重複名稱：同一批內重複，或 <paramref name="exists"/> 回 true（已在變數池）的名稱不新建，記 <c>[變數重複]</c> 警告。
+        /// 回傳要新建的名稱，順序不變。
+        /// </summary>
+        public static List<string> SkipDuplicates(string typeName, IReadOnlyList<string> names, Func<string, bool> exists)
+        {
+            var newNames = new List<string>(names.Count);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var duplicates = new List<string>();
+            foreach (var name in names)
+            {
+                if (exists(name) || !seen.Add(name))
+                    duplicates.Add(name);
+                else
+                    newNames.Add(name);
+            }
+
+            if (duplicates.Count > 0)
+                Logging.Warn($"[變數重複] 變數類別={typeName} 數量={duplicates.Count} 範例={string.Join(",", duplicates.Take(5))} 原因=名稱已存在 結果=保留原值");
+            return newNames;
+        }
+
+        #endregion
+
+        #region 索引
+
+        /// <summary>某型別的變數名：名稱等於型別名（0 維變數），或以「型別名@」開頭；typeName 為 null 回空。順序同 allNames。</summary>
+        public static IEnumerable<string> GetNamesOfType(string typeName, IEnumerable<string> allNames)
+        {
+            if (typeName == null) return Enumerable.Empty<string>();
+            string prefix = typeName + ModelNaming.Separator;
+            return allNames.Where(name => name == typeName || name.StartsWith(prefix, StringComparison.Ordinal));
+        }
+
+        /// <summary>變數名 → 型別名（第一個 @ 之前）；空白名稱回 <c>&lt;未命名&gt;</c>。建立統計與未引用變數分組用。</summary>
+        public static string GetTypeName(string variableName)
+        {
+            if (string.IsNullOrWhiteSpace(variableName)) return "<未命名>";
+            int separator = variableName.IndexOf(ModelNaming.Separator);
+            return separator > 0 ? variableName.Substring(0, separator) : variableName;
+        }
+
+        #endregion
+
         /// <summary>組合各 Set 的資料列，回傳每組維度值的字串陣列；完整名稱由呼叫端組成。</summary>
         private static IEnumerable<string[]> CombineRows(List<string[]>[] setRows)
         {
@@ -110,7 +195,7 @@ namespace OptimFoundation.Core
         /// </summary>
         /// <param name="sets">BuildVars 收到的各維度集合。</param>
         /// <typeparam name="TVariable">要建立的變數類別。</typeparam>
-        internal static void ValidateVariableDimensions<TVariable>(object[] sets)
+        private static void ValidateVariableDimensions<TVariable>(object[] sets)
         {
             if (sets == null) return;
             if (sets.Length > 0 && sets.All(x => x is string))
@@ -242,7 +327,7 @@ namespace OptimFoundation.Core
 
         /// <summary>
         /// 直接組成 typeName@維度值名稱，不建立實例或逐筆反射；不檢查維度數量與型別。
-        /// 泛型 Build*Vs 先以 <see cref="ValidateVariableDimensions{TVariable}"/> 檢查，再以類別名當 typeName 走到這裡。
+        /// 泛型 Build*Vs 先經 <see cref="ValidateVariableClass{TVariable}"/> 把關，再以類別名當 typeName 走到這裡。
         /// </summary>
         public static IEnumerable<string> ComposeNames(string typeName, object[] sets)
         {

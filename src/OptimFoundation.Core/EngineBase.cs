@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using OptimFoundation.Internal;
 
 namespace OptimFoundation.Core
 {
@@ -429,7 +428,7 @@ namespace OptimFoundation.Core
 
         #endregion
 
-        #region VariableManager — 批次建立變數
+        #region 變數建立（把關與組名交給 VariableManager，這裡只把名稱交給 solver 並登記）
 
         /// <summary>
         /// 批次建立並登記變數；預設逐筆呼叫 AddVariable，可覆寫為 solver 批次 API。
@@ -443,19 +442,16 @@ namespace OptimFoundation.Core
         }
 
         private void BatchBuild(string setName, double lb, double ub, VarType type, object[] sets)
-            => BatchBuild(setName, () => VariableManager.ComposeNames(setName, sets), lb, ub, type);
-
-        private void BatchBuild(string setName, Func<IEnumerable<string>> nameFactory, double lb, double ub, VarType type)
         {
             int before = Variables.Count;
             List<string> names = null;
             string stage = "名稱建立階段";
             try
             {
-                names = nameFactory().ToList();
+                names = VariableManager.ComposeNames(setName, sets).ToList();
 
                 // 同名變數沿用既有項目，避免 solver 多建但字典只留下最後一個。
-                var newNames = SkipDuplicateVariableNames(setName, names);
+                var newNames = VariableManager.SkipDuplicates(setName, names, Variables.ContainsKey);
 
                 stage = "CPLEX 變數建立階段";
                 if (newNames.Count > 0)
@@ -483,109 +479,43 @@ namespace OptimFoundation.Core
             }
         }
 
-        private List<string> SkipDuplicateVariableNames(string setName, List<string> names)
-        {
-            var newNames = new List<string>(names.Count);
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            var duplicates = new List<string>();
-            foreach (var name in names)
-            {
-                if (Variables.ContainsKey(name) || !seen.Add(name))
-                    duplicates.Add(name);
-                else
-                    newNames.Add(name);
-            }
-
-            if (duplicates.Count > 0)
-                Logging.Warn($"[變數重複] 變數類別={setName} 數量={duplicates.Count} 範例={string.Join(",", duplicates.Take(5))} 原因=名稱已存在 結果=保留原值");
-            return newNames;
-        }
-
-        private static bool TryResolveVariableType(string className, out VarType type)
-        {
-            if (!VariablePrefixNaming.TryResolve(className, out var typeName))
-            {
-                type = default;
-                return false;
-            }
-
-            if (Enum.TryParse(typeName, ignoreCase: false, out type))
-                return true;
-
-            var exception = new InvalidOperationException(
-                $"變數前綴解析器回傳未知的 VarType 成員名稱：{typeName}");
-            throw Logging.ErrorOnce(
-                exception,
-                "變數型別解析失敗",
-                null,
-                nameof(TryResolveVariableType),
-                typeName,
-                "未知的變數型別");
-        }
-
-        private static void ValidateExplicitVariableType<TVariable>(VarType requestedType, string operation)
-        {
-            string className = typeof(TVariable).Name;
-
-            // 明確 builder 入口：完全沒有正式前綴的類別可由呼叫方法決定型別。
-            if (!TryResolveVariableType(className, out var declaredType) || declaredType == requestedType)
-                return;
-
-            string message = $"{operation}<{className}> 要建立 {requestedType} 變數，但類別名前綴宣告為 {declaredType}；" +
-                $"命名規則：{VariablePrefixNaming.NamingGuide}";
-            throw Logging.ErrorOnce(
-                new ArgumentException(message),
-                "變數型別不一致",
-                "變數名稱前綴與建立方法指定的型別不一致",
-                operation,
-                className,
-                "宣告型別與指定型別不一致",
-                $"變數類別={className} 宣告型別={declaredType} 指定型別={requestedType}");
-        }
-
-
         /// <summary>
         /// 批次建立連續變數，界限 [0, <see cref="OptBounds.Infinity"/>]（1E20 = CPLEX 的無上限）。
-        /// 先依位置逐維比對 sets 與 TVariable 維度 property 的數量與型別（不符拋例外），再以類別名轉呼叫 string 版。
+        /// 先由 <see cref="VariableManager.ValidateVariableClass{TVariable}"/> 把關（前綴型別、維度數量與型別，不符拋例外），再以類別名轉呼叫 string 版。
         /// </summary>
         /// <typeparam name="TVariable">變數類別；property 宣告順序必須與 sets 順序一致，否則 AddLHS 組出的名稱會查不到變數。</typeparam>
         /// <param name="sets">各維度的集合；框架取各集合的所有組合（笛卡兒積）產生變數名稱。</param>
         public virtual void BuildCVs<TVariable>(params object[] sets)
         {
-            ValidateExplicitVariableType<TVariable>(VarType.Continuous, nameof(BuildCVs));
-            VariableManager.ValidateVariableDimensions<TVariable>(sets);
+            VariableManager.ValidateVariableClass<TVariable>(VarType.Continuous, nameof(BuildCVs), sets);
             BuildCVs(typeof(TVariable).Name, sets);
         }
 
-        /// <summary>批次建立連續變數並指定界限 [lb, ub]。維度檢查同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
+        /// <summary>批次建立連續變數並指定界限 [lb, ub]。把關同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
         public virtual void BuildCVs<TVariable>(double lb, double ub, params object[] sets)
         {
-            ValidateExplicitVariableType<TVariable>(VarType.Continuous, nameof(BuildCVs));
-            VariableManager.ValidateVariableDimensions<TVariable>(sets);
+            VariableManager.ValidateVariableClass<TVariable>(VarType.Continuous, nameof(BuildCVs), sets);
             BuildCVs(typeof(TVariable).Name, lb, ub, sets);
         }
 
-        /// <summary>批次建立整數變數，界限 [0, <see cref="OptBounds.Infinity"/>]。維度順序與檢查同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
+        /// <summary>批次建立整數變數，界限 [0, <see cref="OptBounds.Infinity"/>]。把關同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
         public virtual void BuildIVs<TVariable>(params object[] sets)
         {
-            ValidateExplicitVariableType<TVariable>(VarType.Integer, nameof(BuildIVs));
-            VariableManager.ValidateVariableDimensions<TVariable>(sets);
+            VariableManager.ValidateVariableClass<TVariable>(VarType.Integer, nameof(BuildIVs), sets);
             BuildIVs(typeof(TVariable).Name, sets);
         }
 
-        /// <summary>批次建立整數變數並指定界限 [lb, ub]。維度檢查同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
+        /// <summary>批次建立整數變數並指定界限 [lb, ub]。把關同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
         public virtual void BuildIVs<TVariable>(double lb, double ub, params object[] sets)
         {
-            ValidateExplicitVariableType<TVariable>(VarType.Integer, nameof(BuildIVs));
-            VariableManager.ValidateVariableDimensions<TVariable>(sets);
+            VariableManager.ValidateVariableClass<TVariable>(VarType.Integer, nameof(BuildIVs), sets);
             BuildIVs(typeof(TVariable).Name, lb, ub, sets);
         }
 
-        /// <summary>批次建立 0/1 二元變數。維度順序與檢查同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
+        /// <summary>批次建立 0/1 二元變數。把關同 <see cref="BuildCVs{TVariable}(object[])"/>。</summary>
         public virtual void BuildBVs<TVariable>(params object[] sets)
         {
-            ValidateExplicitVariableType<TVariable>(VarType.Binary, nameof(BuildBVs));
-            VariableManager.ValidateVariableDimensions<TVariable>(sets);
+            VariableManager.ValidateVariableClass<TVariable>(VarType.Binary, nameof(BuildBVs), sets);
             BuildBVs(typeof(TVariable).Name, sets);
         }
 
@@ -638,36 +568,17 @@ namespace OptimFoundation.Core
         /// <summary>
         /// 依類別名前綴決定變數型別：VariableB_（Binary，界限 [0,1]）、
         /// VariableC_（Continuous）/ VariableI_（Integer）。
-        /// 先依位置逐維比對 sets 與 TVariable 維度 property 的數量與型別（型別必須完全相同，int 與 long 視為不同），
-        /// 再以類別名當變數名稱開頭，交給 string 版 <see cref="BuildVars(string, VarType, object[])"/> 建立。
+        /// 由 <see cref="VariableManager.ValidateVariableClass{TVariable}"/> 判型並依位置逐維比對 sets 與 TVariable 維度 property 的數量與型別
+        /// （型別必須完全相同，int 與 long 視為不同），再以類別名當變數名稱開頭，交給 string 版 <see cref="BuildVars(string, VarType, object[])"/> 建立。
         /// 需要自訂上下界，或類別名未使用這些前綴時，可用 BuildCVs / BuildIVs / BuildBVs 指定型別。
         /// </summary>
         /// <exception cref="ArgumentException">前綴無法判定型別，或 sets 的維度數量、型別與 TVariable 不一致。</exception>
         public virtual void BuildVars<TVariable>(params object[] sets)
-        {
-            string name = typeof(TVariable).Name;
-            if (!TryResolveVariableType(name, out var type))
-            {
-                string msg = $"BuildVars<{name}> 無法從類別名前綴判定變數型別；" +
-                    $"命名天條：{VariablePrefixNaming.NamingGuide}，例：VariableC_Start；" +
-                    "不依天條命名請改用 BuildCVs / BuildIVs / BuildBVs";
-                throw Logging.ErrorOnce(
-                    new ArgumentException(msg),
-                    "變數型別不合法",
-                    "無法從名稱前綴判定變數型別",
-                    nameof(BuildVars),
-                    name,
-                    "前綴不合法",
-                    $"變數類別={name}");
-            }
-
-            VariableManager.ValidateVariableDimensions<TVariable>(sets);
-            BuildVars(name, type, sets);
-        }
+            => BuildVars(typeof(TVariable).Name, VariableManager.ValidateVariableClass<TVariable>(null, nameof(BuildVars), sets), sets);
 
         #endregion
 
-        #region VariableManager — 查詢
+        #region 變數查詢（依型別取名稱交給 VariableManager）
 
         /// <summary>
         /// 以實例 ToString() 產生的全名查詢原生變數。
@@ -696,14 +607,6 @@ namespace OptimFoundation.Core
                 "變數尚未建立");
         }
 
-        // 依型別查詢一律篩 Variables：名稱等於型別名（0 維變數）或以「型別名@」開頭。
-        private IEnumerable<string> FilterVarNames(string typeName)
-        {
-            if (typeName == null) return Enumerable.Empty<string>();
-            string prefix = typeName + ModelNaming.Separator;
-            return Variables.Keys.Where(name => name == typeName || name.StartsWith(prefix, StringComparison.Ordinal));
-        }
-
         /// <summary>變數池內的全部變數名，含軟性限制式的彈性變數與匯入的變數。</summary>
         public string[] GetAllVarNames()
             => Variables.Keys.ToArray();
@@ -714,7 +617,7 @@ namespace OptimFoundation.Core
 
         /// <summary><see cref="GetSetVarNames{TVariable}"/> 的 string 版：以 setName 篩選變數池；沒有符合的回空陣列（不丟例外）。</summary>
         public string[] GetSetVarNames(string setName)
-            => FilterVarNames(setName).ToArray();
+            => VariableManager.GetNamesOfType(setName, Variables.Keys).ToArray();
 
         /// <summary>取某變數型別的全部解值，key = 完整變數名（TypeName@…）。求解後呼叫；沒有符合的變數回空字典。</summary>
         public Dictionary<string, double> GetSetVarValues<TVariable>()
@@ -725,7 +628,7 @@ namespace OptimFoundation.Core
         {
             try
             {
-                return FilterVarNames(setName).ToDictionary(name => name, GetVariableValue);
+                return VariableManager.GetNamesOfType(setName, Variables.Keys).ToDictionary(name => name, GetVariableValue);
             }
             catch (Exception ex)
             {
@@ -740,7 +643,7 @@ namespace OptimFoundation.Core
         {
             try
             {
-                var names = varTypeName == null ? Variables.Keys : FilterVarNames(varTypeName);
+                var names = varTypeName == null ? Variables.Keys : VariableManager.GetNamesOfType(varTypeName, Variables.Keys);
                 return names.ToDictionary(name => name, GetVariableValue);
             }
             catch (Exception ex)
@@ -891,7 +794,7 @@ namespace OptimFoundation.Core
 
         /// <summary>子類別直接呼叫求解器 API 建立變數後，用此方法補上建立統計（如 OptEngine.CreateVar）。</summary>
         protected void RecordDirectVariable(string name)
-            => RecordVariableBuild(VariableGroup(name), 1, 1);
+            => RecordVariableBuild(VariableManager.GetTypeName(name), 1, 1);
 
         /// <summary>子類別直接呼叫求解器 API 建立限制式後，用此方法補上建立統計（如 OptEngine.AddLE）。</summary>
         protected void RecordDirectConstraint(string name)
@@ -912,13 +815,6 @@ namespace OptimFoundation.Core
         {
             _referencedVariables.Clear();
             _buildSummaryDirty = true;
-        }
-
-        private static string VariableGroup(string name)
-        {
-            if (string.IsNullOrWhiteSpace(name)) return "<未命名>";
-            int separator = name.IndexOf('@');
-            return separator > 0 ? name.Substring(0, separator) : name;
         }
 
         private void MarkReferenced(IEnumerable<(double coef, TVar var)> terms)
@@ -1001,7 +897,7 @@ namespace OptimFoundation.Core
 
         private static string GroupSummary(IEnumerable<string> names)
         {
-            var groups = names.GroupBy(VariableGroup).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal).ToList();
+            var groups = names.GroupBy(VariableManager.GetTypeName).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal).ToList();
             string shown = string.Join(", ", groups.Take(5).Select(g => $"{g.Key}={g.Count()}"));
             return groups.Count > 5 ? $"{shown}, …共 {groups.Count} 組" : shown;
         }

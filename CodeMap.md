@@ -163,7 +163,7 @@ Dependency Graph 補充：這五個宣告透過 `using OptimFoundation.Modeling`
 - `OptModel`：variables → objective → constraints → MIP start；也可由 `ReadModel` 匯入既有模型。
 - `OptProject.Production()` 建 `OptProduction`、`OptProject.Experiment(name)` 建 `OptExperiment`，兩者繼承 `OptExecution`（共用動詞與 `ExpandTrials` / `StartRecord` / `RunTrial` / `SaveCompleted`），各自的 `RunCore` 寫規則；`RunTrial` 呼叫 `OptEngine.RunModel`：Build → ApplyTo → beforeSolve → Trial.Capture。
 - 依賴方向：`OptProject` → `OptExecution` → `OptModel` / `OptEngine`；`OptExecution` 不引用 `OptProject`，正式求解結果寫進 `OptProject` 持有的 `ProductionResult`。
-- `EngineBase` 管理變數、算式 pool、soft constraints 與模型統計；`OptEngine` 實作 solver primitives。
+- `VariableManager` 負責變數的把關（前綴判型、維度比對、略過重複名稱）與索引（組名、依型別取名稱、由名稱取型別名），與 solver 無關；`EngineBase` 只拿名稱建 solver 變數、登記變數池、讀值，另管算式 pool、soft constraints 與模型統計；`OptEngine` 實作 solver primitives。
 - `Experiment.Save` 輸出 trial、meta、可選 summary 與 trajectory CSV；同名實驗覆寫，鎖檔時另存。
 - `FolderDir` 管理 Input、Output、Log、Model、IIS、Solution、Experiment；保留期清理排除 Input 與 Experiment。
 
