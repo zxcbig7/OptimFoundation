@@ -29,17 +29,8 @@ namespace OptimFoundation.Core
             int dot = ns.LastIndexOf('.');
             snapshot.Solver = dot >= 0 ? ns.Substring(dot + 1) : ns;
 
-            Put(snapshot.Tunable, "TimeLimit", config.TimeLimit);
-            Put(snapshot.Tunable, "MipGap", config.MipGap);
-            Put(snapshot.Tunable, "Threads", config.Threads);
-            Put(snapshot.Tunable, "Seed", config.Seed);
-            Put(snapshot.Tunable, "Emphasis", config.Emphasis);
-            Put(snapshot.Tunable, "FeasibilityTol", config.FeasibilityTol);
-            Put(snapshot.Tunable, "OptimalityTol", config.OptimalityTol);
-            Put(snapshot.Tunable, "RootAlgorithm", config.RootAlgorithm);
-            Put(snapshot.Tunable, "Presolve", config.Presolve);
-            Put(snapshot.Tunable, "HeuristicEffort", config.HeuristicEffort);
-            Put(snapshot.Tunable, "MemoryLimitMb", config.MemoryLimitMb);
+            foreach (var p in typeof(ISolverConfig).GetProperties())
+                Put(snapshot.Tunable, p.Name, p.GetValue(config));
 
             var type = config.GetType();
             foreach (var f in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
