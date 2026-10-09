@@ -316,6 +316,7 @@ Dependency Graph 補充：這五個宣告透過 `using OptimFoundation.Modeling`
 | `src/OptimFoundation.Core/IO/db/DbDataSource.cs` | `DbDataSource` |
 | `src/OptimFoundation.Core/IO/db/IDbCtrl.cs` | `IDbCtrl` |
 | `src/OptimFoundation.Core/IO/db/OracleDbCtrl.cs` | `OracleDbCtrl`, `OracleSolutionSink` |
+| `src/OptimFoundation.Core/DimensionNamesAttribute.cs` | `DimensionNamesAttribute` |
 | `src/OptimFoundation.Core/Infrastructure/ClassInfo.cs` | `ReflectionHelper`, `ClassInfo` |
 | `src/OptimFoundation.Core/Infrastructure/FolderDir.cs` | `FolderDir`, `ProjFolder` |
 | `src/OptimFoundation.Core/Infrastructure/Logging.cs` | `Logging` |

@@ -188,7 +188,8 @@ flowchart TD
 
 **① 宣告層——你只要「說」，程式幫你「寫」**
 你想要一個叫 `Product` 的集合、一個叫 `Produce` 的變數，只要用 attribute 標一下有哪些維度（產品 × 日期 × 班次），程式就自動幫你生出對應的欄位和存取碼。你不用手刻那些重複樣板。
-注意一個關鍵：你手寫那半是**空殼**（`partial class ... { }`，連欄位都沒有），要跟 generator 生的那半**合體**才是能用的積木。所以②的限制式 / 目標式引用的，是這顆**合體後**的積木——你 `new Variable...{ Product=, Date=, Shift= }` 時填的那些欄位，全是 generator 生的那半提供的。
+注意一個關鍵：你手寫那半通常是**空殼**（`partial class ... { }`，連欄位都沒有），要跟 generator 生的那半**合體**才是能用的積木。所以②的限制式 / 目標式引用的，是這顆**合體後**的積木——你 `new Variable...{ Product=, Date=, Shift= }` 時填的那些欄位，全是 generator 生的那半提供的。
+手寫那半也可以加輔助成員（例：`public bool IsWeekend => Date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;`）：框架的維度只認 `OptDim`，名稱、key、建變數、CSV / DB 欄位都不會把它算進去。唯一例外是 Parameter：手寫的 public 可寫 property（`{ get; set; }`）會當成 QTY 以外的數值欄，跟 QTY 一樣從資料來源載入並做數值檢查。
 > 像填一張表格：你填欄位名，系統生出整張表；你手上那張空表單，要系統補完欄位才能真的拿來填。
 
 **② 積木層——每顆積木長得一樣，而且是拿①的積木拼的**
@@ -669,6 +670,8 @@ B,C
 ```
 
 Set 至少一維，而且沒有 `QTY`。`OptDim<T>` 的泛型參數是 C# 資料型別（`string`、`int`、`DateTime` 等），CSV 欄位依它轉型。
+
+每個 `OptDim` 的名稱都會變成 property 名，所以同一個類別裡不能重複（兩個維度都是節點時各取名稱，例：`From` / `To`），要是合法的 C# 識別字，不能跟類別名或 partial class 手寫的成員同名，Parameter 的維度也不能叫 `QTY`。違反時編譯報 `OPTF009`，錯誤直接指向那個 `[OptDim]`。
 
 ---
 
@@ -2403,10 +2406,16 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 - `public static class ParameterLookupExtensions` | `OptimFoundation.Core/DataContext.cs:266`
 - `public static T FindParameterOrLog<T>( this IEnumerable<T> rows, Func<T, bool> predicate, params object[] keyValues) where T : ParameterBase` | `OptimFoundation.Core/DataContext.cs:272` | 以 predicate 找 parameter row；找不到時以 keyValues 留下診斷並回傳空結果，組模查參數時使用。
 
+### `OptimFoundation.Core/DimensionNamesAttribute.cs`
+
+- `public sealed class DimensionNamesAttribute : Attribute` | `OptimFoundation.Core/DimensionNamesAttribute.cs:13` | generator 依 `OptDim` 宣告順序標在 Set / Parameter / Variable 類別上；框架的名稱、key、建變數、CSV / DB 欄位只認這份維度清單。開發者不要自己標。
+- `public IReadOnlyList<string> Names` | `OptimFoundation.Core/DimensionNamesAttribute.cs:16`
+- `public DimensionNamesAttribute(params string[] names)` | `OptimFoundation.Core/DimensionNamesAttribute.cs:19`
+
 ### `OptimFoundation.Core/ModelElementBase.cs`
 
 - `public abstract class ModelElementBase` | `OptimFoundation.Core/ModelElementBase.cs:10`
-- `public void InitClassBySets(params object[] values)` | `OptimFoundation.Core/ModelElementBase.cs:20` | 依 public writable properties 順序轉型並填入維度值；數量或型別不合會拋例外。
+- `public void InitClassBySets(params object[] values)` | `OptimFoundation.Core/ModelElementBase.cs:59` | 依資料欄順序轉型並填值：維度（`OptDim` 宣告順序）在前，Parameter 再接 QTY 與手寫可寫 property；數量或型別不合會拋例外。沒有 generator 標記的手寫類別沿用 public 可讀寫 property 的宣告順序。
 - `public override string ToString()` | `OptimFoundation.Core/ModelElementBase.cs:77` | 回傳由型別名與維度 token 組成的 canonical name，供 variable/constraint lookup 與輸出使用。
 - `public abstract class SetRowBase : ModelElementBase` | `OptimFoundation.Core/ModelElementBase.cs:82`
 - `public override string ToString()` | `OptimFoundation.Core/ModelElementBase.cs:87` | 回傳由型別名與維度 token 組成的 canonical name，供 variable/constraint lookup 與輸出使用。
@@ -2612,8 +2621,8 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 - `public class ClassInfo` | `OptimFoundation.Core/Infrastructure/ClassInfo.cs:95`
 - `public Type Type` | `OptimFoundation.Core/Infrastructure/ClassInfo.cs:98`
 - `public string TypeName` | `OptimFoundation.Core/Infrastructure/ClassInfo.cs:101`
-- `public string[] SetNames` | `OptimFoundation.Core/Infrastructure/ClassInfo.cs:104`
-- `public Type[] PropertyTypes` | `OptimFoundation.Core/Infrastructure/ClassInfo.cs:107`
+- `public string[] SetNames` | `OptimFoundation.Core/Infrastructure/ClassInfo.cs:94` | Set / Parameter / Variable 類別回傳資料欄（維度，Parameter 另含 QTY 與手寫可寫 property）；其他型別沿用 `GetMemberNames`。
+- `public Type[] PropertyTypes` | `OptimFoundation.Core/Infrastructure/ClassInfo.cs:99` | 與 `SetNames` 同順序的型別。
 - `public string ColNames` | `OptimFoundation.Core/Infrastructure/ClassInfo.cs:110`
 - `public string ParamPlaceholders` | `OptimFoundation.Core/Infrastructure/ClassInfo.cs:113`
 - `public string SQLColsDefinition` | `OptimFoundation.Core/Infrastructure/ClassInfo.cs:116`

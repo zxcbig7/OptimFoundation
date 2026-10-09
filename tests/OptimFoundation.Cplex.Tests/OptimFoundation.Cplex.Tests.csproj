@@ -16,14 +16,15 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\OptimFoundation.Core\OptimFoundation.Core.csproj" />
     <ProjectReference Include="..\..\src\OptimFoundation.Cplex\OptimFoundation.Cplex.csproj" />
-    <!-- 以 Analyzer 引用，驗證 generator 產生的註冊碼與數值檢查。 -->
+    <!-- 以 Analyzer 引用，驗證 generator 產生的註冊碼與數值檢查；同時引用組件，用 GeneratorDriver 檢查診斷訊息。 -->
     <ProjectReference Include="..\..\src\OptimFoundation.Generators\OptimFoundation.Generators.csproj"
-                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+                       OutputItemType="Analyzer" ReferenceOutputAssembly="true" />
   </ItemGroup>
 
   <ItemGroup>

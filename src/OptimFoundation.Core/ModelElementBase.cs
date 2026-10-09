@@ -6,26 +6,55 @@ using System.Reflection;
 
 namespace OptimFoundation.Core
 {
-    /// <summary>Generator 產生的 Set、Parameter 與 Variable 資料列共用的基底類別，提供欄位初始化與名稱組合。</summary>
+    /// <summary>Set、Parameter 與 Variable 資料列的共用基底類別。</summary>
     public abstract class ModelElementBase
     {
         internal const char KeySeparator = ModelNaming.Separator;
-        private static readonly ConcurrentDictionary<Type, PropertyInfo[]> Props = new();
+        private static readonly ConcurrentDictionary<Type, PropertyInfo[]> Dimensions = new();
+        private static readonly ConcurrentDictionary<Type, PropertyInfo[]> Columns = new();
 
-        private static PropertyInfo[] GetProps(Type type) => Props.GetOrAdd(type, t =>
-            t.GetProperties(BindingFlags.Instance | BindingFlags.Public)
-             .Where(p => p.CanRead && p.CanWrite && p.GetIndexParameters().Length == 0)
-             .ToArray());
+        /// <summary>取得維度；generator 類別依 OptDim 順序，手寫類別依 public 可讀寫 property。</summary>
+        internal static PropertyInfo[] GetDimensions(Type type) => Dimensions.GetOrAdd(type, t =>
+        {
+            var attribute = t.GetCustomAttribute<DimensionNamesAttribute>();
+            if (attribute == null) return GetWritableProperties(t);
 
-        /// <summary>依 public 可寫屬性的宣告順序轉型並填入維度值，同時檢查命名 token；數量不符、無法轉型或 token 不合法都會拋例外。</summary>
+            return attribute.Names
+                .Select(name => t.GetProperty(name, BindingFlags.Instance | BindingFlags.Public)
+                    ?? throw Logging.ErrorOnce(
+                        new InvalidOperationException($"{t.Name} 標記的維度 {name} 找不到對應的 public property"),
+                        "模型元素維度不合法", null, nameof(GetDimensions), t.Name,
+                        "找不到維度屬性", $"維度={name}"))
+                .ToArray();
+        });
+
+        /// <summary>取得 CSV、DB 與初始化使用的資料欄；Parameter 包含 QTY 和其他可寫 property。</summary>
+        internal static PropertyInfo[] GetColumns(Type type) => Columns.GetOrAdd(type, t =>
+        {
+            if (t.GetCustomAttribute<DimensionNamesAttribute>() == null) return GetWritableProperties(t);
+
+            var dimensions = GetDimensions(t);
+            if (!typeof(ParameterBase).IsAssignableFrom(t)) return dimensions;
+
+            return dimensions
+                .Concat(GetWritableProperties(t).Where(p => dimensions.All(d => d.Name != p.Name)))
+                .ToArray();
+        });
+
+        private static PropertyInfo[] GetWritableProperties(Type type)
+            => type.GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                .Where(p => p.CanRead && p.CanWrite && p.GetIndexParameters().Length == 0)
+                .ToArray();
+
+        /// <summary>依資料欄順序初始化，並驗證維度 token。</summary>
         public void InitClassBySets(params object[] values) => Init(values, validateTokens: true);
 
-        // 值欄位不參與命名；維度命名檢查交由 DataContext 記警告。
+        // 資料載入的維度 token 問題由 DataContext 記錄。
         internal void InitFromDataRow(object[] values) => Init(values, validateTokens: false);
 
         private void Init(object[] values, bool validateTokens)
         {
-            var properties = GetProps(GetType());
+            var properties = GetColumns(GetType());
             if (values.Length != properties.Length)
             {
                 string message = $"{GetType().Name} 需要 {properties.Length} 個值，但收到 {values.Length} 個";
@@ -70,7 +99,7 @@ namespace OptimFoundation.Core
             => ModelNaming.ValidateToken(context, value);
 
         private protected string[] KeyParts()
-            => GetProps(GetType())
+            => GetDimensions(GetType())
                 .Select(property => ModelNaming.Token($"{GetType().Name}.{property.Name}", property.GetValue(this)))
                 .ToArray();
 

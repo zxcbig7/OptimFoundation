@@ -19,7 +19,7 @@ namespace OptimFoundation.Core.IO
                 throw Logging.ErrorOnce(
                     new ArgumentNullException(nameof(rows), "rows 不得為 null"),
                     "記憶體資料來源不合法", null, nameof(AddRows), typeof(T).Name, "資料列集合為空");
-            var properties = typeof(T).GetProperties();
+            var properties = ModelElementBase.GetColumns(typeof(T));
             _rows[typeof(T).Name] = new[]
                 {
                     properties.Select(property => property.Name).ToArray()

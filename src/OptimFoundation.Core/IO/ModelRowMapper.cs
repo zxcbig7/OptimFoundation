@@ -15,9 +15,7 @@ namespace OptimFoundation.Core.IO
             where TRow : ModelElementBase, new()
             => MapRows<TRow>(TabularData.ToRecords(table), sourceDescription);
 
-        /// <summary>
-        /// 依表頭轉為 Set/Parameter 物件；須含所有 public property，欄名比對不分大小寫。
-        /// </summary>
+        /// <summary>依表頭建立資料列；欄名不分大小寫，且須完整覆蓋資料欄。</summary>
         internal static List<TRow> MapRows<TRow>(IEnumerable<string[]> rows, string sourceDescription)
             where TRow : ModelElementBase, new()
         {
@@ -26,7 +24,7 @@ namespace OptimFoundation.Core.IO
                     new ArgumentNullException(nameof(rows), "rows 不得為 null"),
                     "資料列映射失敗", null, sourceDescription, null, "資料列集合為空");
 
-            var properties = typeof(TRow).GetProperties();
+            var properties = ModelElementBase.GetColumns(typeof(TRow));
             var normalizedRows = rows
                 .Select(row => row?.Select(cell => (cell ?? string.Empty).Trim()).ToArray()
                     ?? throw Logging.ErrorOnce(

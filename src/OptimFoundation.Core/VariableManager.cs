@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 
 namespace OptimFoundation.Core
@@ -51,9 +50,7 @@ namespace OptimFoundation.Core
                     var setRows = rowSequence.Cast<object>().ToList();
                     if (setRows.All(row => row is SetRowBase))
                     {
-                        result[i] = setRows.Select(row => row.GetType()
-                            .GetProperties(BindingFlags.Instance | BindingFlags.Public)
-                            .Where(property => property.CanRead && property.GetIndexParameters().Length == 0)
+                        result[i] = setRows.Select(row => ModelElementBase.GetDimensions(row.GetType())
                             .Select(property => ModelNaming.Token(
                                 $"集合資料列 #{i + 1}.{property.Name}", property.GetValue(row)))
                             .ToArray()).ToList();
@@ -129,11 +126,7 @@ namespace OptimFoundation.Core
             }
 
             string className = typeof(TVariable).Name;
-            var properties = typeof(TVariable).GetProperties(BindingFlags.Instance | BindingFlags.Public)
-                .Where(property => property.CanWrite && property.GetIndexParameters().Length == 0
-                    && property.DeclaringType != typeof(ModelElementBase)
-                    && property.DeclaringType != typeof(VariableBase))
-                .ToArray();
+            var properties = ModelElementBase.GetDimensions(typeof(TVariable));
             if (supplied.Count != properties.Length)
                 throw Logging.ErrorOnce(
                     new ArgumentException($"BuildVars 維度數量不一致：{className} 傳入 {supplied.Count}，變數屬性 {properties.Length}"),
@@ -170,8 +163,7 @@ namespace OptimFoundation.Core
             if (elementType == null) return null;
 
             if (typeof(SetRowBase).IsAssignableFrom(elementType))
-                return elementType.GetProperties(BindingFlags.Instance | BindingFlags.Public)
-                    .Where(property => property.CanRead && property.GetIndexParameters().Length == 0)
+                return ModelElementBase.GetDimensions(elementType)
                     .Select(property => property.PropertyType)
                     .ToArray();
             if (elementType.IsEnum || TokenTypes.Contains(elementType)) return [elementType];

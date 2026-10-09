@@ -60,9 +60,10 @@ namespace OptimFoundation.Core
         /// Nullable&lt;T&gt; 取底層型別、enum 以底層整數型存；對應不到 Oracle 型別的成員直接跳過（不會產生欄位）。
         /// </summary>
         public static string GenerateSQLCols(Type type)
+            => GenerateSQLCols(GetMemberNames(type), GetMemberTypes(type));
+
+        internal static string GenerateSQLCols(string[] names, Type[] types)
         {
-            string[] names = GetMemberNames(type);
-            Type[] types = GetMemberTypes(type);
             string cols = "";
             for (int i = 0; i < types.Length; i++)
             {
@@ -76,10 +77,7 @@ namespace OptimFoundation.Core
             return cols.ToUpper();
         }
     }
-    /// <summary>
-    /// 依公開欄位與屬性產生 Oracle 建表及 INSERT SQL，兩者沿用 reflection 順序。
-    /// 參數表含 DATA_ID、成員欄、USER_ID、TIME；結果表另含 VAR_TYPE 與 QTY。
-    /// </summary>
+    /// <summary>依資料欄產生 Oracle 的建表與 INSERT SQL。</summary>
     public class ClassInfo
     {
         /// <summary>被描述的類別型別。</summary>
@@ -88,11 +86,17 @@ namespace OptimFoundation.Core
         /// <summary>類別名，同時是解 key 的前綴與 VAR_TYPE 欄的值來源。</summary>
         public string TypeName => Type.Name;
 
-        /// <summary>各 public field/property 的名稱（依 reflection 順序），用作資料庫欄名。</summary>
-        public string[] SetNames => ReflectionHelper.GetMemberNames(Type);
+        /// <summary>資料欄名稱；模型元素使用框架定義的欄位。</summary>
+        public string[] SetNames => IsModelElement
+            ? ModelElementBase.GetColumns(Type).Select(p => p.Name).ToArray()
+            : ReflectionHelper.GetMemberNames(Type);
 
-        /// <summary>各 public field/property 的型別，順序與 <see cref="SetNames"/> 相同，用來轉換寫入值。</summary>
-        public Type[] PropertyTypes => ReflectionHelper.GetMemberTypes(Type);
+        /// <summary>資料欄型別，順序與 <see cref="SetNames"/> 相同。</summary>
+        public Type[] PropertyTypes => IsModelElement
+            ? ModelElementBase.GetColumns(Type).Select(p => p.PropertyType).ToArray()
+            : ReflectionHelper.GetMemberTypes(Type);
+
+        private bool IsModelElement => typeof(ModelElementBase).IsAssignableFrom(Type);
 
         /// <summary>維度欄名以逗號串接，供 INSERT 的欄位清單使用。</summary>
         public string ColNames => string.Join(", ", SetNames);
@@ -100,8 +104,8 @@ namespace OptimFoundation.Core
         /// <summary>對應 <see cref="ColNames"/> 的具名參數佔位符（:COL1, :COL2 …）。</summary>
         public string ParamPlaceholders => string.Join(", ", SetNames.Select(s => $":{s}"));
 
-        /// <summary>維度欄的 DDL 片段（含前導逗號），供 CREATE TABLE 拼接。</summary>
-        public string SQLColsDefinition => ReflectionHelper.GenerateSQLCols(Type);
+        /// <summary>CREATE TABLE 使用的欄位定義。</summary>
+        public string SQLColsDefinition => ReflectionHelper.GenerateSQLCols(SetNames, PropertyTypes);
 
         /// <summary>記住要處理的類別型別，供後續產生欄位名稱與 SQL；此時不連線資料庫。</summary>
         public ClassInfo(Type type) { Type = type; }

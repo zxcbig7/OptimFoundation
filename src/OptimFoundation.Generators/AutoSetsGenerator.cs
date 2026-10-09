@@ -2,6 +2,7 @@ using System.Linq;
 using System.Text;
 
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 using OptimFoundation.Internal;
@@ -23,6 +24,7 @@ namespace OptimFoundation.Generators
         private const string VariableBaseFqn = "global::OptimFoundation.Core.VariableBase";
         private const string ParameterBaseFqn = "global::OptimFoundation.Core.ParameterBase";
         private const string SetRowBaseFqn = "global::OptimFoundation.Core.SetRowBase";
+        private const string DimensionNamesAttrFqn = "global::OptimFoundation.Core.DimensionNames";
 
         private const string TabSpace = "    ";
 
@@ -55,6 +57,15 @@ namespace OptimFoundation.Generators
             id: "OPTF007",
             title: "OptDim 維度型別不受支援",
             messageFormat: "類別 '{0}' 的 [OptDim<{1}>] 型別不受支援；只允許 string / System.DateTime / int / long / double / decimal。",
+            category: "OptimFoundation.Naming",
+            defaultSeverity: DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        // 維度名稱會直接變成 property 名；不擋的話錯誤會出現在 generator 產生的檔案（CS0102 / CS0100），使用者看不出是哪個 OptDim。
+        private static readonly DiagnosticDescriptor DimensionNameRule = new DiagnosticDescriptor(
+            id: "OPTF009",
+            title: "OptDim 維度名稱不合法",
+            messageFormat: "類別 '{0}' 的維度 '{1}' 不合法：{2}",
             category: "OptimFoundation.Naming",
             defaultSeverity: DiagnosticSeverity.Error,
             isEnabledByDefault: true);
@@ -160,14 +171,14 @@ namespace OptimFoundation.Modeling
             if (ctx.TargetSymbol is not INamedTypeSymbol symbol) return null;
 
             string? varType = VarTypeFromPrefix(symbol.Name);
-            var (props, badDimType, _) = ResolveDims(symbol);
+            var (props, badDimType, _, nameIssues) = ResolveDims(symbol);
 
             return new EmitModel(NamespaceOf(symbol), symbol.Name, VariableBaseFqn,
                 AddQty: false, AddCtors: false,
                 Meta: varType == null ? string.Empty : $"VarType={varType}（由類別名前綴決定）",
                 NamingViolation: varType == null ? VarNamingRule : (badDimType == null ? null : DimensionTypeRule),
                 DiagLocation: symbol.Locations.FirstOrDefault(),
-                Props: props, DiagArg: badDimType ?? symbol.Name);
+                Props: props, DiagArg: badDimType ?? symbol.Name, NameIssues: nameIssues);
         }
 
         private static EmitModel? ExtractParam(GeneratorAttributeSyntaxContext ctx)
@@ -175,13 +186,13 @@ namespace OptimFoundation.Modeling
             if (ctx.TargetSymbol is not INamedTypeSymbol symbol) return null;
 
             bool badPrefix = !symbol.Name.StartsWith("Parameter_", System.StringComparison.Ordinal);
-            var (props, badDimType, _) = ResolveDims(symbol);
+            var (props, badDimType, _, nameIssues) = ResolveDims(symbol);
 
             return new EmitModel(NamespaceOf(symbol), symbol.Name, ParameterBaseFqn,
                 AddQty: true, AddCtors: true, Meta: string.Empty,
                 NamingViolation: badPrefix ? ParamNamingRule : (badDimType == null ? null : DimensionTypeRule),
                 DiagLocation: symbol.Locations.FirstOrDefault(),
-                Props: props, DiagArg: badDimType ?? symbol.Name);
+                Props: props, DiagArg: badDimType ?? symbol.Name, NameIssues: nameIssues);
         }
 
         private static EmitModel? ExtractSet(GeneratorAttributeSyntaxContext ctx)
@@ -189,7 +200,7 @@ namespace OptimFoundation.Modeling
             if (ctx.TargetSymbol is not INamedTypeSymbol symbol) return null;
 
             bool badPrefix = !symbol.Name.StartsWith("Set_", System.StringComparison.Ordinal);
-            var (props, badDimType, hasDims) = ResolveDims(symbol);
+            var (props, badDimType, hasDims, nameIssues) = ResolveDims(symbol);
 
             DiagnosticDescriptor? diag = badPrefix ? SetNamingRule
                 : !hasDims ? SetDimensionRequiredRule
@@ -198,7 +209,7 @@ namespace OptimFoundation.Modeling
             return new EmitModel(NamespaceOf(symbol), symbol.Name, SetRowBaseFqn,
                 AddQty: false, AddCtors: false, Meta: string.Empty,
                 NamingViolation: diag, DiagLocation: symbol.Locations.FirstOrDefault(),
-                Props: props, DiagArg: badDimType ?? symbol.Name);
+                Props: props, DiagArg: badDimType ?? symbol.Name, NameIssues: nameIssues);
         }
 
 
@@ -317,8 +328,7 @@ namespace OptimFoundation.Modeling
         private static string[] ResolveIndexNames(INamedTypeSymbol paramType)
             => ResolveDims(paramType).props.Select(p => p.Name).ToArray();
 
-        // 依序驗證 double 維度、QTY、手寫 public double 屬性並去重。
-        // 生成的成員尚不存在，維度須讀 attribute；非 double 欄位不在此檢查。
+        // 驗證 double 維度、QTY 與其他 public 可寫 double 資料欄。
         private static string[] ResolveNumberPropNames(INamedTypeSymbol paramType)
         {
             var names = new System.Collections.Generic.List<string>();
@@ -334,6 +344,7 @@ namespace OptimFoundation.Modeling
             {
                 if (member is not IPropertySymbol prop) continue;
                 if (prop.IsStatic || prop.DeclaredAccessibility != Accessibility.Public) continue;
+                if (prop.SetMethod is not { DeclaredAccessibility: Accessibility.Public }) continue;
                 if (prop.Type.SpecialType != SpecialType.System_Double) continue;
                 if (seen.Add(prop.Name)) names.Add(prop.Name);
             }
@@ -399,19 +410,32 @@ namespace OptimFoundation.Modeling
         }
 
         // 依宣告順序讀取類別上的 OptDim<T>("name")，整理每個待產生屬性的名稱與型別。
-        // 回傳 (props, 不合法的維度型別顯示名或 null, 有沒有宣告維度)
-        private static (PropSpec[] props, string? badDimType, bool has) ResolveDims(INamedTypeSymbol symbol)
+        // 名稱不合法的維度不產生 property，改回報 OPTF009 並指向那個 [OptDim]，避免錯誤出現在產生的檔案。
+        // 回傳 (props, 不合法的維度型別顯示名或 null, 有沒有宣告維度, 名稱不合法的維度)
+        private static (PropSpec[] props, string? badDimType, bool has, DimensionNameIssue[] nameIssues) ResolveDims(INamedTypeSymbol symbol)
         {
             var dims = symbol.GetAttributes()
                 .Where(a => a.AttributeClass != null && a.AttributeClass.Name == "OptDimAttribute" && a.AttributeClass.IsGenericType)
                 .ToList();
-            if (dims.Count == 0) return (System.Array.Empty<PropSpec>(), null, false);
+            if (dims.Count == 0) return (System.Array.Empty<PropSpec>(), null, false, System.Array.Empty<DimensionNameIssue>());
 
+            bool isParam = HasOptParamAttribute(symbol);
+            var seen = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal);
             var list = new System.Collections.Generic.List<PropSpec>();
+            var nameIssues = new System.Collections.Generic.List<DimensionNameIssue>();
             string? badDimType = null;
             foreach (var d in dims)
             {
                 string name = d.ConstructorArguments.Length > 0 ? d.ConstructorArguments[0].Value?.ToString() ?? string.Empty : string.Empty;
+                string? nameReason = InvalidDimensionNameReason(symbol, name, isParam, seen);
+                if (nameReason != null)
+                {
+                    var location = d.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? symbol.Locations.FirstOrDefault();
+                    nameIssues.Add(new DimensionNameIssue(location, name, nameReason));
+                    continue;
+                }
+                seen.Add(name);
+
                 var type = d.AttributeClass!.TypeArguments.Length == 1 ? d.AttributeClass.TypeArguments[0] : null;
                 if (type == null)
                 {
@@ -423,7 +447,21 @@ namespace OptimFoundation.Modeling
                 if (!legal) badDimType ??= type.ToDisplayString();
                 list.Add(new PropSpec(name, fq, isStr));
             }
-            return (list.ToArray(), badDimType, true);
+            return (list.ToArray(), badDimType, true, nameIssues.ToArray());
+        }
+
+        // 維度名稱會變成 property 名與 Deconstruct 參數名；手寫成員只看使用者寫的那半（產生的成員此時還不存在）。
+        private static string? InvalidDimensionNameReason(
+            INamedTypeSymbol symbol, string name, bool isParam, System.Collections.Generic.HashSet<string> seen)
+        {
+            if (name.Length == 0) return "維度名稱為空";
+            if (!SyntaxFacts.IsValidIdentifier(name) || SyntaxFacts.GetKeywordKind(name) != SyntaxKind.None)
+                return "不是合法的 C# 識別字";
+            if (seen.Contains(name)) return "維度名稱重複；同一個概念用在兩個角色時請各取名稱，例：From / To";
+            if (isParam && name == "QTY") return "QTY 由 generator 自動產生，Parameter 的維度不能叫 QTY";
+            if (name == symbol.Name) return "不能與類別名相同";
+            if (!symbol.GetMembers(name).IsEmpty) return "與 partial class 手寫的成員同名";
+            return null;
         }
 
         // 將 CLR 型別轉成產碼用的 C# 型別名稱，並回傳它是否為 string、是否受支援。
@@ -454,6 +492,9 @@ namespace OptimFoundation.Modeling
                     : Diagnostic.Create(m.NamingViolation, m.DiagLocation, m.ClassName));
             }
 
+            foreach (var issue in m.NameIssues)
+                spc.ReportDiagnostic(Diagnostic.Create(DimensionNameRule, issue.Location, m.ClassName, issue.Name, issue.Reason));
+
             var sb = new StringBuilder();
             sb.AppendLine("// <auto-generated/>");
             sb.AppendLine("#nullable enable");
@@ -468,6 +509,10 @@ namespace OptimFoundation.Modeling
 
             if (m.Meta.Length > 0)
                 sb.Append("    // [").Append(m.Meta).AppendLine("]：由 AutoSetsGenerator 產生");
+            // 保留 OptDim 順序，排除 partial class 的其他 property。
+            sb.Append("    [").Append(DimensionNamesAttrFqn).Append('(')
+              .Append(string.Join(", ", m.Props.Select(p => "\"" + p.Name + "\"")))
+              .AppendLine(")]");
             sb.Append("    public partial class ").Append(m.ClassName).Append(" : ").AppendLine(m.BaseFqn);
             sb.AppendLine("    {");
 
@@ -525,7 +570,9 @@ namespace OptimFoundation.Modeling
             string Namespace, string ClassName, string BaseFqn,
             bool AddQty, bool AddCtors, string Meta,
             DiagnosticDescriptor? NamingViolation, Location? DiagLocation,
-            PropSpec[] Props, string? DiagArg);
+            PropSpec[] Props, string? DiagArg, DimensionNameIssue[] NameIssues);
+
+        private sealed record DimensionNameIssue(Location? Location, string Name, string Reason);
 
         private sealed record SetReg(string FieldName, string[] IndexNames);
         private sealed record ParamReg(string FieldName, string[] IndexNames, string[] NumberProps);

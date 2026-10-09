@@ -155,10 +155,7 @@ namespace OptimFoundation.Core.IO
             }
         }
 
-        /// <summary>
-        /// 將 Set/Parameter 寫至 FolderDir.Input/{fileName}.csv，預設檔名為型別名，表頭為大寫 property 名。
-        /// 僅使用 GetProperties，與 Load&lt;T&gt; 一致；不可加入 field 或 static member。
-        /// </summary>
+        /// <summary>將資料列寫至 Input CSV；欄位與 <c>Load&lt;T&gt;</c> 相同。</summary>
         public static void WriteRows<T>(IReadOnlyList<T> rows, string fileName = null)
             where T : ModelElementBase
         {
@@ -169,11 +166,11 @@ namespace OptimFoundation.Core.IO
 
             try
             {
-                var props = typeof(T).GetProperties();
+                var props = ModelElementBase.GetColumns(typeof(T));
                 if (props.Length == 0)
                     throw Logging.ErrorOnce(
-                        new InvalidOperationException($"找不到公開屬性：{typeof(T).Name} 沒有任何 public 屬性，無法寫出"),
-                        "CSV 寫出不合法", "寫出資料列", nameof(WriteRows), typeof(T).Name, "找不到公開屬性");
+                        new InvalidOperationException($"找不到資料欄：{typeof(T).Name} 沒有任何資料欄，無法寫出"),
+                        "CSV 寫出不合法", "寫出資料列", nameof(WriteRows), typeof(T).Name, "找不到資料欄");
 
                 string path = FolderDir.Input.GetPathFile(EnsureCsv(fileName ?? typeof(T).Name));
                 bool overwritten = File.Exists(path);
