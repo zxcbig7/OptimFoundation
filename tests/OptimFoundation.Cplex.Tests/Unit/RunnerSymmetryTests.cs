@@ -36,17 +36,33 @@ namespace OptimFoundation.Cplex.Tests.Unit
             foreach (string method in forbidden)
                 Assert.Null(typeof(OptModel).GetMethod(method, BindingFlags.Public | BindingFlags.Instance));
 
-            // 正式環境與實驗回傳同一種 builder；舊入口 Solve 已改名 Production
+            // 正式環境與實驗各自一個型別，共用 OptExecution 的動詞；舊入口 Solve 已改名 Production
             Assert.Null(typeof(OptProject).GetMethod("Solve", BindingFlags.Public | BindingFlags.Instance));
-            Assert.Equal(typeof(OptExperiment), typeof(OptProject).GetMethod("Production", BindingFlags.Public | BindingFlags.Instance)!.ReturnType);
+            Assert.Equal(typeof(OptProduction), typeof(OptProject).GetMethod("Production", BindingFlags.Public | BindingFlags.Instance)!.ReturnType);
             Assert.Equal(typeof(OptExperiment), typeof(OptProject).GetMethod("Experiment", BindingFlags.Public | BindingFlags.Instance)!.ReturnType);
-            Assert.Null(typeof(OptExperiment).GetMethod("Solve", BindingFlags.Public | BindingFlags.Instance));
+            Assert.Equal(typeof(OptExecution), typeof(OptProduction).BaseType);
+            Assert.Equal(typeof(OptExecution), typeof(OptExperiment).BaseType);
+            Assert.Null(typeof(OptExecution).GetMethod("Solve", BindingFlags.Public | BindingFlags.Instance));
+        }
+
+        [Fact]
+        public void Production_And_Experiment_ShareTheSameVerbs()
+        {
+            // 單組與多組寫法一致：公開動詞全部定義在 OptExecution，子類別不另加
+            foreach (var type in new[] { typeof(OptProduction), typeof(OptExperiment) })
+                Assert.Empty(type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly));
+            foreach (string verb in new[] { "AddProjectConfig", "AddModel", "AddSolverConfig", "AddTrial", "BeforeSolve", "OnSolved", "CaptureTrajectory", "Run" })
+                Assert.NotNull(typeof(OptExecution).GetMethod(verb, BindingFlags.Public | BindingFlags.Instance));
         }
 
         [Fact]
         public void ProjectIsTheOnlyEntryPoint_NoExtraRunnerTypes()
         {
-            Assert.Empty(typeof(OptExperiment).GetConstructors(BindingFlags.Public | BindingFlags.Instance));
+            foreach (var type in new[] { typeof(OptExecution), typeof(OptProduction), typeof(OptExperiment) })
+                Assert.Empty(type.GetConstructors(BindingFlags.Public | BindingFlags.Instance));
+            // 執行層不認得專案：OptExecution 沒有任何 OptProject 型別的欄位
+            Assert.DoesNotContain(typeof(OptExecution).GetFields(BindingFlags.Instance | BindingFlags.NonPublic),
+                f => f.FieldType == typeof(OptProject));
             Assert.Null(typeof(OptProject).Assembly.GetType("OptimFoundation.Cplex.OptSolve"));
             Assert.Null(typeof(OptProject).Assembly.GetType("OptimFoundation.Cplex.OptRun"));
             Assert.Null(typeof(ProjectConfig).Assembly.GetType("OptimFoundation.Core.OutputOptions"));
@@ -57,14 +73,14 @@ namespace OptimFoundation.Cplex.Tests.Unit
         {
             // builder 用 AddProjectConfig / AddSolverConfig 寫明是哪一種設定；OptProject 不再有第二個入口
             Assert.Null(typeof(OptProject).GetMethod("LoadConfig", new[] { typeof(ProjectConfig) }));
-            Assert.NotNull(typeof(OptExperiment).GetMethod("AddProjectConfig", new[] { typeof(ProjectConfig) }));
-            Assert.NotNull(typeof(OptExperiment).GetMethod("AddSolverConfig", new[] { typeof(string), typeof(CplexConfig) }));
-            Assert.Null(typeof(OptExperiment).GetMethod("LoadConfig"));
-            Assert.Null(typeof(OptExperiment).GetMethod("AddConfig"));
+            Assert.NotNull(typeof(OptExecution).GetMethod("AddProjectConfig", new[] { typeof(ProjectConfig) }));
+            Assert.NotNull(typeof(OptExecution).GetMethod("AddSolverConfig", new[] { typeof(string), typeof(CplexConfig) }));
+            Assert.Null(typeof(OptExecution).GetMethod("LoadConfig"));
+            Assert.Null(typeof(OptExecution).GetMethod("AddConfig"));
             // engine 層吃 solver 設定仍是 LoadConfig
             Assert.NotNull(typeof(OptEngine).GetMethod("LoadConfig", new[] { typeof(ISolverConfig) }));
 
-            foreach (var type in new[] { typeof(OptProject), typeof(OptExperiment), typeof(OptEngine) })
+            foreach (var type in new[] { typeof(OptProject), typeof(OptExecution), typeof(OptEngine) })
             {
                 Assert.Null(type.GetMethod("UseOutput"));
                 Assert.Null(type.GetMethod("UseConfig"));
@@ -116,10 +132,10 @@ namespace OptimFoundation.Cplex.Tests.Unit
         {
             var experiment = new OptProject("defaults-" + Guid.NewGuid().ToString("N"), retentionDays: 0)
                 .Experiment("exp", "test");
-            var projectConfig = (ProjectConfig)typeof(OptExperiment)
+            var projectConfig = (ProjectConfig)typeof(OptExecution)
                 .GetField("_projectConfig", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .GetValue(experiment)!;
-            FieldInfo trajectory = typeof(OptExperiment)
+            FieldInfo trajectory = typeof(OptExecution)
                 .GetField("_captureTrajectory", BindingFlags.Instance | BindingFlags.NonPublic)!;
 
             Assert.False(projectConfig.EnableSolverLog);
@@ -131,6 +147,23 @@ namespace OptimFoundation.Cplex.Tests.Unit
 
             experiment.CaptureTrajectory(false);
             Assert.False((bool)trajectory.GetValue(experiment)!);
+        }
+
+        [Fact]
+        public void OptProduction_Defaults_SolverLogOnAndTrajectoryOff()
+        {
+            var production = new OptProject("defaults-" + Guid.NewGuid().ToString("N"), retentionDays: 0)
+                .Production();
+            var projectConfig = (ProjectConfig)typeof(OptExecution)
+                .GetField("_projectConfig", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(production)!;
+            FieldInfo trajectory = typeof(OptExecution)
+                .GetField("_captureTrajectory", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+            Assert.True(projectConfig.EnableSolverLog);
+            Assert.False(projectConfig.ExportLP || projectConfig.ExportMPS || projectConfig.ExportSol || projectConfig.ExportIIS);
+            Assert.False((bool)trajectory.GetValue(production)!);
+            Assert.Equal(OptProject.ProductionExperimentName, production.Name);
         }
 
         [Fact]

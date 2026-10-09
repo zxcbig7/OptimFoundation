@@ -48,29 +48,23 @@ namespace OptimFoundation.Cplex
 
         #region 正式環境結果
 
+        // 跨多次 Production 共用；OptProduction 執行時寫入，專案只負責對外提供。
+        private readonly ProductionResult _production = new ProductionResult();
+
         /// <summary>最近一次 Production 的 engine，用來取解；建模或求解中途丟例外時仍可讀取。下一次 Production 或 Dispose 時釋放。</summary>
-        public OptEngine Engine { get; private set; }
+        public OptEngine Engine => _production.Engine;
 
         /// <summary>最近一次 Production 是否找到可用解（Optimal 或 Feasible）。</summary>
-        public bool IsSuccess { get; internal set; }
+        public bool IsSuccess => _production.IsSuccess;
 
         /// <summary>最近一次 Production 的設定副本與求解統計，格式與實驗的 Trial 相同；預設不記錄收斂過程。</summary>
-        public Trial Trial { get; internal set; }
+        public Trial Trial => _production.Trial;
 
         /// <summary>最近一次 Production 的總耗時（CPLEX 時鐘）：從建好 CPLEX 模型起，包含建模、求解、執行 OnSolved 與儲存紀錄。</summary>
-        public TimeSpan TotalElapsed { get; internal set; }
+        public TimeSpan TotalElapsed => _production.TotalElapsed;
 
         /// <summary>最近一次 Production 的建模耗時（CPLEX 時鐘）；使用模型檔時，包含讀檔與建立變數、限制式查找索引的時間。</summary>
         public TimeSpan BuildModelElapsed => Engine?.ModelApplyElapsed ?? TimeSpan.Zero;
-
-        // 先保存 Engine 再建模，失敗時仍可讀取診斷資訊；前一次的 engine 在這裡釋放。
-        internal void ReplaceEngine(OptEngine engine)
-        {
-            Engine?.Dispose();
-            Engine = engine;
-            IsSuccess = false;
-            Trial = null;
-        }
 
         /// <summary>釋放最近一次 Production 的 engine（CPLEX native 資源）。</summary>
         public void Dispose() => Engine?.Dispose();
@@ -82,35 +76,13 @@ namespace OptimFoundation.Cplex
 
         /// <summary>建立正式求解流程：只允許一組模型與設定，保留 engine 供取解，不記錄收斂軌跡。</summary>
         /// <param name="description">寫進 -meta.csv 的說明；省略時寫「正式環境紀錄：{模型名}」。</param>
-        public OptExperiment Production(string description = null)
-            => new OptExperiment(this, ProductionExperimentName, description, isProduction: true);
+        public OptProduction Production(string description = null)
+            => new OptProduction(Name, ProductionExperimentName, description, _production);
 
         /// <summary>建立實驗，讓每個模型搭配每組求解器設定，並保存每次結果。</summary>
         /// <param name="name">實驗名，輸出檔為 {專案名}-{實驗名}-trial.csv 等（<see cref="ProductionExperimentName"/> 留給正式環境）；同名實驗再跑一次整組覆寫。</param>
         /// <param name="description">實驗目的，寫進 -meta.csv。</param>
         public OptExperiment Experiment(string name, string description = null)
-            => new OptExperiment(this, name, description, isProduction: false);
-
-        #region 批次識別
-
-        private static readonly object RunIdLock = new object();
-        private static string _lastRunStamp;
-        private static int _runStampRepeat;
-
-        /// <summary>
-        /// 批次識別使用 yyyyMMdd-HHmmss；同秒重複時加流水號。
-        /// </summary>
-        internal static string NextRunId()
-        {
-            string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-            lock (RunIdLock)
-            {
-                _runStampRepeat = stamp == _lastRunStamp ? _runStampRepeat + 1 : 1;
-                _lastRunStamp = stamp;
-                return _runStampRepeat == 1 ? stamp : $"{stamp}-{_runStampRepeat}";
-            }
-        }
-
-        #endregion
+            => new OptExperiment(Name, name, description);
     }
 }

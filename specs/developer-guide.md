@@ -270,7 +270,7 @@ Trial / Experiment ──► trial / meta / summary / trajectory CSV
 | Model recipe | 保存建變數、目標式、限制式、solution file 與 warm start 步驟 | `OptModel` |
 | Expression/model engine | 管理 expression pool、native model、solve 狀態與結果 | `EngineBase`、`OptEngine` |
 | Application lifecycle | 建 engine、套 config、build、solve、artifact、dispose | `OptProject` |
-| Experiment | 展開 model/config trials 並序列化結果 | `OptExperiment`、`Experiment`、`Trial` |
+| Execution | 正式求解與實驗共用的執行 builder：展開 model/config trials、求解並序列化結果 | `OptExecution`（`OptProduction` / `OptExperiment`）、`Experiment`、`Trial` |
 | Infrastructure | 路徑、CSV、DB、logging | `ProjectConfig`、`CsvCtrl`、`IDbCtrl` |
 
 ### 3.1 典型呼叫順序
@@ -283,7 +283,7 @@ Trial / Experiment ──► trial / meta / summary / trajectory CSV
 6. 從 `project.Engine` / `project.IsSuccess` 讀 solution、status、metrics，或在 `OnSolved` 寫入 `ISolutionSink`。
 7. 要比較多組設定時把入口換成 `project.Experiment(name)`，其餘動詞相同（第 18 章）。
 
-`Production()` 與 `Experiment(name)` 回傳同一種 `OptExperiment`，差別只在預設值：
+`Production()` 回傳 `OptProduction`、`Experiment(name)` 回傳 `OptExperiment`，兩者都繼承 `OptExecution`：公開動詞全部定義在 `OptExecution`，寫法完全相同，差別只在規則與預設值。`OptExecution` 不認得 `OptProject`；正式求解的結果由 `OptProduction` 寫進專案持有的結果，`project.Engine` / `IsSuccess` / `Trial` 只是對外提供。
 
 | | `project.Production()` | `project.Experiment(name)` |
 |---|---|---|
@@ -320,7 +320,7 @@ Trial / Experiment ──► trial / meta / summary / trajectory CSV
 
 ### 3.3 API 使用層級
 
-- **Recommended**：`OptData.Load`、typed `BuildVars<T>`、owner/dim constraint overload、`OptModel`、`OptProject`、`OptExperiment`。
+- **Recommended**：`OptData.Load`、typed `BuildVars<T>`、owner/dim constraint overload、`OptModel`、`OptProject`、`OptExecution`（`OptProduction` / `OptExperiment`）。
 - **Advanced**：直接操作 `OptEngine`、string builders、bounds/reset、native CPLEX special constraints、copy/merge/thread、直接 import/export。
 - **Framework integration**：generator base types、registration DTO、IO/DB contracts、CSV writers、logging 與 infrastructure helpers。
 
@@ -1711,7 +1711,7 @@ flowchart LR
 - `{專案名}-{實驗名}-summary.csv`：彙總，每組設定一列；正式求解不寫。
 - `{專案名}-{實驗名}-trajectory.csv`：收斂軌跡，一列一個軌跡點；有軌跡點才寫。
 
-`{專案名}-{實驗名}` 就是 `OptExperiment.FullName`；正式求解的實驗名是 `solve`，檔名為 `{專案名}-production-trial.csv` 等。
+`{專案名}-{實驗名}` 就是 `OptExecution.FullName`；正式求解的實驗名是 `production`，檔名為 `{專案名}-production-trial.csv` 等。
 
 欄位固定，只有一種格式，沒有版本號。
 
@@ -1754,7 +1754,7 @@ flowchart LR
 
 `Gap` 是求解結果實際達到的 gap，不是 `CplexConfig.MipGap` 那個停止門檻。
 
-`SolveTimeMs` 只計 `Production()`；`BuildAndSolveTimeMs` = 建模 + 求解，只有經由 `OptProject.Production` / `OptExperiment` 才有值，自己呼叫 `Trial.Capture` 時是 null（CSV 寫 `n/a`）。
+`SolveTimeMs` 只計 `Production()`；`BuildAndSolveTimeMs` = 建模 + 求解，只有經由 `OptExecution.Run`（`OptProduction` / `OptExperiment`）才有值，自己呼叫 `Trial.Capture` 時是 null（CSV 寫 `n/a`）。
 
 基準是誰，看同一個實驗 `-meta.csv` 的 `baseline.label`；模型結構數量（varCount、constraintCount 等）同一模型每列一樣，看 `-meta.csv` 的 `model.<Model>.*`。
 
@@ -2101,7 +2101,7 @@ dotnet run -- read-model <file> exp # 讀模型檔做實驗；不加 exp 就是�
 ### 24.1 一行 log 的格式
 
 ```text
-2026-10-04 09:30:12 | 警告 | [限制式為空] 名稱=Constraint_Equal@K1 原因=左式沒有任何項 結果=略過
+2026-10-04 09:30:12 | 警告 | [限制式為空] 名稱=Constraint_Equal@K1 常數=0 右側項數量=0 右側常數=1 原因=左式沒有任何項 結果=略過
 2026-10-04 09:30:13 | 警告 | [實驗紀錄覆寫] 同名實驗已有紀錄 | 名稱=Template-tuning-r0 結果=覆寫
 ```
 
@@ -2238,7 +2238,7 @@ dotnet run -- read-model <file> exp # 讀模型檔做實驗；不加 exp 就是�
 
 以下 catalog 完整保留目前 source 的 public signature，並依 source module 分組。搭配前面的架構章節閱讀：
 
-- **Recommended**：`OptData.Load`、typed `BuildVars<T>`、owner/dim constraint overload、`OptModel`、`OptProject`、`OptExperiment`。
+- **Recommended**：`OptData.Load`、typed `BuildVars<T>`、owner/dim constraint overload、`OptModel`、`OptProject`、`OptExecution`（`OptProduction` / `OptExperiment`）。
 - **Advanced**：直接控制 `OptEngine`、string builders、bounds/reset、special constraints、import/export、conflict、copy/merge/thread。
 - **Framework integration**：generator base types、registration DTO、IO/DB contracts、CSV writers、logging 與 infrastructure helpers。
 
@@ -2486,24 +2486,24 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 - `public bool AddLHS(double constant)` | `OptimFoundation.Core/EngineBase.cs:1422` | 用途：加入 expression term/constant；建式時呼叫，會修改共用 pool，稍後由 Create* 消耗。
 - `public bool AddRHS(double coeff, object varSpec)` | `OptimFoundation.Core/EngineBase.cs:1434` | 用途：加入 expression term/constant；建式時呼叫，會修改共用 pool，稍後由 Create* 消耗。
 - `public bool AddRHS(double constant)` | `OptimFoundation.Core/EngineBase.cs:1459` | 用途：加入 expression term/constant；建式時呼叫，會修改共用 pool，稍後由 Create* 消耗。
-- `public bool CreateGreaterEqual(string name)` | `OptimFoundation.Core/EngineBase.cs:1494` | 驗證明確 name，將 pool 正規化為 `(LHS terms - RHS terms) >= (RhsConst - LhsConst)` 並加入 solver model。兩側都沒有變數項時記 warning、回傳 false 且保留 pool；同名 duplicate 不新增 model object但記 warning、清 pool並回傳 true；成功也清 pool並回傳 true。
+- `public bool CreateGreaterEqual(string name)` | `OptimFoundation.Core/EngineBase.cs:1494` | 驗證明確 name，將 pool 正規化為 `(LHS terms - RHS terms) >= (RhsConst - LhsConst)` 並加入 solver model。兩側都沒有變數項時記 `[限制式為空]` warning（列出被丟掉的常數）、清空 pool（含常數）並回傳 false；同名 duplicate 不新增 model object但記 warning、清 pool並回傳 true；成功也清 pool並回傳 true。
 - `public bool CreateGreaterEqual(ConstraintBase owner, params object[] dims)` | `OptimFoundation.Core/EngineBase.cs:1498` | 由 owner type 與 dims 組 canonical name，再把 LHS/RHS pool 建成 `>=` constraint並加入 model。空 variable pool 回傳 false且不清；duplicate 或成功都記 build count、清 pool並回傳 true。
-- `public bool CreateGreaterEqual(double rhs, string name)` | `OptimFoundation.Core/EngineBase.cs:1506` | 驗證 name；LHS 沒有變數項時 warning、回傳 false並保留 pool。否則用 `rhs` 覆寫先前 `AddRHS(constant)` 的 RHS constant，既有 RHS variable terms 仍移到左側，再建立 `>=` constraint；duplicate/成功後清 pool並回傳 true。
-- `public bool CreateLessEqual(string name)` | `OptimFoundation.Core/EngineBase.cs:1525` | 驗證明確 name，建立 `(LHS terms - RHS terms) <= (RhsConst - LhsConst)` 並加入 solver model。兩側無變數項時回傳 false且保留 pool；duplicate 不新增但清 pool並回傳 true；成功加入 model後同樣清 pool。
+- `public bool CreateGreaterEqual(double rhs, string name)` | `OptimFoundation.Core/EngineBase.cs:1506` | 驗證 name；LHS 沒有變數項時 warning、清空 pool（含 RHS 變數項與常數）並回傳 false。否則用 `rhs` 覆寫先前 `AddRHS(constant)` 的 RHS constant，既有 RHS variable terms 仍移到左側，再建立 `>=` constraint；duplicate/成功後清 pool並回傳 true。
+- `public bool CreateLessEqual(string name)` | `OptimFoundation.Core/EngineBase.cs:1525` | 驗證明確 name，建立 `(LHS terms - RHS terms) <= (RhsConst - LhsConst)` 並加入 solver model。兩側無變數項時 warning、清空 pool 並回傳 false；duplicate 不新增但清 pool並回傳 true；成功加入 model後同樣清 pool。
 - `public bool CreateLessEqual(ConstraintBase owner, params object[] dims)` | `OptimFoundation.Core/EngineBase.cs:1529` | 由 owner+dims 產生 canonical name，使用完整 LHS/RHS pool 建 `<=` constraint。空 variable pool warning並回傳 false且不清；duplicate 或成功都清 pool並回傳 true。
-- `public bool CreateLessEqual(double rhs, string name)` | `OptimFoundation.Core/EngineBase.cs:1534` | 驗證 name；若 LHS 沒有變數項則回傳 false並保留 pool。否則 `rhs` 取代既有 RHS constant，RHS variable terms 保留並以負係數移到左側，建立 `<=` constraint；duplicate/成功後清 pool並回傳 true。
-- `public bool CreateEqual(string name)` | `OptimFoundation.Core/EngineBase.cs:1553` | 驗證明確 name，把兩側 pool 正規化後建立 equality並加入 solver model。沒有 LHS/RHS variable terms 時 warning、回傳 false且不清 pool；duplicate 略過新增但清 pool並回傳 true；成功也清 pool。
+- `public bool CreateLessEqual(double rhs, string name)` | `OptimFoundation.Core/EngineBase.cs:1534` | 驗證 name；若 LHS 沒有變數項則 warning、清空 pool 並回傳 false。否則 `rhs` 取代既有 RHS constant，RHS variable terms 保留並以負係數移到左側，建立 `<=` constraint；duplicate/成功後清 pool並回傳 true。
+- `public bool CreateEqual(string name)` | `OptimFoundation.Core/EngineBase.cs:1553` | 驗證明確 name，把兩側 pool 正規化後建立 equality並加入 solver model。沒有 LHS/RHS variable terms 時 warning、清空 pool 並回傳 false；duplicate 略過新增但清 pool並回傳 true；成功也清 pool。
 - `public bool CreateEqual(ConstraintBase owner, params object[] dims)` | `OptimFoundation.Core/EngineBase.cs:1557` | 由 owner type 與 dims 命名，將完整 pool 建成 equality。空 variable pool 回傳 false且保留；同名 duplicate 或成功建立都記錄結果、清 pool並回傳 true。
-- `public bool CreateEqual(double rhs, string name)` | `OptimFoundation.Core/EngineBase.cs:1562` | 驗證 name；LHS 沒有變數項時 warning、回傳 false且不清 pool。否則用參數 `rhs` 覆寫 RHS constant，仍納入原 RHS variable terms，建立 equality；duplicate/成功後清 pool並回傳 true。
+- `public bool CreateEqual(double rhs, string name)` | `OptimFoundation.Core/EngineBase.cs:1562` | 驗證 name；LHS 沒有變數項時 warning、清空 pool 並回傳 false。否則用參數 `rhs` 覆寫 RHS constant，仍納入原 RHS variable terms，建立 equality；duplicate/成功後清 pool並回傳 true。
 - `public bool CreateRange(double lb, double ub, string name)` | `OptimFoundation.Core/EngineBase.cs:1579` | 只取 LHS terms 建 `lb - LhsConst <= LHS <= ub - LhsConst` 並使用明確 name；RHS terms/constant 不參與，若存在會記 `[右側暫存區略過]` 警告 後捨棄。LHS 沒有變數項時清空 pool 並回傳 false；成功或 duplicate skip 後也清空整個 pool並回傳 true。
 - `public bool CreateRange(double lb, double ub, ConstraintBase owner, params object[] dims)` | `OptimFoundation.Core/EngineBase.cs:1583` | 先由 owner+dims 產生 canonical name，再只消耗 LHS 建範圍限制式；任何 RHS pool 內容都會 warning 並忽略。LHS 空時清 pool、記 build failure 並回傳 false；其他完成路徑清 pool並回傳 true。
 - `public void CreateMinimize()` | `OptimFoundation.Core/EngineBase.cs:1682` | 只取 LHS terms、LHS constant 與已累積 soft penalty terms，設定 `ObjectiveSense.Minimize` 並以 `SetObjective` 取代 solver objective；RHS pool 若有內容會記 `[右側暫存區略過]` 警告 後捨棄。LHS 與 soft penalty 都空時不建立 objective，即使只有 constant 也 skip；所有正常返回路徑都清 pool。方法無回傳值，成功會更新 objective terms/constant/sense 與 model stats state。
 - `public void CreateMaximize()` | `OptimFoundation.Core/EngineBase.cs:1685` | 只以 LHS terms、LHS constant 及 soft penalty terms建立 `ObjectiveSense.Maximize` objective，並取代 solver 目前 objective；任何 RHS terms/constant 都 warning 後忽略。沒有 LHS terms且沒有 soft penalty時 skip建立並清 pool；成功更新 objective tracking/state後也清 pool。方法回傳 void，建置例外會記錄後重拋。
 - `public virtual bool SupportsSoftConstraints` | `OptimFoundation.Core/EngineBase.cs:1756`
-- `public virtual bool CreateLessEqualSoft(double rhs, double penalty)` | `OptimFoundation.Core/EngineBase.cs:1759` | 自動命名後建立 nonnegative continuous slack `Surplus_*`，把它以 -1 加入式子形成 `LHS - slack <= rhs`；目標最小化加入 `+penalty*slack`，最大化加入負 penalty。pool 空回傳 false；成功會重設 objective、清 pool並回傳 true。
+- `public virtual bool CreateLessEqualSoft(double rhs, double penalty)` | `OptimFoundation.Core/EngineBase.cs:1759` | 自動命名後建立 nonnegative continuous slack `Surplus_*`，把它以 -1 加入式子形成 `LHS - slack <= rhs`；目標最小化加入 `+penalty*slack`，最大化加入負 penalty。pool 空時 warning、清空 pool 並回傳 false；成功會重設 objective、清 pool並回傳 true。
 - `public virtual bool CreateLessEqualSoft(double rhs, double penalty, string name)` | `OptimFoundation.Core/EngineBase.cs:1763` | 驗證 name，以 `Surplus_{name}` 建非負 continuous slack，建立 `LHS - slack <= rhs`，並依 objective sense 加入 `+penalty` 或 `-penalty` slack term；修改 variable、constraint 與 objective state，完成後清 pool。
 - `public virtual bool CreateLessEqualSoft(double rhs, double penalty, ConstraintBase owner, params object[] dims)` | `OptimFoundation.Core/EngineBase.cs:1768` | 由 owner+dims 組 canonical name，建立 surplus slack 允許 LHS 超過 rhs；slack 係數為 -1，違反量以 penalty 加入最小化 objective、從最大化 objective 扣除，成功後清 pool。
-- `public virtual bool CreateGreaterEqualSoft(double rhs, double penalty)` | `OptimFoundation.Core/EngineBase.cs:1772` | 自動命名並建立 nonnegative continuous `Deficit_*`，形成 `LHS + slack >= rhs`；不足量以 penalty 懲罰，最小化加正項、最大化加負項。pool 空回傳 false，成功修改 variable/constraint/objective 後清 pool。
+- `public virtual bool CreateGreaterEqualSoft(double rhs, double penalty)` | `OptimFoundation.Core/EngineBase.cs:1772` | 自動命名並建立 nonnegative continuous `Deficit_*`，形成 `LHS + slack >= rhs`；不足量以 penalty 懲罰，最小化加正項、最大化加負項。pool 空時 warning、清空 pool 並回傳 false，成功修改 variable/constraint/objective 後清 pool。
 - `public virtual bool CreateGreaterEqualSoft(double rhs, double penalty, string name)` | `OptimFoundation.Core/EngineBase.cs:1776` | 驗證 name，以 `Deficit_{name}` 建非負 slack，建立 `LHS + slack >= rhs`，並依 objective direction 加入 penalty slack term；會以 `SetObjective` 重設目前 objective並清 pool。
 - `public virtual bool CreateGreaterEqualSoft(double rhs, double penalty, ConstraintBase owner, params object[] dims)` | `OptimFoundation.Core/EngineBase.cs:1781` | 由 owner+dims 命名，建立 deficit slack 允許 LHS 低於 rhs；最小化加 `penalty*slack`、最大化扣除，成功會新增一個 variable、一條 constraint、修改 objective並清 pool。
 - `public virtual bool CreateEqualSoft(double rhs, double penalty, string name)` | `OptimFoundation.Core/EngineBase.cs:1785` | 驗證 name，建立兩個 nonnegative continuous slacks `Delta_Neg_{name}`、`Delta_Pos_{name}`，形成 `LHS + negativeSlack - positiveSlack = rhs`；兩個偏差量都按 penalty 加入最小化 objective或從最大化 objective扣除，成功後清 pool。
@@ -2583,7 +2583,7 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 - `public double BestBound` | `OptimFoundation.Core/Experiments/SolveMetrics.cs:18`
 - `public double Gap` | `OptimFoundation.Core/Experiments/SolveMetrics.cs:21` | 求解結束時實際達到的相對 gap（不是 `CplexConfig.MipGap` 那個停止門檻）；無解時為 NaN。
 - `public double SolveTimeMs` | `OptimFoundation.Core/Experiments/SolveMetrics.cs:24` | 純求解耗時，只計 `Production()`、不含建模；用 CPLEX 時鐘。
-- `public double? BuildAndSolveTimeMs` | `OptimFoundation.Core/Experiments/SolveMetrics.cs:30` | 建模 + 求解 = 把 OptModel 套進 CPLEX 的時間（讀模型檔時含讀檔與建立查找索引）+ `SolveTimeMs`，兩段都用 CPLEX 時鐘；不含 beforeSolve、匯出模型 / 解檔、IIS 分析；只有經由 `OptProject.Production` / `OptExperiment` 才有值，自己呼叫 `Trial.Capture` 時是 null（CSV 寫 `n/a`）。
+- `public double? BuildAndSolveTimeMs` | `OptimFoundation.Core/Experiments/SolveMetrics.cs:30` | 建模 + 求解 = 把 OptModel 套進 CPLEX 的時間（讀模型檔時含讀檔與建立查找索引）+ `SolveTimeMs`，兩段都用 CPLEX 時鐘；不含 beforeSolve、匯出模型 / 解檔、IIS 分析；只有經由 `OptExecution.Run`（`OptProduction` / `OptExperiment`）才有值，自己呼叫 `Trial.Capture` 時是 null（CSV 寫 `n/a`）。
 - `public long? NodeCount` | `OptimFoundation.Core/Experiments/SolveMetrics.cs:27`
 - `public long? IterationCount` | `OptimFoundation.Core/Experiments/SolveMetrics.cs:30`
 - `public int? Seed` | `OptimFoundation.Core/Experiments/SolveMetrics.cs:33`
@@ -2987,19 +2987,27 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 - `public IReadOnlyDictionary<string, double> GetIVSolution()` | `OptimFoundation.Cplex/OptEngine.cs:1179` | 用途：讀取解；solve 成功或 solution 已載入後呼叫，不會修改模型。
 - `public IReadOnlyDictionary<string, double> GetBVSolution()` | `OptimFoundation.Cplex/OptEngine.cs:1182` | 用途：讀取解；solve 成功或 solution 已載入後呼叫，不會修改模型。
 
+### `OptimFoundation.Cplex/OptExecution.cs`
+
+- `public abstract class OptExecution` | `OptimFoundation.Cplex/OptExecution.cs:12` | 正式求解與實驗共用的 builder；公開動詞全部定義在這裡，子類別只放規則與預設值。不認得 `OptProject`，只拿專案名稱字串組檔名。
+- `public string Name` | `OptimFoundation.Cplex/OptExecution.cs:50`
+- `public string FullName` | `OptimFoundation.Cplex/OptExecution.cs:53`
+- `public OptExecution AddProjectConfig(ProjectConfig config)` | `OptimFoundation.Cplex/OptExecution.cs:58` | 加入專案設定（solver log、LP / MPS / Sol 匯出），所有組共用；只有一份，再加一次以後加入的為準並 WARN `[專案設定重複加入]`。
+- `public OptExecution CaptureTrajectory(bool enabled)` | `OptimFoundation.Cplex/OptExecution.cs:72` | 是否記錄收斂軌跡；預設 Production 關、Experiment 開。
+- `public OptExecution BeforeSolve(Action<OptEngine> handler)` | `OptimFoundation.Cplex/OptExecution.cs:79` | 每組建模完成後、求解前執行；null 表示不執行。
+- `public OptExecution OnSolved(Action<OptEngine> handler)` | `OptimFoundation.Cplex/OptExecution.cs:86` | 每組找到可用解後執行（讀解、驗證、寫出）；null 表示不執行。實驗也能用，engine 在 handler 結束後才釋放。
+- `public OptExecution AddModel(OptModel model)` | `OptimFoundation.Cplex/OptExecution.cs:93` | 加入模型；Run 時與每組 `AddSolverConfig` 交叉。
+- `public OptExecution AddSolverConfig(string label, CplexConfig config)` | `OptimFoundation.Cplex/OptExecution.cs:104` | 加入一組有名稱的求解器設定；標籤不得空白或重複。
+- `public OptExecution AddTrial(OptModel model, string label, CplexConfig config)` | `OptimFoundation.Cplex/OptExecution.cs:120` | 額外加入一組明確指定的模型 × 設定。
+- `public Experiment Run()` | `OptimFoundation.Cplex/OptExecution.cs:136` | 依子類別規則執行所有組並寫出紀錄；例外先記 `[求解執行失敗]` / `[實驗執行失敗]` 再原樣拋出，已完成的組照存（`[試跑中斷]`）。
+
+### `OptimFoundation.Cplex/OptProduction.cs`
+
+- `public sealed class OptProduction : OptExecution` | `OptimFoundation.Cplex/OptProduction.cs:10` | 由 `project.Production()` 建立。只能 1 model × 1 config，多了在建立 engine 前丟 `InvalidOperationException`（`[求解設定不合法]`）；預設 `new ProjectConfig()`、不記錄軌跡、寫專案 log、紀錄不寫 `-summary.csv`；engine 保留給 `project.Engine`，下一次 Production 或 `project.Dispose()` 才釋放。
+
 ### `OptimFoundation.Cplex/OptExperiment.cs`
 
-- `public sealed class OptExperiment` | `OptimFoundation.Cplex/OptExperiment.cs:16`
-- `public string Name` | `OptimFoundation.Cplex/OptExperiment.cs:54`
-- `public string FullName` | `OptimFoundation.Cplex/OptExperiment.cs:57`
-- `public OptExperiment AddProjectConfig(ProjectConfig config)` | `OptimFoundation.Cplex/OptExperiment.cs:66` | 加入專案設定（solver log、LP / MPS / Sol 匯出），所有組共用；只有一份，再加一次以後加入的為準並 WARN `[專案設定重複加入]`。
-- `public OptExperiment CaptureTrajectory(bool enabled)` | `OptimFoundation.Cplex/OptExperiment.cs:83` | 用途：啟用或擷取 solve/trajectory；enable 在 solve 前，capture/get 在 engine lifecycle 內。
-- `public OptExperiment BeforeSolve(Action<OptEngine> handler)` | `OptimFoundation.Cplex/OptExperiment.cs:90` | 每組建模完成後、求解前執行；null 表示不執行。
-- `public OptExperiment OnSolved(Action<OptEngine> handler)` | `OptimFoundation.Cplex/OptExperiment.cs:97` | 每組找到可用解後執行（讀解、驗證、寫出）；null 表示不執行。實驗也能用，engine 在 handler 結束後才釋放。
-- `public OptExperiment AddModel(OptModel model)` | `OptimFoundation.Cplex/OptExperiment.cs:104` | 用途：組裝並執行 experiment；Run 前加入 model/config/trial，Run 會求解並產生輸出。
-- `public OptExperiment AddSolverConfig(string label, CplexConfig config)` | `OptimFoundation.Cplex/OptExperiment.cs:115` | 用途：組裝並執行 experiment；Run 前加入 model/config/trial，Run 會求解並產生輸出。
-- `public OptExperiment AddTrial(OptModel model, string label, CplexConfig config)` | `OptimFoundation.Cplex/OptExperiment.cs:131` | 用途：組裝並執行 experiment；Run 前加入 model/config/trial，Run 會求解並產生輸出。
-- `public Experiment Run()` | `OptimFoundation.Cplex/OptExperiment.cs:147` | 用途：組裝並執行 experiment；Run 前加入 model/config/trial，Run 會求解並產生輸出。
+- `public sealed class OptExperiment : OptExecution` | `OptimFoundation.Cplex/OptExperiment.cs:11` | 由 `project.Experiment(name)` 建立。一對一或多對多（m×n + `AddTrial`）；預設 `ProjectConfig.Quiet()`、記錄軌跡、寫 `{專案}-{實驗}_exp` log 與四個紀錄檔；每組跑完就釋放 engine；多模型時匯出檔名加模型名。
 
 ### `OptimFoundation.Cplex/OptModel.cs`
 
@@ -3019,16 +3027,16 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 
 ### `OptimFoundation.Cplex/OptProject.cs`
 
-- `public sealed class OptProject : IDisposable` | `OptimFoundation.Cplex/OptProject.cs:14`
-- `public OptProject(string name, int retentionDays = 30)` | `OptimFoundation.Cplex/OptProject.cs:19` | 驗證 name、保存 retentionDays、建立 framework 目錄並清除逾期 outputs；尚未 solve。
-- `public string Name` | `OptimFoundation.Cplex/OptProject.cs:50`
-- `public int RetentionDays` | `OptimFoundation.Cplex/OptProject.cs:53`
-- `public OptEngine Engine` | `OptimFoundation.Cplex/OptProject.cs:58`
-- `public bool IsSuccess` | `OptimFoundation.Cplex/OptProject.cs:61`
-- `public Trial Trial` | `OptimFoundation.Cplex/OptProject.cs:64`
-- `public TimeSpan TotalElapsed` | `OptimFoundation.Cplex/OptProject.cs:67`
-- `public TimeSpan BuildModelElapsed` | `OptimFoundation.Cplex/OptProject.cs:70`
-- `public OptExperiment Production(string description = null)` | `OptimFoundation.Cplex/OptProject.cs:95` | 建立正式求解的 builder（與 `Experiment` 同型別、同動詞）；只能 1 model × 1 config（多了丟例外），保留 engine、不開軌跡、紀錄寫 `{專案名}-production-*`，`Run()` 後看 `IsSuccess` / `Engine`。
-- `public void Dispose()` | `OptimFoundation.Cplex/OptProject.cs:82` | 用途：釋放 native/IO resources；scope 結束時呼叫，之後不可再使用 instance。
-- `public const string ProductionExperimentName = "production";` | `OptimFoundation.Cplex/OptProject.cs:87` | 正式求解紀錄的實驗名：檔名為 `{專案名}-production-trial.csv` 等，每次 Production 覆寫。
-- `public OptExperiment Experiment(string name, string description = null)` | `OptimFoundation.Cplex/OptProject.cs:105` | 只建立並回傳綁定目前 project、name、description 的 `OptExperiment` builder；不建立 `Experiment` result、`CreatedAt` 或 `Trials`，也不執行求解。
+- `public sealed class OptProject : IDisposable` | `OptimFoundation.Cplex/OptProject.cs:8`
+- `public OptProject(string name, int retentionDays = 30)` | `OptimFoundation.Cplex/OptProject.cs:13` | 驗證 name、保存 retentionDays、建立 framework 目錄並清除逾期 outputs；尚未 solve。
+- `public string Name` | `OptimFoundation.Cplex/OptProject.cs:44`
+- `public int RetentionDays` | `OptimFoundation.Cplex/OptProject.cs:47`
+- `public OptEngine Engine` | `OptimFoundation.Cplex/OptProject.cs:55` | 唯讀；最近一次 Production 由 `OptProduction` 寫入。
+- `public bool IsSuccess` | `OptimFoundation.Cplex/OptProject.cs:58` | 唯讀；同上。
+- `public Trial Trial` | `OptimFoundation.Cplex/OptProject.cs:61` | 唯讀；同上。
+- `public TimeSpan TotalElapsed` | `OptimFoundation.Cplex/OptProject.cs:64` | 唯讀；同上。
+- `public TimeSpan BuildModelElapsed` | `OptimFoundation.Cplex/OptProject.cs:67`
+- `public void Dispose()` | `OptimFoundation.Cplex/OptProject.cs:70` | 用途：釋放 native/IO resources；scope 結束時呼叫，之後不可再使用 instance。
+- `public const string ProductionExperimentName = "production";` | `OptimFoundation.Cplex/OptProject.cs:75` | 正式求解紀錄的實驗名：檔名為 `{專案名}-production-trial.csv` 等，每次 Production 覆寫。
+- `public OptProduction Production(string description = null)` | `OptimFoundation.Cplex/OptProject.cs:79` | 建立正式求解的 `OptProduction`（與 `Experiment` 共用 `OptExecution` 的動詞）；只能 1 model × 1 config（多了丟例外），保留 engine、不開軌跡、紀錄寫 `{專案名}-production-*`，`Run()` 後看 `IsSuccess` / `Engine`。
+- `public OptExperiment Experiment(string name, string description = null)` | `OptimFoundation.Cplex/OptProject.cs:85` | 只建立並回傳 `OptExperiment` builder（綁定專案名、name、description）；不建立 `Experiment` result、`CreatedAt` 或 `Trials`，也不執行求解。

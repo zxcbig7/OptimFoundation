@@ -1,8 +1,8 @@
 namespace OptimFoundation.Core
 {
     /// <summary>
-    /// 專案輸出設定，由 OptProject / OptExperiment.LoadConfig 載入，不列入 ConfigSnapshot。
-    /// Solve 使用屬性預設值，Experiment 預設使用 <see cref="Quiet"/>；比較求解設定時應固定輸出選項。
+    /// 專案輸出設定，由 OptExecution.AddProjectConfig 加入，不列入 ConfigSnapshot。
+    /// Production 使用屬性預設值，Experiment 預設使用 <see cref="Quiet"/>；比較求解設定時應固定輸出選項。
     /// </summary>
     public sealed class ProjectConfig
     {

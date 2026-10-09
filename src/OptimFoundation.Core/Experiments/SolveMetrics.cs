@@ -24,7 +24,7 @@ namespace OptimFoundation.Core
 
         /// <summary>
         /// 建模與求解耗時（毫秒，CPLEX 時鐘）；建模含讀檔與索引，不含 beforeSolve、匯出及 IIS。
-        /// 僅 OptProject.Solve / OptExperiment 填入；直接 Trial.Capture 為 null。
+        /// 僅 OptExecution.Run 填入；直接 Trial.Capture 為 null。
         /// </summary>
         public double? BuildAndSolveTimeMs { get; set; }
 

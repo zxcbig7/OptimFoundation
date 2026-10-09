@@ -141,7 +141,7 @@ Dependency Graph 補充：這五個宣告透過 `using OptimFoundation.Modeling`
 | `Templates/TSP_MultiDimSet` | 18 | 稀疏弧集合與 TSP |
 | `Templates/Tutorial` | 22 | B/C/I 變數、參數與標準組裝教學 |
 | `src/OptimFoundation.Core` | 25 | solver-neutral 建模、命名、資料載入、IO、logging、實驗紀錄 |
-| `src/OptimFoundation.Cplex` | 7 | CPLEX adapter、參數套用、專案與實驗執行 |
+| `src/OptimFoundation.Cplex` | 9 | CPLEX adapter、參數套用、專案、執行 builder（Production / Experiment） |
 | `src/OptimFoundation.Generators` | 3 | Set/Parameter/Variable 與 DataContext 註冊碼生成 |
 | `tests/OptimFoundation.Cplex.Tests` | 25 | Core、generator 與 CPLEX 整合測試 |
 
@@ -161,7 +161,8 @@ Dependency Graph 補充：這五個宣告透過 `using OptimFoundation.Modeling`
 
 - `OptData.Load`：載入資料 → 註冊集合與參數 → Freeze。
 - `OptModel`：variables → objective → constraints → MIP start；也可由 `ReadModel` 匯入既有模型。
-- `OptProject.Production` 與 `OptExperiment.Run` 共用 `OptEngine.RunModel`：Build → ApplyTo → beforeSolve → Trial.Capture。
+- `OptProject.Production()` 建 `OptProduction`、`OptProject.Experiment(name)` 建 `OptExperiment`，兩者繼承 `OptExecution`（共用動詞與 `ExpandTrials` / `StartRecord` / `RunTrial` / `SaveCompleted`），各自的 `RunCore` 寫規則；`RunTrial` 呼叫 `OptEngine.RunModel`：Build → ApplyTo → beforeSolve → Trial.Capture。
+- 依賴方向：`OptProject` → `OptExecution` → `OptModel` / `OptEngine`；`OptExecution` 不引用 `OptProject`，正式求解結果寫進 `OptProject` 持有的 `ProductionResult`。
 - `EngineBase` 管理變數、算式 pool、soft constraints 與模型統計；`OptEngine` 實作 solver primitives。
 - `Experiment.Save` 輸出 trial、meta、可選 summary 與 trajectory CSV；同名實驗覆寫，鎖檔時另存。
 - `FolderDir` 管理 Input、Output、Log、Model、IIS、Solution、Experiment；保留期清理排除 Input 與 Experiment。
@@ -328,8 +329,10 @@ Dependency Graph 補充：這五個宣告透過 `using OptimFoundation.Modeling`
 | `src/OptimFoundation.Cplex/CplexConfig.cs` | `CplexConfig` |
 | `src/OptimFoundation.Cplex/OptEngine.Configuration.cs` | `OptEngine` |
 | `src/OptimFoundation.Cplex/OptEngine.cs` | `OptEngine` |
+| `src/OptimFoundation.Cplex/OptExecution.cs` | `OptExecution` |
 | `src/OptimFoundation.Cplex/OptExperiment.cs` | `OptExperiment` |
 | `src/OptimFoundation.Cplex/OptModel.cs` | `OptModel` |
+| `src/OptimFoundation.Cplex/OptProduction.cs` | `OptProduction`, `ProductionResult` |
 | `src/OptimFoundation.Cplex/OptProject.cs` | `OptProject` |
 | `src/OptimFoundation.Generators/AutoSetsGenerator.cs` | `AutoSetsGenerator`, `OptSetAttribute`, `OptParamAttribute`, `OptVarAttribute`, `OptDimAttribute` |
 | `src/OptimFoundation.Generators/IsExternalInit.cs` | `IsExternalInit` |
@@ -380,7 +383,9 @@ CPLEX 由 `CplexDir` 指定；預設為 `C:\IBM\ILOG\CPLEX_Studio2211`。Templat
 
 | 檔案 | +行 | -行 | 語言 | 關鍵 Symbol |
 | --- | --- | --- | --- | --- |
-| `src/OptimFoundation.Cplex/OptExperiment.cs` | N/A | N/A | C# | `OptExperiment`, `Run`, `RunCore` |
+| `src/OptimFoundation.Cplex/OptExecution.cs` | N/A | N/A | C# | `OptExecution`, `Run`, `ExpandTrials`, `StartRecord`, `RunTrial` |
+| `src/OptimFoundation.Cplex/OptProduction.cs` | N/A | N/A | C# | `OptProduction.RunCore`, `ProductionResult` |
+| `src/OptimFoundation.Cplex/OptExperiment.cs` | N/A | N/A | C# | `OptExperiment.RunCore` |
 | `src/OptimFoundation.Cplex/OptEngine.cs` | N/A | N/A | C# | `RunModel`, `TrajectoryCallback`, `SolveCore`, `ReadBoundAndGap` |
 | `src/OptimFoundation.Cplex/OptEngine.Configuration.cs` | N/A | N/A | C# | `LoadConfig` |
 | `src/OptimFoundation.Cplex/CplexConfig.cs` | N/A | N/A | C# | `CplexConfig`, `Clone` |
@@ -394,8 +399,8 @@ CPLEX 由 `CplexDir` 指定；預設為 `C:\IBM\ILOG\CPLEX_Studio2211`。Templat
 
 | Caller / 來源 | Callee / 依賴 | 關係 |
 | --- | --- | --- |
-| `OptProject` | `OptExperiment` | 建立實驗入口 |
-| `OptExperiment.RunCore` | `CplexConfig.Clone`, `OptEngine.RunModel`, `Experiment.Save` | 每個模型與設定組合建立引擎、記錄並寫出 |
+| `OptProject` | `OptProduction`, `OptExperiment` | 建立正式求解 / 實驗入口 |
+| `OptProduction.RunCore`, `OptExperiment.RunCore` | `OptExecution.RunTrial` → `OptEngine.RunModel`, `Experiment.Save` | 每個模型與設定組合建立引擎、記錄並寫出 |
 | `OptEngine.RunModel` | `Trial.Capture`, `OptModel.ApplyTo` | 建模與求解生命週期 |
 | `Trial.Capture` | `ConfigSnapshot.From`, `ITrajectorySource`, `SolveMetrics` | 設定快照與結果擷取 |
 | `OptEngine.SolveCore` | `TrajectoryCallback`, `SolveMetrics`, `ILOG.CPLEX.Cplex` | SDK 求解與指標擷取 |
@@ -407,7 +412,8 @@ CPLEX 由 `CplexDir` 指定；預設為 `C:\IBM\ILOG\CPLEX_Studio2211`。Templat
 
 | 檔案 | Symbol | 行號 | 定位用途 |
 | --- | --- | --- | --- |
-| `src/OptimFoundation.Cplex/OptExperiment.cs` | `AddProjectConfig`, `CaptureTrajectory`, `BeforeSolve`, `OnSolved`, `AddModel`, `AddSolverConfig`, `AddTrial`, `Run`, `RunCore` | 66, 83, 90, 97, 104, 115, 131, 147, 161 | 實驗 API 與執行流程 |
+| `src/OptimFoundation.Cplex/OptExecution.cs` | `AddProjectConfig`, `CaptureTrajectory`, `BeforeSolve`, `OnSolved`, `AddModel`, `AddSolverConfig`, `AddTrial`, `Run`, `RunTrial` | 58, 72, 79, 86, 93, 104, 120, 136, 202 | 共用動詞與執行步驟 |
+| `src/OptimFoundation.Cplex/OptProduction.cs` / `OptExperiment.cs` | `RunCore` | 23 / 21 | 正式求解 / 實驗各自的流程 |
 | `src/OptimFoundation.Cplex/OptEngine.cs` | `RunModel`, `EnableTrajectory`, `TrajectoryCallback`, `SolveCore`, `ReadBoundAndGap` | 93, 136, 142, 649, 763 | 計時、軌跡、solver metrics |
 | `src/OptimFoundation.Core/Experiments/Experiment.cs` | `Experiment`, `Trial.Capture`, `ConfigSummary.From`, `BaselineComparer.Compare` | 12, 179, 287, 404 | 儲存、彙總與基準比較 |
 | `src/OptimFoundation.Core/Experiments/SolveMetrics.cs` | `SolveMetrics`, `ConvergencePoint` | 8, 136 | 指標資料結構 |

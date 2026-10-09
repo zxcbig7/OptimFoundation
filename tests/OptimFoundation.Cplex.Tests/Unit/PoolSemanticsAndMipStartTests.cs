@@ -82,6 +82,48 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Contains("[右側暫存區略過] 位置=CreateMinimize 名稱=<目標式> 右側項數量=1 右側常數=3 原因=目標式只採用左側 結果=略過", ReadLog(tag));
         }
 
+        [Fact(DisplayName = "空 pool 略過：清空常數，不殘留到下一條限制式")]
+        public void EmptyConstraint_ClearsConstantsBeforeNextConstraint()
+        {
+            string tag = StartLog("EmptyClearsPool");
+            var engine = NewEngine();
+            engine.BuildCVs<VarS>(new[] { "x" });
+
+            // 範本常見寫法：迴圈加變數項（這一組剛好一個都沒有）→ AddRHS(1) → CreateEqual
+            engine.AddLHS(2.0);
+            engine.AddRHS(1.0);
+            Assert.False(engine.CreateEqual("Assign@empty"));
+            Assert.Equal((0, 0.0, 0, 0.0), engine.PoolState);
+            Assert.Contains("[限制式為空] 名稱=Assign@empty 常數=2 右側項數量=0 右側常數=1 原因=暫存區為空 結果=略過", ReadLog(tag));
+
+            engine.AddLHS(1.0, new VarS { S = "x" });
+            engine.AddRHS(1.0);
+            Assert.Equal((1, 0.0, 0, 1.0), engine.PoolState);
+            Assert.True(engine.CreateEqual("Assign@x"));
+        }
+
+        [Fact(DisplayName = "Create*(rhs) 左式沒有變數項：右側變數項與常數一起清空")]
+        public void EmptyConstraintWithRhs_ClearsRhsTermsAndConstants()
+        {
+            var engine = NewEngine();
+            engine.BuildCVs<VarS>(new[] { "x" });
+
+            engine.AddRHS(1.0, new VarS { S = "x" });
+            engine.AddRHS(3.0);
+            Assert.False(engine.CreateLessEqual(5.0, "Cap@empty"));
+            Assert.Equal((0, 0.0, 0, 0.0), engine.PoolState);
+        }
+
+        [Fact(DisplayName = "軟性限制式空 pool 略過：常數一起清空")]
+        public void EmptySoftConstraint_ClearsConstants()
+        {
+            var engine = NewEngine();
+
+            engine.AddRHS(2.0);
+            Assert.False(engine.CreateLessEqualSoft(1.0, 10.0, "Soft@empty"));
+            Assert.Equal((0, 0.0, 0, 0.0), engine.PoolState);
+        }
+
 
         [Fact(DisplayName = "CreateRange 遇到 RHS pool：warn、仍建立、pool 清空")]
         public void CreateRange_WithRhsPool_WarnsAndStillBuilds()

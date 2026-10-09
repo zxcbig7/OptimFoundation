@@ -45,7 +45,7 @@ OptimFoundation 是 C# / .NET 8 的 solver-agnostic MILP framework。Core 不引
 4. Set/Parameter 都以 `IDataSource.Load<T>` 載入為 `List<T>`，CSV 都有表頭。
 5. 一般變數入口 `.AddVariables<T>(sets...)`（套用時呼叫 `BuildVars<T>`）；型別專用 builders 僅在自訂 bounds 或維護需求使用。目標式 / 限制式用 `.AddObjective<X>(args...)` / `.AddConstraints<X>(args...)`（建構子引數執行期比對）。
 6. 限制式使用 `AddLHS` / `AddRHS` + `CreateXxx(this, dims...)`。
-7. `OptModel` 組裝；`new OptProject(name)` 是唯一入口：`.Production()`（正式環境）與 `.Experiment(name)`（model × config 交叉比較）回傳同一種 builder，寫法都是 `.AddProjectConfig(...).AddModel(...).AddSolverConfig(label, config).OnSolved(...).Run()`，只差規則與預設值（Production 只能 1 model × 1 config、多了丟例外，Experiment 可一對一或多對多；engine 保留與否、軌跡、紀錄檔）；`OnSolved` 接 `ISolutionSink` 輸出，正式求解成功與否看 `project.IsSuccess`。
+7. `OptModel` 組裝；`new OptProject(name)` 是唯一入口：`.Production()`（正式環境，回傳 `OptProduction`）與 `.Experiment(name)`（model × config 交叉比較，回傳 `OptExperiment`）都繼承 `OptExecution`、動詞全部定義在 `OptExecution`，寫法都是 `.AddProjectConfig(...).AddModel(...).AddSolverConfig(label, config).OnSolved(...).Run()`，只差規則與預設值（Production 只能 1 model × 1 config、多了丟例外，Experiment 可一對一或多對多；engine 保留與否、軌跡、紀錄檔）；`OnSolved` 接 `ISolutionSink` 輸出，正式求解成功與否看 `project.IsSuccess`。
 8. 範本 `Program.cs` 的 CLI 是兩軸自由組合：模型來源（預設從 CSV 建構；`read-model <file>` 讀既有模型檔、不讀 CSV）× 執行方式（預設正式求解；`exp` 實驗），例 `-- read-model <file> exp`。`-- import-data <raw>` 是獨立的資料前處理（只有不規則來源才需要）。結構：`0. 設定`（`ProjectConfig` + `productionBaseline`）→ `1. 模型來源`（`OptModel.ReadModel` 或 `BuildModel(data)`）→ `2. 環境`（exp / 正式求解只拿 `model`，不管來源；read-model 的實驗名加模型名，紀錄檔名跟 canonical 分得開，正式求解不跑需要資料的解驗證）。
 
 ## Framework change

@@ -424,7 +424,7 @@ namespace OptimFoundation.Core
         /// <summary>依變數全名取得解值（格式 TypeName@s1@s2@…），必須在求解成功後呼叫。</summary>
         public abstract double GetVariableValue(string name);
 
-        /// <summary>釋放 solver 原生資源（CPLEX 的 native handle）。用 using 包住 engine，或交由 OptProject / OptExperiment 管理。</summary>
+        /// <summary>釋放 solver 原生資源（CPLEX 的 native handle）。用 using 包住 engine，或交由 OptProject / OptExecution 管理。</summary>
         public abstract void Dispose();
 
         #endregion
@@ -1014,7 +1014,7 @@ namespace OptimFoundation.Core
         public bool HasPool => _lhsTerms.Count > 0 || _rhsTerms.Count > 0;
 
         /// <summary>
-        /// 清空 pool 的項與常數；Create* 成功後自動清空，放棄建式或發生例外後須自行呼叫。
+        /// 清空 pool 的項與常數；Create* 建立成功、同名略過或沒有變數項而略過時都會自動清空，只有建立時拋出例外後須自行呼叫。
         /// </summary>
         public void ClearPool()
         {
@@ -1024,14 +1024,13 @@ namespace OptimFoundation.Core
             _rhsConst = 0;
         }
 
-        private bool CheckHasPool(string constraintName)
+        // 沒有可用的變數項：記警告（列出被丟掉的常數）、計入建立統計後清空 pool，避免常數殘留到下一條限制式。
+        private bool SkipEmptyConstraint(string name, string reason)
         {
-            if (_lhsTerms.Count == 0 && _rhsTerms.Count == 0)
-            {
-                Logging.Warn($"[限制式為空] 名稱={constraintName ?? "<未命名>"} 原因=暫存區為空 結果=略過");
-                return false;
-            }
-            return true;
+            Logging.Warn($"[限制式為空] 名稱={name ?? "<未命名>"} 常數={_lhsConst} 右側項數量={_rhsTerms.Count} 右側常數={_rhsConst} 原因={reason} 結果=略過");
+            RecordConstraintBuild(name, false);
+            ClearPool();
+            return false;
         }
 
         // CreateRange 與建立目標式只採用左側；右側有暫存項目時記錄警告，提醒呼叫端這些項目不會被使用。
@@ -1153,7 +1152,7 @@ namespace OptimFoundation.Core
         /// </summary>
         /// <param name="name">限制式名稱；同名只建立第一條，之後略過並記錄警告。迴圈建立時須在名稱包含維度值，例如 "Cap@TruckA"。</param>
         /// <returns>true = pool 有內容（含被判定重複而略過的情況）；false = pool 是空的，什麼都沒建。</returns>
-        /// <remarks>建立成功或因同名略過後會清空 pool；若沒有變數項而提早返回，或建立時拋出例外，pool 會保留。</remarks>
+        /// <remarks>建立成功、因同名略過，或沒有變數項而略過時都會清空 pool（含常數）；只有建立時拋出例外，pool 才會保留。</remarks>
         public bool CreateGreaterEqual(string name)
             => CreateLinearConstraint(ValidateConstraintName(nameof(CreateGreaterEqual), name), ConstraintSense.GreaterEqual);
 
@@ -1170,11 +1169,7 @@ namespace OptimFoundation.Core
         {
             name = ValidateConstraintName(nameof(CreateGreaterEqual), name);
             if (_lhsTerms.Count == 0)
-            {
-                Logging.Warn($"[限制式為空] 名稱={name} 原因=左式沒有任何項 結果=略過");
-                RecordConstraintBuild(name, false);
-                return false;
-            }
+                return SkipEmptyConstraint(name, "左式沒有任何項");
             _rhsConst = rhs;
             return CreateLinearConstraint(name, ConstraintSense.GreaterEqual);
         }
@@ -1197,11 +1192,7 @@ namespace OptimFoundation.Core
         {
             name = ValidateConstraintName(nameof(CreateLessEqual), name);
             if (_lhsTerms.Count == 0)
-            {
-                Logging.Warn($"[限制式為空] 名稱={name} 原因=左式沒有任何項 結果=略過");
-                RecordConstraintBuild(name, false);
-                return false;
-            }
+                return SkipEmptyConstraint(name, "左式沒有任何項");
             _rhsConst = rhs;
             return CreateLinearConstraint(name, ConstraintSense.LessEqual);
         }
@@ -1224,11 +1215,7 @@ namespace OptimFoundation.Core
         {
             name = ValidateConstraintName(nameof(CreateEqual), name);
             if (_lhsTerms.Count == 0)
-            {
-                Logging.Warn($"[限制式為空] 名稱={name} 原因=左式沒有任何項 結果=略過");
-                RecordConstraintBuild(name, false);
-                return false;
-            }
+                return SkipEmptyConstraint(name, "左式沒有任何項");
             _rhsConst = rhs;
             return CreateLinearConstraint(name, ConstraintSense.Equal);
         }
@@ -1251,11 +1238,8 @@ namespace OptimFoundation.Core
         /// <param name="sense">限制式類型</param>
         private bool CreateLinearConstraint(string name, ConstraintSense sense)
         {
-            if (!CheckHasPool(name))
-            {
-                RecordConstraintBuild(name, false);
-                return false;
-            }
+            if (!HasPool)
+                return SkipEmptyConstraint(name, "暫存區為空");
 
             bool created = false;
             try
@@ -1293,12 +1277,7 @@ namespace OptimFoundation.Core
         private bool CreateRangeCore(double lb, double ub, string name)
         {
             if (_lhsTerms.Count == 0)
-            {
-                Logging.Warn($"[限制式為空] 名稱={name} 原因=左式沒有任何項 結果=略過");
-                RecordConstraintBuild(name, false);
-                ClearPool();
-                return false;
-            }
+                return SkipEmptyConstraint(name, "左式沒有任何項");
             WarnIfRhsPoolIgnored(nameof(CreateRange), name, "範圍限制式只採用左側");
 
             bool created = false;
@@ -1454,8 +1433,9 @@ namespace OptimFoundation.Core
             if (!HasPool)
             {
                 string skippedName = name ?? "<自動軟性限制式>";
-                Logging.Warn($"[限制式為空] 軟性限制式 | 名稱={skippedName} 方向={sense} 原因=暫存區為空 結果=略過");
+                Logging.Warn($"[限制式為空] 軟性限制式 | 名稱={skippedName} 方向={sense} 常數={_lhsConst} 右側常數={_rhsConst} 原因=暫存區為空 結果=略過");
                 RecordConstraintBuild(skippedName, false);
+                ClearPool();
                 return false;
             }
             if (name == null)

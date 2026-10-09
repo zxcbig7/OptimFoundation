@@ -13,7 +13,7 @@ namespace OptimFoundation.Cplex
 {
     /// <summary>
     /// 將框架的建模、求解與取解操作轉成 CPLEX 呼叫。
-    /// 直接使用時須先 Build()；一般由 OptProject 或 OptExperiment 管理生命週期。
+    /// 直接使用時須先 Build()；一般由 OptProject 與 OptExecution（OptProduction / OptExperiment）管理生命週期。
     /// </summary>
     public partial class OptEngine : EngineBase<ILOG.CPLEX.Cplex, INumVar, ILinearNumExpr, IRange>
     {
@@ -67,7 +67,7 @@ namespace OptimFoundation.Cplex
         /// <summary>指定 CPLEX 處理 AddMIPStart 起始解的方式；部分解可用 SolveFixed 或 Repair 補齊。</summary>
         public MIPStartEffort MipStartEffort { get; set; } = MIPStartEffort.Auto;
 
-        #region 跑一次 OptModel（OptProject.Production 與 OptExperiment 共用的唯一執行路徑）
+        #region 跑一次 OptModel（OptProduction 與 OptExperiment 共用的唯一執行路徑）
         // 耗時統一用 CPLEX 時鐘（Cplex.GetCplexTime，單位秒）。
         private double _runStartCplexTime;
         private double _modelApplySeconds;
@@ -171,7 +171,7 @@ namespace OptimFoundation.Cplex
 
         #region 模型名稱
 
-        /// <summary>設定 LP / MPS / Sol / IIS 輸出檔的名稱前綴；OptProject 與 OptExperiment 會在求解前自動設定。</summary>
+        /// <summary>設定 LP / MPS / Sol / IIS 輸出檔的名稱前綴；OptProduction 與 OptExperiment 會在求解前自動設定。</summary>
         /// <exception cref="ArgumentException">name 為 null 或空白。</exception>
         public void SetModelName(string name)
         {
