@@ -225,7 +225,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
         // ── OptModel.ReadModel：接上 OptProject / OptExperiment ────────────
 
-        [Fact(DisplayName = "OptModel.ReadModel 走 OptProject.Solve 可求解，模型名取自檔名")]
+        [Fact(DisplayName = "OptModel.ReadModel 走 OptProject.Production 可求解，模型名取自檔名")]
         public void ReadModel_RunsThroughOptProject()
         {
             if (!CplexAvailable) return;
@@ -236,10 +236,14 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.Equal(Path.GetFileNameWithoutExtension(fileName), model.Name);
             Assert.Equal(fileName, model.SourceFile);
 
-            using var project = new OptProject("ImportProject_" + Guid.NewGuid().ToString("N"), retentionDays: 0)
-                .LoadConfig(new ProjectConfig { EnableSolverLog = false });
+            using var project = new OptProject("ImportProject_" + Guid.NewGuid().ToString("N"), retentionDays: 0);
 
-            Assert.True(project.Solve(model, new CplexConfig()));
+            project.Production()
+                .AddProjectConfig(new ProjectConfig { EnableSolverLog = false })
+                .AddModel(model)
+                .AddSolverConfig("production", new CplexConfig())
+                .Run();
+            Assert.True(project.IsSuccess);
             Assert.Equal(26.0, project.Engine.GetObjectiveValue(), 6);
         }
 
@@ -253,8 +257,8 @@ namespace OptimFoundation.Cplex.Tests.Integration
             var experiment = new OptProject("ImportExp_" + Guid.NewGuid().ToString("N"), retentionDays: 0)
                 .Experiment("exp", "檔案模型 × 兩組設定")
                 .AddModel(OptModel.ReadModel(fileName, "RefModel"))
-                .AddConfig("r0", new CplexConfig { TimeLimit = 30 })
-                .AddConfig("r1-single-thread", new CplexConfig { TimeLimit = 30, Threads = 1 })
+                .AddSolverConfig("r0", new CplexConfig { TimeLimit = 30 })
+                .AddSolverConfig("r1-single-thread", new CplexConfig { TimeLimit = 30, Threads = 1 })
                 .Run();
 
             Assert.Equal(2, experiment.Trials.Count);
@@ -283,10 +287,14 @@ namespace OptimFoundation.Cplex.Tests.Integration
                     engine.CreateGreaterEqual(4, "ExtraFloor");
                 });
 
-            using var project = new OptProject("ImportAppend_" + Guid.NewGuid().ToString("N"), retentionDays: 0)
-                .LoadConfig(new ProjectConfig { EnableSolverLog = false });
+            using var project = new OptProject("ImportAppend_" + Guid.NewGuid().ToString("N"), retentionDays: 0);
 
-            Assert.True(project.Solve(model, new CplexConfig()));
+            project.Production()
+                .AddProjectConfig(new ProjectConfig { EnableSolverLog = false })
+                .AddModel(model)
+                .AddSolverConfig("production", new CplexConfig())
+                .Run();
+            Assert.True(project.IsSuccess);
             Assert.Equal(3, project.Engine.ConstraintCount);
             Assert.Equal(26.0, project.Engine.GetObjectiveValue(), 6);
         }

@@ -81,7 +81,7 @@ internal static class Program
             {
                 var config = productionBaseline.Clone();
                 config.Seed = seed;
-                experiment.AddConfig($"r0-baseline-s{seed}", config);
+                experiment.AddSolverConfig($"r0-baseline-s{seed}", config);
             }
 
             var result = experiment.Run();
@@ -98,13 +98,14 @@ internal static class Program
         }
 
         // 正式求解；read-model 沒有資料，不跑解驗證
-        project.LoadConfig(projectConfig);
-        bool solved = project.Solve(
-            model,
-            productionBaseline,
-            onSolved: data == null ? null : engine => TemplateSolution.ReadAndValidate(engine, data, new CsvSolutionSink()),
-            beforeSolve: engine => engine.EnableTrajectory());
-        return solved ? 0 : 1;
+        project.Production()
+            .AddProjectConfig(projectConfig)
+            .AddModel(model)
+            .AddSolverConfig("production", productionBaseline)
+            .CaptureTrajectory(true)
+            .OnSolved(data == null ? null : engine => TemplateSolution.ReadAndValidate(engine, data, new CsvSolutionSink()))
+            .Run();
+        return project.IsSuccess ? 0 : 1;
     }
 
     private static OptModel BuildModel(Dataload data, string name)
@@ -112,31 +113,31 @@ internal static class Program
         double penalty = data.parameter_Scalar.Single().QTY;
 
         return new OptModel(name)
-            .AddVariables(engine => engine.BuildVars<VariableB_Binary>(data.set_StringKey))
-            .AddVariables(engine => engine.BuildVars<VariableI_Integer>(data.set_SparsePair))
-            .AddVariables(engine => engine.BuildVars<VariableC_Continuous>(data.set_StringKey, data.set_DateKey))
-            .AddVariables(engine => engine.BuildVars<VariableC_ZeroDim>())
-            .AddObjective(engine => new ObjectiveFunction(
+            .AddVariables<VariableB_Binary>(data.set_StringKey)
+            .AddVariables<VariableI_Integer>(data.set_SparsePair)
+            .AddVariables<VariableC_Continuous>(data.set_StringKey, data.set_DateKey)
+            .AddVariables<VariableC_ZeroDim>()
+            .AddObjective<ObjectiveFunction>(
                 data.set_StringKey,
                 data.set_DateKey,
                 data.parameter_OneDim,
-                penalty).Build(engine))
-            .AddConstraints(engine => new Constraint_Equal(
+                penalty)
+            .AddConstraints<Constraint_Equal>(
                 data.set_StringKey,
                 data.set_DateKey,
                 data.set_SparsePair,
-                data.parameter_TwoDim).Build(engine))
-            .AddConstraints(engine => new Constraint_LessEqual(
+                data.parameter_TwoDim)
+            .AddConstraints<Constraint_LessEqual>(
                 data.set_SparsePair,
-                data.parameter_TwoDim).Build(engine))
-            .AddConstraints(engine => new Constraint_GreaterEqual(
+                data.parameter_TwoDim)
+            .AddConstraints<Constraint_GreaterEqual>(
                 data.set_DateKey,
-                data.set_SparsePair).Build(engine))
-            .AddConstraints(engine => new Constraint_Range(
-                data.set_StringKey).Build(engine))
-            .AddConstraints(engine => new Constraint_LessEqualSoft(
+                data.set_SparsePair)
+            .AddConstraints<Constraint_Range>(
+                data.set_StringKey)
+            .AddConstraints<Constraint_LessEqualSoft>(
                 data.set_StringKey,
-                penalty).Build(engine))
+                penalty)
             .AddMIPStart(() => TemplateSolution.CreateStartValues(data), "CheapestKey");
     }
 }

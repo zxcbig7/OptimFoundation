@@ -141,19 +141,19 @@ namespace OptimFoundation.Cplex.Tests.Unit
             Assert.Empty(Directory.GetFiles(FolderDir.Experiment.GetPath(), $"{project}-*"));
         }
 
-        [Fact(DisplayName = "WriteSummary = false：不寫 -summary.csv（正式求解紀錄用）")]
+        [Fact(DisplayName = "WriteSummary = false：不寫 -summary.csv（正式環境紀錄用）")]
         public void Save_WithoutSummary_SkipsSummaryFile()
         {
             string project = $"SaveNoSummary_{Guid.NewGuid():N}";
             try
             {
-                var experiment = new Experiment(project, "solve", "production") { WriteSummary = false };
-                experiment.AddTrial(NewTrial("solve", "run1", 1, withTrajectory: false));
+                var experiment = new Experiment(project, "production", "production") { WriteSummary = false };
+                experiment.AddTrial(NewTrial("production", "run1", 1, withTrajectory: false));
                 experiment.Save();
 
-                Assert.True(File.Exists(Artifact(project, "solve", "trial")));
-                Assert.True(File.Exists(Artifact(project, "solve", "meta")));
-                Assert.False(File.Exists(Artifact(project, "solve", "summary")));
+                Assert.True(File.Exists(Artifact(project, "production", "trial")));
+                Assert.True(File.Exists(Artifact(project, "production", "meta")));
+                Assert.False(File.Exists(Artifact(project, "production", "summary")));
             }
             finally
             {

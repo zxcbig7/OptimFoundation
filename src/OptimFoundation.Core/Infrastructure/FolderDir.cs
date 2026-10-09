@@ -26,7 +26,7 @@ namespace OptimFoundation.Core
         /// <summary>solver 的解檔（.sol）。</summary>
         public static ProjFolder Solution = new ProjFolder("Solution");
 
-        /// <summary>實驗與正式求解紀錄：每個實驗四個檔 {專案}-{實驗}-trial.csv / -meta.csv / -summary.csv / -trajectory.csv。</summary>
+        /// <summary>實驗與正式環境紀錄：每個實驗四個檔 {專案}-{實驗}-trial.csv / -meta.csv / -summary.csv / -trajectory.csv。</summary>
         public static ProjFolder Experiment = new ProjFolder("Experiment");
 
         /// <summary>全部資料夾，供 <see cref="CreateAll"/> 一次建立。</summary>

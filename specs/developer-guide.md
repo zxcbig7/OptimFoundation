@@ -56,15 +56,19 @@ public sealed partial class VariableB_Assign { }
 var data = OptData.Load(() => new Dataload());
 
 var model = new OptModel("Canonical")
-    .AddVariables(engine =>
-        engine.BuildVars<VariableB_Assign>(data.set_Date, data.set_Employee))
-    .AddObjective(engine => new ObjectiveFunction(/* dependencies */).Build(engine))
-    .AddConstraints(engine => new Constraint_Assign(/* dependencies */).Build(engine));
+    .AddVariables<VariableB_Assign>(data.set_Date, data.set_Employee)
+    .AddObjective<ObjectiveFunction>(/* dependencies */)
+    .AddConstraints<Constraint_Assign>(/* dependencies */);
 
-using var project = new OptProject("Example")
-    .LoadConfig(new ProjectConfig { ExportLP = true });
+using var project = new OptProject("Example");
 
-bool solved = project.Solve(model, new CplexConfig());
+// 單組（正式求解）與多組（project.Experiment(name)）寫法相同
+project.Production()
+    .AddProjectConfig(new ProjectConfig { ExportLP = true })
+    .AddModel(model)
+    .AddSolverConfig("production", new CplexConfig())
+    .Run();
+bool solved = project.IsSuccess;
 ```
 
 Build 與測試：
@@ -150,7 +154,7 @@ flowchart TD
   end
 
   subgraph L3["④ 一鍵求解：一條龍入口"]
-    OPT["OptProject.Solve<br/>專案 → 模型 × 設定 → 求解 → 拿結果"]:::primary
+    OPT["OptProject.Production<br/>專案 → 模型 × 設定 → 求解 → 拿結果"]:::primary
   end
 
   subgraph L4["⑤ 可換插頭"]
@@ -169,7 +173,7 @@ flowchart TD
   CON -->|"當組裝元件"| MODEL
   DS -->|"餵資料"| MODEL
   MODEL -->|"交給一條龍"| OPT
-  CFG -->|"Solve(model, config)"| OPT
+  CFG -->|"Production().AddModel().AddSolverConfig().Run()"| OPT
   OPT ==>|"Execute"| ENGINE
   ENGINE -->|"寫解"| SINK
 
@@ -196,8 +200,8 @@ flowchart TD
 `OptModel` 把積木照正確順序組起來（例如「soft 放鬆規則一定要排在目標式之後」）。它**只管順序**，不管每顆積木內部在算什麼。
 > 像樂高說明書：告訴你先裝哪塊、再裝哪塊；零件本身長怎樣它不管。
 
-**④ 一鍵求解——一條龍入口（`OptProject.Solve`）**
-先開一個專案 `new OptProject("名稱")`（它管 log、輸出資料夾、保留期），再 `.Solve(模型, 設定, onSolved: 解出來要做什麼)`，一個呼叫就跑完。你不用自己去戳求解引擎那些細節（怎麼開、怎麼跑、跑完怎麼收）——它一手包辦，還會順手把這次求解記成一筆紀錄。想比較多組設定時改走實驗層（第 18 章）。
+**④ 一鍵求解——一條龍入口（`OptProject.Production`）**
+先開一個專案 `new OptProject("名稱")`（它管 log、輸出資料夾、保留期），再 `.Solve().AddModel(模型).AddSolverConfig(名稱, 設定).OnSolved(解出來要做什麼).Run()`。實驗（第 18 章）用的是同一組動詞，只是入口換成 `.Experiment(名稱)`。你不用自己去戳求解引擎那些細節（怎麼開、怎麼跑、跑完怎麼收）——它一手包辦，還會順手把這次求解記成一筆紀錄。想比較多組設定時改走實驗層（第 18 章）。
 > 像自助點餐機：一路點下去（設定 → 內容 → 送出），後面廚房怎麼運作你不用管。
 
 **⑤ 可換插頭——資料 / 設定 / 輸出**
@@ -221,7 +225,7 @@ flowchart TD
 1. **宣告積木**：Set / Parameter / Variable 用 attribute 標好維度。
 2. **寫積木**：每個限制式、目標式各寫一顆，只碰自己那段數學。
 3. **組裝**：`OptModel` 把積木照順序組成一顆完整模型。
-4. **接一條龍**：`new OptProject(名稱).Solve(模型, solver 設定, onSolved: 解輸出)`。
+4. **接一條龍**：`project.Production().AddModel(模型).AddSolverConfig(名稱, solver 設定).OnSolved(解輸出).Run()`。
 5. **求解**：引擎算，解由輸出插頭寫出去。
 
 > 現成範例：`Templates/Template/` 是標準範本，每個積木以它示範的框架功能命名，照它的模式起手最快（第 23 章）。
@@ -250,7 +254,7 @@ IDataSource ──► DataContext / OptData.Load ──► validated data
 OptModel ── variable / objective / constraint / MIP-start recipes
                                                     │
                                                     ▼
-OptProject.Solve ──► OptEngine.Build ──► CPLEX solve
+OptProject.Production ──► OptEngine.Build ──► CPLEX solve
        │                                      │
        │                                      ├─ solution / status / metrics
        │                                      └─ import / export / conflict
@@ -273,10 +277,23 @@ Trial / Experiment ──► trial / meta / summary / trajectory CSV
 1. `OptData.Load(() => new Dataload(source))` 建立資料。
 2. `new OptModel(name)` 後依序註冊 `AddVariables`、`AddObjective`、`AddConstraints`；需要 warm start 再加 `AddMIPStart`。
 3. 建立 `ProjectConfig` 與 `CplexConfig`。
-4. `using var project = new OptProject(name).LoadConfig(projectConfig)`。
-5. `project.Solve(model, cplexConfig, onSolved, beforeSolve)`。
-6. 從 `project.Engine` 讀 solution、status、metrics，或在 callback 寫入 `ISolutionSink`。
-7. 要比較多組設定時使用 `project.Experiment(name)`。
+4. `using var project = new OptProject(name)`。
+5. `project.Production().AddProjectConfig(projectConfig).AddModel(model).AddSolverConfig("production", cplexConfig).OnSolved(...).Run()`。
+6. 從 `project.Engine` / `project.IsSuccess` 讀 solution、status、metrics，或在 `OnSolved` 寫入 `ISolutionSink`。
+7. 要比較多組設定時把入口換成 `project.Experiment(name)`，其餘動詞相同（第 18 章）。
+
+`Production()` 與 `Experiment(name)` 回傳同一種 `OptExperiment`，差別只在預設值：
+
+| | `project.Production()` | `project.Experiment(name)` |
+|---|---|---|
+| 組數 | 只能 1 model × 1 config，多了 `Run()` 直接丟例外、不執行 | 一對一或多對多（m×n + `AddTrial`） |
+| engine | 留在 `project.Engine` 供取解 | 每組跑完就釋放 |
+| `ProjectConfig` 預設 | `new ProjectConfig()` | `ProjectConfig.Quiet()` |
+| 收斂軌跡預設 | 關 | 開 |
+| 紀錄 | `{專案}-production-trial.csv` + `-meta.csv`，不寫 `-summary.csv` | `{專案}-{實驗}-` 四個檔 |
+| log | 專案 log | `{專案}-{實驗}_exp` |
+
+`Production()` 配了多組時，`Run()` 在建立任何 engine 前丟 `InvalidOperationException`（log `[求解設定不合法]`）；比較多組請改用 `Experiment(name)`。`OnSolved` 或某一組丟例外時，已完成的組照存紀錄（`[試跑中斷]` WARN）後原樣拋出。
 
 `OptProject` 是 **Recommended path**。直接建立 `OptEngine` 適合 library integration、測試或需自行控制 lifecycle 的 **Advanced API**。
 
@@ -291,12 +308,12 @@ Trial / Experiment ──► trial / meta / summary / trajectory CSV
 | 建 hard/range constraint | `CreateLessEqual`、`CreateEqual`、`CreateGreaterEqual`、`CreateRange` |
 | 建 soft/special constraint | `Create*Soft`、`ISpecialConstraints<TVar,TExpr>` |
 | 建 objective | `CreateMinimize`、`CreateMaximize` |
-| solve | `OptProject.Solve`；低階使用 `Build`、`Solve` |
+| solve | `OptProject.Production`；低階使用 `Build`、`Solve` |
 | 讀 solution | `GetSolution`、`Get*Solution`、`GetVariableValue`、`LastMetrics` |
 | warm start | `OptModel.AddMIPStart`、`EngineBase.AddMIPStart` |
 | 匯入／匯出 | `OptModel.ReadModel/ReadSolution`、`OptEngine.ReadModel/ReadSolution/ExportModel/ExportSolution` |
 | infeasible 診斷 | `GetConflictConstraints` |
-| build 數量核對 | `VariableBuildCounts`、`ConstraintBuildCounts`；未引用變數由 `Solve()` 前 `[變數未引用]` 警告 點名 |
+| build 數量核對 | `VariableBuildCounts`、`ConstraintBuildCounts`；未引用變數由 `Production()` 前 `[變數未引用]` 警告 點名 |
 | 多設定實驗 | `OptProject.Experiment`、`OptExperiment` |
 | CSV／DB | `CsvDataSource`、`DbDataSource`、`IDbCtrl`、`CsvCtrl` |
 
@@ -960,9 +977,9 @@ public sealed partial class VariableC_Shortage { }
 在 model 組裝時用 `BuildVars<T>`：
 
 ```csharp
-.AddVariables(engine => engine.BuildVars<VariableB_Open>(data.set_Product))
-.AddVariables(engine => engine.BuildVars<VariableI_Produce>(data.set_Product))
-.AddVariables(engine => engine.BuildVars<VariableC_Shortage>(data.set_Product))
+.AddVariables<VariableB_Open>(data.set_Product)
+.AddVariables<VariableI_Produce>(data.set_Product)
+.AddVariables<VariableC_Shortage>(data.set_Product)
 ```
 
 多維 Variable 依 `OptDim` 順序傳入各維的 domain，例如 Tutorial 的 Product × Date × Shift：
@@ -1352,37 +1369,42 @@ private static OptModel BuildModel(Dataload data)
     double shortagePenalty = data.parameter_ShortagePenalty.Single().QTY;
 
     return new OptModel("Canonical")
-        .AddVariables(engine => engine.BuildVars<VariableB_Open>(data.set_Product))
-        .AddVariables(engine => engine.BuildVars<VariableI_Produce>(data.set_Product))
-        .AddVariables(engine => engine.BuildVars<VariableC_Shortage>(data.set_Product))
-        .AddObjective(engine => new ObjectiveFunction(
+        .AddVariables<VariableB_Open>(data.set_Product)
+        .AddVariables<VariableI_Produce>(data.set_Product)
+        .AddVariables<VariableC_Shortage>(data.set_Product)
+        .AddObjective<ObjectiveFunction>(
             data.set_Product,
             data.parameter_FixedCost,
-            shortagePenalty).Build(engine))
-        .AddConstraints(engine => new Constraint_DemandBalance(
+            shortagePenalty)
+        .AddConstraints<Constraint_DemandBalance>(
             data.set_Product,
-            data.parameter_Demand).Build(engine))
-        .AddConstraints(engine => new Constraint_TotalCapacity(
+            data.parameter_Demand)
+        .AddConstraints<Constraint_TotalCapacity>(
             data.set_Product,
-            capacity).Build(engine))
-        .AddConstraints(engine => new Constraint_MinimumWhenOpen(
-            data.set_Product).Build(engine))
-        .AddConstraints(engine => new Constraint_ProduceOnlyWhenOpen(
+            capacity)
+        .AddConstraints<Constraint_MinimumWhenOpen>(
+            data.set_Product)
+        .AddConstraints<Constraint_ProduceOnlyWhenOpen>(
             data.set_Product,
-            data.parameter_Demand).Build(engine));
+            data.parameter_Demand);
 }
 ```
 
-`OptModel` 不會立即建模：每個 `AddXxx` 只記下一段「在 engine 上怎麼建」的 callback，資料透過 lambda closure 傳入，callback 在 `OptProject.Solve` 建好 engine 後才執行。這讓資料依賴固定在組裝點，Objective / Constraint 類別只收到自己需要的材料。
+`OptModel` 不會立即建模：每個 `AddXxx` 只記下一段「在 engine 上怎麼建」的步驟，在 `OptProject.Production` 建好 engine 後才執行。這讓資料依賴固定在組裝點，Objective / Constraint 類別只收到自己需要的材料。
+
+- `AddVariables<T>(sets...)` 記下一次 `engine.BuildVars<T>(sets...)`，sets 依 `OptDim` 順序傳入，零維變數不傳。
+- `AddObjective<X>(args...)` / `AddConstraints<X>(args...)` 在組裝時以 args 建立 X（建構子只存資料參考），`X.Build(OptEngine)` 在 engine 建好後才呼叫。引數依建構子參數順序傳入，型別在執行期才比對：build 會過，執行到組裝那一行才丟 `[模型定義不合法]`，log 列出傳入型別與可用建構子。實驗的每個 trial 都對同一個物件呼叫 `Build`，所以類別欄位維持 `readonly`、`Build` 內不改欄位。
+- 要讓建構子引數在編譯期就檢查，改寫 `AddConstraints(new X(...).Build)`，效果相同。
+- 步驟不是一個類別時（例：求解前匯出 `.sav`），照樣寫 `AddConstraints(engine => ...)`。
 
 完整執行順序：
 
 1. `AddVariables`
 2. `AddObjective`
 3. `AddConstraints`
-4. `beforeSolve`（`Solve` 的參數；例如開收斂軌跡）
+4. `BeforeSolve`（builder 上的 hook；例如檢查建好的模型）
 5. CPLEX 求解
-6. `onSolved`（只在有可用解時執行；讀解、驗證、寫出）
+6. `OnSolved`（只在有可用解時執行；讀解、驗證、寫出）
 
 Objective 要在 Constraints 之前加入：soft constraint 的 penalty 依目標方向加入目標式。
 
@@ -1485,7 +1507,7 @@ internal static class Program
             {
                 var config = productionBaseline.Clone();
                 config.Seed = seed;
-                experiment.AddConfig($"r0-baseline-s{seed}", config);
+                experiment.AddSolverConfig($"r0-baseline-s{seed}", config);
             }
 
             var result = experiment.Run();
@@ -1501,12 +1523,13 @@ internal static class Program
         }
 
         // 正式求解；read-model 沒有資料，不跑解驗證
-        project.LoadConfig(projectConfig);
-        bool solved = project.Solve(
-            model,
-            productionBaseline,
-            onSolved: data == null ? null : engine => MiniProductionSolution.ReadAndValidate(engine, data));
-        return solved ? 0 : 1;
+        project.Production()
+            .AddProjectConfig(projectConfig)
+            .AddModel(model)
+            .AddSolverConfig("production", productionBaseline)
+            .OnSolved(data == null ? null : engine => MiniProductionSolution.ReadAndValidate(engine, data))
+            .Run();
+        return project.IsSuccess ? 0 : 1;
     }
 
     private static OptModel BuildModel(Dataload data)
@@ -1515,24 +1538,24 @@ internal static class Program
         double shortagePenalty = data.parameter_ShortagePenalty.Single().QTY;
 
         return new OptModel("Canonical")
-            .AddVariables(engine => engine.BuildVars<VariableB_Open>(data.set_Product))
-            .AddVariables(engine => engine.BuildVars<VariableI_Produce>(data.set_Product))
-            .AddVariables(engine => engine.BuildVars<VariableC_Shortage>(data.set_Product))
-            .AddObjective(engine => new ObjectiveFunction(
+            .AddVariables<VariableB_Open>(data.set_Product)
+            .AddVariables<VariableI_Produce>(data.set_Product)
+            .AddVariables<VariableC_Shortage>(data.set_Product)
+            .AddObjective<ObjectiveFunction>(
                 data.set_Product,
                 data.parameter_FixedCost,
-                shortagePenalty).Build(engine))
-            .AddConstraints(engine => new Constraint_DemandBalance(
+                shortagePenalty)
+            .AddConstraints<Constraint_DemandBalance>(
                 data.set_Product,
-                data.parameter_Demand).Build(engine))
-            .AddConstraints(engine => new Constraint_TotalCapacity(
+                data.parameter_Demand)
+            .AddConstraints<Constraint_TotalCapacity>(
                 data.set_Product,
-                capacity).Build(engine))
-            .AddConstraints(engine => new Constraint_MinimumWhenOpen(
-                data.set_Product).Build(engine))
-            .AddConstraints(engine => new Constraint_ProduceOnlyWhenOpen(
+                capacity)
+            .AddConstraints<Constraint_MinimumWhenOpen>(
+                data.set_Product)
+            .AddConstraints<Constraint_ProduceOnlyWhenOpen>(
                 data.set_Product,
-                data.parameter_Demand).Build(engine));
+                data.parameter_Demand);
     }
 }
 ```
@@ -1561,7 +1584,7 @@ dotnet run --project .\Projects\MiniProduction\MiniProduction.csproj -- exp
 dotnet run --project .\Projects\MiniProduction\MiniProduction.csproj
 ```
 
-載入 `ProjectConfig`，再用 production `CplexConfig` 正式求解；`onSolved` 讀取並驗證解。
+`project.Production()` 載入 `ProjectConfig`、配上 production `CplexConfig` 正式求解；`OnSolved` 讀取並驗證解。
 
 ### 16.4 read-model
 
@@ -1668,14 +1691,14 @@ flowchart LR
 
 ### 18.1 紀錄檔
 
-`Experiment.Run()` 與 `OptProject.Solve()` 都在 `FolderDir.Experiment` 下為這個實驗寫一組四個檔：
+`Experiment.Run()` 與 `OptProject.Production()` 都在 `FolderDir.Experiment` 下為這個實驗寫一組四個檔：
 
 - `{專案名}-{實驗名}-trial.csv`：主表，一列一個 trial。
 - `{專案名}-{實驗名}-meta.csv`：說明檔。
 - `{專案名}-{實驗名}-summary.csv`：彙總，每組設定一列；正式求解不寫。
 - `{專案名}-{實驗名}-trajectory.csv`：收斂軌跡，一列一個軌跡點；有軌跡點才寫。
 
-`{專案名}-{實驗名}` 就是 `OptExperiment.FullName`；正式求解的實驗名是 `solve`，檔名為 `{專案名}-solve-trial.csv` 等。
+`{專案名}-{實驗名}` 就是 `OptExperiment.FullName`；正式求解的實驗名是 `solve`，檔名為 `{專案名}-production-trial.csv` 等。
 
 欄位固定，只有一種格式，沒有版本號。
 
@@ -1718,7 +1741,7 @@ flowchart LR
 
 `Gap` 是求解結果實際達到的 gap，不是 `CplexConfig.MipGap` 那個停止門檻。
 
-`SolveTimeMs` 只計 `Solve()`；`BuildAndSolveTimeMs` = 建模 + 求解，只有經由 `OptProject.Solve` / `OptExperiment` 才有值，自己呼叫 `Trial.Capture` 時是 null（CSV 寫 `n/a`）。
+`SolveTimeMs` 只計 `Production()`；`BuildAndSolveTimeMs` = 建模 + 求解，只有經由 `OptProject.Production` / `OptExperiment` 才有值，自己呼叫 `Trial.Capture` 時是 null（CSV 寫 `n/a`）。
 
 基準是誰，看同一個實驗 `-meta.csv` 的 `baseline.label`；模型結構數量（varCount、constraintCount 等）同一模型每列一樣，看 `-meta.csv` 的 `model.<Model>.*`。
 
@@ -2035,12 +2058,12 @@ canonical hard model 不使用 soft constraint API。
 | 記憶體資料來源 | `Data/Dataload.cs` 的 `CreateScaledSource` | `InMemoryDataSource.AddRows<T>`，交給 `Dataload(IDataSource)` |
 | 資料驗收 | `Program.cs`、`Solution/TemplateSolution.cs` | `OptData.Load(() => new Dataload())` 後由 `ValidateData` 先看 `DataIssues`，再檢查全格矩陣與跨表關聯 |
 | 解驗證 | `Solution/TemplateSolution.cs` | `GetSetVarValues<T>`；變數全名用 `new VariableX { ... }.ToString()` 取得，不手工拼 |
-| 解輸出 | `Program.cs` 的 `onSolved`、`Solution/TemplateSolution.cs` | `Solve(..., onSolved: ...)` 傳入 `CsvSolutionSink`；`ISolutionSink.BeginBatch` → `Write<T>` → `Commit`；改寫 DB 只換傳入的 sink |
-| 輸出設定與 solver 設定 | `Program.cs` | `ProjectConfig` + `project.LoadConfig`；`productionBaseline` 是唯一的 `CplexConfig`，實驗用 `Clone()` 後改 Seed |
+| 解輸出 | `Program.cs` 的 `OnSolved`、`Solution/TemplateSolution.cs` | `.OnSolved(...)` 傳入 `CsvSolutionSink`；`ISolutionSink.BeginBatch` → `Write<T>` → `Commit`；改寫 DB 只換傳入的 sink |
+| 輸出設定與 solver 設定 | `Program.cs` | `ProjectConfig` + `.AddProjectConfig(projectConfig)`；`productionBaseline` 是唯一的 `CplexConfig`，實驗用 `Clone()` 後改 Seed |
 | Warm start | `TemplateSolution.CreateStartValues` + `BuildModel` | `OptModel.AddMIPStart` |
-| 收斂軌跡 | `Program.cs` | 正式求解 `beforeSolve: engine => engine.EnableTrajectory()`；實驗 `CaptureTrajectory(true)` |
+| 收斂軌跡 | `Program.cs` | 正式求解與實驗都用 `.CaptureTrajectory(true)`（正式求解預設關、實驗預設開） |
 | 兩軸 CLI | `Program.cs` | 模型來源二選一：`OptModel.ReadModel(file)` 或 CSV → `BuildModel`；exp 與正式求解只拿 `model`（第 16 章） |
-| 多模型實驗 | `Program.cs` 的 exp | `AddModel` 兩次（Canonical、Scaled）× `AddConfig` 五個 seed，共 10 個 trial |
+| 多模型實驗 | `Program.cs` 的 exp | `AddModel` 兩次（Canonical、Scaled）× `AddSolverConfig` 五個 seed，共 10 個 trial |
 
 ```powershell
 dotnet run # CSV → 正式求解 → 解驗證 → 解寫到 Output/
@@ -2212,9 +2235,9 @@ dotnet run -- read-model <file> exp # 讀模型檔做實驗；不加 exp 就是�
 
 - `AddLHS`、`AddRHS` 共用 expression pool；每個 `Create*` 消耗 pool。用 `HasPool`、`PoolState` 檢查，`ClearPool` 放棄未完成式子。
 - `BuildVars<T>` 是一般入口；`BuildCVs/IVs/BVs` 與 string overload 用於需要直接控制型別、bounds 或動態 schema 時。
-- `Build()` 後、`Solve()` 前加入 MIP start；key 使用 canonical variable name。
+- `Build()` 後、`Production()` 前加入 MIP start；key 使用 canonical variable name。
 - `EnableTrajectory()` 在 solve 前呼叫；先查 `SupportsTrajectory`。
-- `VariableBuildCounts`、`ConstraintBuildCounts` 提供各群組 expected/actual；宣告了卻沒被引用的變數由 `Solve()` 前的 `[變數未引用]` 警告 點名。
+- `VariableBuildCounts`、`ConstraintBuildCounts` 提供各群組 expected/actual；宣告了卻沒被引用的變數由 `Production()` 前的 `[變數未引用]` 警告 點名。
 - `ExportModel`、`ExportSolution` 的父目錄應先存在；`ReadSolution` 需要相容模型。
 - `GetConflictConstraints()` 用於 infeasible 診斷。copy/merge/thread/reset APIs 都是進階 stateful 操作。
 - `Experiment.Save()` 是一般輸出入口；writers 的 `Write` 供 framework integration。`ConfigSummary` 只有 status/incumbent/W-L-T counts。
@@ -2540,8 +2563,8 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 - `public double ObjectiveValue` | `OptimFoundation.Core/Experiments/SolveMetrics.cs:15`
 - `public double BestBound` | `OptimFoundation.Core/Experiments/SolveMetrics.cs:18`
 - `public double Gap` | `OptimFoundation.Core/Experiments/SolveMetrics.cs:21` | 求解結束時實際達到的相對 gap（不是 `CplexConfig.MipGap` 那個停止門檻）；無解時為 NaN。
-- `public double SolveTimeMs` | `OptimFoundation.Core/Experiments/SolveMetrics.cs:24` | 純求解耗時，只計 `Solve()`、不含建模；用 CPLEX 時鐘。
-- `public double? BuildAndSolveTimeMs` | `OptimFoundation.Core/Experiments/SolveMetrics.cs:30` | 建模 + 求解 = 把 OptModel 套進 CPLEX 的時間（讀模型檔時含讀檔與建立查找索引）+ `SolveTimeMs`，兩段都用 CPLEX 時鐘；不含 beforeSolve、匯出模型 / 解檔、IIS 分析；只有經由 `OptProject.Solve` / `OptExperiment` 才有值，自己呼叫 `Trial.Capture` 時是 null（CSV 寫 `n/a`）。
+- `public double SolveTimeMs` | `OptimFoundation.Core/Experiments/SolveMetrics.cs:24` | 純求解耗時，只計 `Production()`、不含建模；用 CPLEX 時鐘。
+- `public double? BuildAndSolveTimeMs` | `OptimFoundation.Core/Experiments/SolveMetrics.cs:30` | 建模 + 求解 = 把 OptModel 套進 CPLEX 的時間（讀模型檔時含讀檔與建立查找索引）+ `SolveTimeMs`，兩段都用 CPLEX 時鐘；不含 beforeSolve、匯出模型 / 解檔、IIS 分析；只有經由 `OptProject.Production` / `OptExperiment` 才有值，自己呼叫 `Trial.Capture` 時是 null（CSV 寫 `n/a`）。
 - `public long? NodeCount` | `OptimFoundation.Core/Experiments/SolveMetrics.cs:27`
 - `public long? IterationCount` | `OptimFoundation.Core/Experiments/SolveMetrics.cs:30`
 - `public int? Seed` | `OptimFoundation.Core/Experiments/SolveMetrics.cs:33`
@@ -2947,42 +2970,46 @@ Interface members 沒有重複寫 `public`，但仍是 consumer-callable API。�
 
 ### `OptimFoundation.Cplex/OptExperiment.cs`
 
-- `public sealed class OptExperiment` | `OptimFoundation.Cplex/OptExperiment.cs:13`
-- `public string Name` | `OptimFoundation.Cplex/OptExperiment.cs:44`
-- `public string FullName` | `OptimFoundation.Cplex/OptExperiment.cs:47`
-- `public OptExperiment LoadConfig(ProjectConfig config)` | `OptimFoundation.Cplex/OptExperiment.cs:52` | 用途：套用設定；build、solve 或 experiment run 前呼叫，設定型別必須相容。
-- `public OptExperiment CaptureTrajectory(bool enabled)` | `OptimFoundation.Cplex/OptExperiment.cs:64` | 用途：啟用或擷取 solve/trajectory；enable 在 solve 前，capture/get 在 engine lifecycle 內。
-- `public OptExperiment AddModel(OptModel model)` | `OptimFoundation.Cplex/OptExperiment.cs:71` | 用途：組裝並執行 experiment；Run 前加入 model/config/trial，Run 會求解並產生輸出。
-- `public OptExperiment AddConfig(string label, CplexConfig config)` | `OptimFoundation.Cplex/OptExperiment.cs:82` | 用途：組裝並執行 experiment；Run 前加入 model/config/trial，Run 會求解並產生輸出。
-- `public OptExperiment AddTrial(OptModel model, string label, CplexConfig config)` | `OptimFoundation.Cplex/OptExperiment.cs:98` | 用途：組裝並執行 experiment；Run 前加入 model/config/trial，Run 會求解並產生輸出。
-- `public Experiment Run()` | `OptimFoundation.Cplex/OptExperiment.cs:114` | 用途：組裝並執行 experiment；Run 前加入 model/config/trial，Run 會求解並產生輸出。
+- `public sealed class OptExperiment` | `OptimFoundation.Cplex/OptExperiment.cs:16`
+- `public string Name` | `OptimFoundation.Cplex/OptExperiment.cs:54`
+- `public string FullName` | `OptimFoundation.Cplex/OptExperiment.cs:57`
+- `public OptExperiment AddProjectConfig(ProjectConfig config)` | `OptimFoundation.Cplex/OptExperiment.cs:66` | 加入專案設定（solver log、LP / MPS / Sol 匯出），所有組共用；只有一份，再加一次以後加入的為準並 WARN `[專案設定重複加入]`。
+- `public OptExperiment CaptureTrajectory(bool enabled)` | `OptimFoundation.Cplex/OptExperiment.cs:83` | 用途：啟用或擷取 solve/trajectory；enable 在 solve 前，capture/get 在 engine lifecycle 內。
+- `public OptExperiment BeforeSolve(Action<OptEngine> handler)` | `OptimFoundation.Cplex/OptExperiment.cs:90` | 每組建模完成後、求解前執行；null 表示不執行。
+- `public OptExperiment OnSolved(Action<OptEngine> handler)` | `OptimFoundation.Cplex/OptExperiment.cs:97` | 每組找到可用解後執行（讀解、驗證、寫出）；null 表示不執行。實驗也能用，engine 在 handler 結束後才釋放。
+- `public OptExperiment AddModel(OptModel model)` | `OptimFoundation.Cplex/OptExperiment.cs:104` | 用途：組裝並執行 experiment；Run 前加入 model/config/trial，Run 會求解並產生輸出。
+- `public OptExperiment AddSolverConfig(string label, CplexConfig config)` | `OptimFoundation.Cplex/OptExperiment.cs:115` | 用途：組裝並執行 experiment；Run 前加入 model/config/trial，Run 會求解並產生輸出。
+- `public OptExperiment AddTrial(OptModel model, string label, CplexConfig config)` | `OptimFoundation.Cplex/OptExperiment.cs:131` | 用途：組裝並執行 experiment；Run 前加入 model/config/trial，Run 會求解並產生輸出。
+- `public Experiment Run()` | `OptimFoundation.Cplex/OptExperiment.cs:147` | 用途：組裝並執行 experiment；Run 前加入 model/config/trial，Run 會求解並產生輸出。
 
 ### `OptimFoundation.Cplex/OptModel.cs`
 
-- `public sealed class OptModel` | `OptimFoundation.Cplex/OptModel.cs:12`
-- `public string Name` | `OptimFoundation.Cplex/OptModel.cs:15`
-- `public OptModel(string name = "Model")` | `OptimFoundation.Cplex/OptModel.cs:26` | 建立命名 recipe 並初始化 build steps；不建立 engine、不求解。
-- `public OptModel AddVariables(Action<OptEngine> build)` | `OptimFoundation.Cplex/OptModel.cs:32` | 註冊 variable callback 並回傳同一 OptModel；project build 時先執行。
-- `public OptModel AddObjective(Action<OptEngine> build)` | `OptimFoundation.Cplex/OptModel.cs:41` | 註冊 objective callback 並回傳同一 OptModel；variables 後執行。
-- `public OptModel AddConstraints(Action<OptEngine> build)` | `OptimFoundation.Cplex/OptModel.cs:50` | 註冊 constraint callback 並回傳同一 OptModel；objective 後執行。
-- `public string SourceFile` | `OptimFoundation.Cplex/OptModel.cs:63`
-- `public static OptModel ReadModel(string fileName, string name = null)` | `OptimFoundation.Cplex/OptModel.cs:76` | 驗證檔名並回傳保存 `SourceFile` 的 deferred recipe；此時不讀檔、不建立 native state，`ApplyTo` 才呼叫 engine `ReadModel`。
-- `public OptModel ReadSolution(string fileName)` | `OptimFoundation.Cplex/OptModel.cs:102` | 驗證檔名並把讀 solution 的 callback 加入 deferred start steps，回傳同一 model；套用模型且 variables 已存在後才真正讀檔。
-- `public OptModel AddMIPStart(Func<IReadOnlyDictionary<string, double>> values, string name = null)` | `OptimFoundation.Cplex/OptModel.cs:119` | 用途：加入 warm start；solve 前呼叫，key 必須是目前模型的 canonical variable name。
+- `public sealed class OptModel` | `OptimFoundation.Cplex/OptModel.cs:15`
+- `public string Name` | `OptimFoundation.Cplex/OptModel.cs:18`
+- `public OptModel(string name = "Model")` | `OptimFoundation.Cplex/OptModel.cs:28` | 建立命名 recipe 並初始化 build steps；不建立 engine、不求解。
+- `public OptModel AddVariables(Action<OptEngine> build)` | `OptimFoundation.Cplex/OptModel.cs:34` | 註冊 variable callback 並回傳同一 OptModel；project build 時先執行。
+- `public OptModel AddVariables<TVariable>(params object[] sets)` | `OptimFoundation.Cplex/OptModel.cs:46` | 等同 `AddVariables(engine => engine.BuildVars<TVariable>(sets))`；sets 依 `OptDim` 順序，零維不傳。
+- `public OptModel AddObjective(Action<OptEngine> build)` | `OptimFoundation.Cplex/OptModel.cs:50` | 註冊 objective callback 並回傳同一 OptModel；variables 後執行。
+- `public OptModel AddConstraints(Action<OptEngine> build)` | `OptimFoundation.Cplex/OptModel.cs:59` | 註冊 constraint callback 並回傳同一 OptModel；objective 後執行。
+- `public OptModel AddObjective<TObjective>(params object[] args)` | `OptimFoundation.Cplex/OptModel.cs:71` | 當下以 args 建立 TObjective（反射找建構子），註冊它的 `Build(OptEngine)`；找不到建構子或 `Build` 立即丟 `ArgumentException` / `MissingMethodException`。
+- `public OptModel AddConstraints<TConstraint>(params object[] args)` | `OptimFoundation.Cplex/OptModel.cs:78` | 同上，註冊為 constraint 步驟。
+- `public string SourceFile` | `OptimFoundation.Cplex/OptModel.cs:126`
+- `public static OptModel ReadModel(string fileName, string name = null)` | `OptimFoundation.Cplex/OptModel.cs:136` | 驗證檔名並回傳保存 `SourceFile` 的 deferred recipe；此時不讀檔、不建立 native state，`ApplyTo` 才呼叫 engine `ReadModel`。
+- `public OptModel ReadSolution(string fileName)` | `OptimFoundation.Cplex/OptModel.cs:162` | 驗證檔名並把讀 solution 的 callback 加入 deferred start steps，回傳同一 model；套用模型且 variables 已存在後才真正讀檔。
+- `public OptModel AddMIPStart(Func<IReadOnlyDictionary<string, double>> values, string name = null)` | `OptimFoundation.Cplex/OptModel.cs:179` | 用途：加入 warm start；solve 前呼叫，key 必須是目前模型的 canonical variable name。
 
 ### `OptimFoundation.Cplex/OptProject.cs`
 
 - `public sealed class OptProject : IDisposable` | `OptimFoundation.Cplex/OptProject.cs:14`
 - `public OptProject(string name, int retentionDays = 30)` | `OptimFoundation.Cplex/OptProject.cs:19` | 驗證 name、保存 retentionDays、建立 framework 目錄並清除逾期 outputs；尚未 solve。
-- `public string Name` | `OptimFoundation.Cplex/OptProject.cs:46`
-- `public int RetentionDays` | `OptimFoundation.Cplex/OptProject.cs:49`
-- `public OptProject LoadConfig(ProjectConfig config)` | `OptimFoundation.Cplex/OptProject.cs:65` | 用途：套用設定；build、solve 或 experiment run 前呼叫，設定型別必須相容。
-- `public OptEngine Engine` | `OptimFoundation.Cplex/OptProject.cs:74`
-- `public bool IsSuccess` | `OptimFoundation.Cplex/OptProject.cs:77`
-- `public Trial Trial` | `OptimFoundation.Cplex/OptProject.cs:80`
-- `public TimeSpan TotalElapsed` | `OptimFoundation.Cplex/OptProject.cs:83`
-- `public TimeSpan BuildModelElapsed` | `OptimFoundation.Cplex/OptProject.cs:86`
-- `public bool Solve(OptModel model, CplexConfig config, Action<OptEngine> onSolved = null, Action<OptEngine> beforeSolve = null)` | `OptimFoundation.Cplex/OptProject.cs:96` | 用途：執行求解；模型與設定必須完成，會更新 status、metrics 與 solution state。
-- `public void Dispose()` | `OptimFoundation.Cplex/OptProject.cs:152` | 用途：釋放 native/IO resources；scope 結束時呼叫，之後不可再使用 instance。
-- `public const string SolveExperimentName = "solve";` | `OptimFoundation.Cplex/OptProject.cs:155` | 正式求解紀錄的實驗名：檔名為 `{專案名}-solve-trial.csv` 等，每次 Solve 覆寫。
-- `public OptExperiment Experiment(string name, string description = null)` | `OptimFoundation.Cplex/OptProject.cs:162` | 只建立並回傳綁定目前 project、name、description 的 `OptExperiment` builder；不建立 `Experiment` result、`CreatedAt` 或 `Trials`，也不執行求解。
+- `public string Name` | `OptimFoundation.Cplex/OptProject.cs:50`
+- `public int RetentionDays` | `OptimFoundation.Cplex/OptProject.cs:53`
+- `public OptEngine Engine` | `OptimFoundation.Cplex/OptProject.cs:58`
+- `public bool IsSuccess` | `OptimFoundation.Cplex/OptProject.cs:61`
+- `public Trial Trial` | `OptimFoundation.Cplex/OptProject.cs:64`
+- `public TimeSpan TotalElapsed` | `OptimFoundation.Cplex/OptProject.cs:67`
+- `public TimeSpan BuildModelElapsed` | `OptimFoundation.Cplex/OptProject.cs:70`
+- `public OptExperiment Production(string description = null)` | `OptimFoundation.Cplex/OptProject.cs:95` | 建立正式求解的 builder（與 `Experiment` 同型別、同動詞）；只能 1 model × 1 config（多了丟例外），保留 engine、不開軌跡、紀錄寫 `{專案名}-production-*`，`Run()` 後看 `IsSuccess` / `Engine`。
+- `public void Dispose()` | `OptimFoundation.Cplex/OptProject.cs:82` | 用途：釋放 native/IO resources；scope 結束時呼叫，之後不可再使用 instance。
+- `public const string ProductionExperimentName = "production";` | `OptimFoundation.Cplex/OptProject.cs:87` | 正式求解紀錄的實驗名：檔名為 `{專案名}-production-trial.csv` 等，每次 Production 覆寫。
+- `public OptExperiment Experiment(string name, string description = null)` | `OptimFoundation.Cplex/OptProject.cs:105` | 只建立並回傳綁定目前 project、name、description 的 `OptExperiment` builder；不建立 `Experiment` result、`CreatedAt` 或 `Trials`，也不執行求解。

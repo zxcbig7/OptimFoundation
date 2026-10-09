@@ -39,38 +39,38 @@ namespace Sudoku_SHC279
 
             // 2. 模型
             var model = new OptModel("Sudoku_SHC279")
-                .AddVariables(engine => engine.BuildVars<VariableB_CellDigit>(
+                .AddVariables<VariableB_CellDigit>(
                     data.set_Row,
                     data.set_Column,
-                    data.set_Digit))
-                .AddObjective(engine => new ObjectiveFunction(
-                    data.set_Row,
-                    data.set_Column,
-                    data.set_Digit,
-                    data.parameter_ObjCoef).Build(engine))
-                .AddConstraints(engine => new Constraint_CellValue(
+                    data.set_Digit)
+                .AddObjective<ObjectiveFunction>(
                     data.set_Row,
                     data.set_Column,
                     data.set_Digit,
-                    exactlyOne).Build(engine))
-                .AddConstraints(engine => new Constraint_RowDigit(
+                    data.parameter_ObjCoef)
+                .AddConstraints<Constraint_CellValue>(
                     data.set_Row,
                     data.set_Column,
                     data.set_Digit,
-                    exactlyOne).Build(engine))
-                .AddConstraints(engine => new Constraint_ColumnDigit(
+                    exactlyOne)
+                .AddConstraints<Constraint_RowDigit>(
                     data.set_Row,
                     data.set_Column,
                     data.set_Digit,
-                    exactlyOne).Build(engine))
-                .AddConstraints(engine => new Constraint_BlockDigit(
+                    exactlyOne)
+                .AddConstraints<Constraint_ColumnDigit>(
+                    data.set_Row,
+                    data.set_Column,
+                    data.set_Digit,
+                    exactlyOne)
+                .AddConstraints<Constraint_BlockDigit>(
                     data.set_Block,
                     data.set_Digit,
                     data.set_BlockCell,
-                    exactlyOne).Build(engine))
-                .AddConstraints(engine => new Constraint_Given(
+                    exactlyOne)
+                .AddConstraints<Constraint_Given>(
                     data.set_Given,
-                    exactlyOne).Build(engine));
+                    exactlyOne);
 
             // 3. 環境
             if (isExperiment)
@@ -103,16 +103,16 @@ namespace Sudoku_SHC279
                         "tuning-r2",
                         "warm-up + three seeds with rotated variant order")
                     .AddModel(model)
-                    .AddConfig("r2-warmup-exclude", warmup)
-                    .AddConfig("r2-s1-baseline", baselineSeed1)
-                    .AddConfig("r2-s1-emphasis=feasibility", feasibilitySeed1)
-                    .AddConfig("r2-s1-probe=aggressive", probeSeed1)
-                    .AddConfig("r2-s2-probe=aggressive", probeSeed2)
-                    .AddConfig("r2-s2-baseline", baselineSeed2)
-                    .AddConfig("r2-s2-emphasis=feasibility", feasibilitySeed2)
-                    .AddConfig("r2-s3-emphasis=feasibility", feasibilitySeed3)
-                    .AddConfig("r2-s3-probe=aggressive", probeSeed3)
-                    .AddConfig("r2-s3-baseline", baselineSeed3)
+                    .AddSolverConfig("r2-warmup-exclude", warmup)
+                    .AddSolverConfig("r2-s1-baseline", baselineSeed1)
+                    .AddSolverConfig("r2-s1-emphasis=feasibility", feasibilitySeed1)
+                    .AddSolverConfig("r2-s1-probe=aggressive", probeSeed1)
+                    .AddSolverConfig("r2-s2-probe=aggressive", probeSeed2)
+                    .AddSolverConfig("r2-s2-baseline", baselineSeed2)
+                    .AddSolverConfig("r2-s2-emphasis=feasibility", feasibilitySeed2)
+                    .AddSolverConfig("r2-s3-emphasis=feasibility", feasibilitySeed3)
+                    .AddSolverConfig("r2-s3-probe=aggressive", probeSeed3)
+                    .AddSolverConfig("r2-s3-baseline", baselineSeed3)
                     .Run();
 
                 foreach (var trial in result.Trials)
@@ -124,10 +124,13 @@ namespace Sudoku_SHC279
             }
 
             // 4. 正式求解
-            project.LoadConfig(projectConfig);
-            bool solved = project.Solve(model, productionBaseline,
-                onSolved: engine => Sudoku_SHC279Solution.ReadAndValidate(engine, data).Print());
-            return solved ? 0 : 1;
+            project.Production()
+                .AddProjectConfig(projectConfig)
+                .AddModel(model)
+                .AddSolverConfig("production", productionBaseline)
+                .OnSolved(engine => Sudoku_SHC279Solution.ReadAndValidate(engine, data).Print())
+                .Run();
+            return project.IsSuccess ? 0 : 1;
         }
     }
 }

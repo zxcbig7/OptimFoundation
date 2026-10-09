@@ -1000,7 +1000,7 @@ namespace OptimFoundation.Cplex
         /// <summary>
         /// <c>Param.MIP.Limits.Populate</c>：一次 Populate 呼叫最多產生多少個解。
         /// <para>值：非負整數；預設 20.</para>
-        /// <para>本機設 0 會觸發 Error 1014，請至少設 1。</para>
+        /// <para>設 0 會觸發 Error 1014，請至少設 1。</para>
         /// </summary>
         public int? PopulateLimit { get; set; }
 
@@ -1105,7 +1105,7 @@ namespace OptimFoundation.Cplex
         /// <summary>
         /// <c>Param.Tune.Repeat</c>：CPLEX 內建參數調校時，重新排列模型並重測的次數。
         /// <para>值：非負整數；預設 1</para>
-        /// <para>本機設 0 會觸發 Error 1014，請至少設 1。</para>
+        /// <para>設 0 會觸發 Error 1014，請至少設 1。</para>
         /// </summary>
         public int? TuningRepeat { get; set; }
 

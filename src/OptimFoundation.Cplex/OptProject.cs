@@ -7,7 +7,8 @@ namespace OptimFoundation.Cplex
     /// <summary>
     /// 管理求解、實驗及其輸出資源。
     /// 建立專案時會設定 log 檔、建立所需資料夾，並刪除超過保留天數的輸出檔；實驗紀錄不會刪除。
-    /// 可多次 Solve；Engine / IsSuccess / Trial 保留最近一次結果，下次 Solve 時釋放前一次引擎。
+    /// <see cref="Production"/> 與 <see cref="Experiment"/> 回傳同一種 <see cref="OptExperiment"/>，寫法相同。
+    /// 可多次 Production；Engine / IsSuccess / Trial 保留最近一次結果，下次 Production 時釋放前一次引擎。
     /// 多個專案需依序執行，因為 Logging 與 FolderDir 由整個 process 共用。
     /// </summary>
     public sealed class OptProject : IDisposable
@@ -31,7 +32,7 @@ namespace OptimFoundation.Cplex
 
             try
             {
-                // 初始化 Logging 與 FolderDir，之後每次 Solve 或 Experiment 都會使用同一個專案資料夾。
+                // 初始化 Logging 與 FolderDir，之後每次 Production 或 Experiment 都會使用同一個專案資料夾。
                 Logging.SetLogFileName(Name);
                 FolderDir.CreateAll();
                 int purged = FolderDir.PurgeAllOutputs(RetentionDays);
@@ -51,113 +52,58 @@ namespace OptimFoundation.Cplex
         /// <summary>輸出檔保留天數；&lt;= 0 表示不清理。</summary>
         public int RetentionDays { get; } = 30;
 
+        #region 正式環境結果
 
-        #region 正式求解
-
-        private ProjectConfig _projectConfig = new ProjectConfig();
-
-        /// <summary>載入正式求解的專案設定（solver log、LP / MPS / Sol 匯出），之後每次 <see cref="Solve"/> 都套用。預設 <c>new ProjectConfig()</c>；實驗另有自己的 LoadConfig。</summary>
-        public OptProject LoadConfig(ProjectConfig config)
-        {
-            _projectConfig = config ?? throw Logging.ErrorOnce(
-                new ArgumentNullException(nameof(config), "config 不得為 null"),
-                "專案設定不合法", null, nameof(LoadConfig), Name, "設定為空");
-            return this;
-        }
-
-        /// <summary>最近一次 Solve 的 engine，用來取解；建模或求解中途丟例外時仍可讀取。下一次 Solve 或 Dispose 時釋放。</summary>
+        /// <summary>最近一次 Production 的 engine，用來取解；建模或求解中途丟例外時仍可讀取。下一次 Production 或 Dispose 時釋放。</summary>
         public OptEngine Engine { get; private set; }
 
-        /// <summary>最近一次 Solve 是否找到可用解（Optimal 或 Feasible）。</summary>
-        public bool IsSuccess { get; private set; }
+        /// <summary>最近一次 Production 是否找到可用解（Optimal 或 Feasible）。</summary>
+        public bool IsSuccess { get; internal set; }
 
-        /// <summary>最近一次 Solve 的設定副本與求解統計，格式與實驗的 Trial 相同；預設不記錄收斂過程。</summary>
-        public Trial Trial { get; private set; }
+        /// <summary>最近一次 Production 的設定副本與求解統計，格式與實驗的 Trial 相同；預設不記錄收斂過程。</summary>
+        public Trial Trial { get; internal set; }
 
-        /// <summary>最近一次 Solve 的總耗時（CPLEX 時鐘）：從建好 CPLEX 模型起，包含建模、求解、儲存紀錄與執行 onSolved。</summary>
-        public TimeSpan TotalElapsed { get; private set; }
+        /// <summary>最近一次 Production 的總耗時（CPLEX 時鐘）：從建好 CPLEX 模型起，包含建模、求解、執行 OnSolved 與儲存紀錄。</summary>
+        public TimeSpan TotalElapsed { get; internal set; }
 
-        /// <summary>最近一次 Solve 的建模耗時（CPLEX 時鐘）；使用模型檔時，包含讀檔與建立變數、限制式查找索引的時間。</summary>
+        /// <summary>最近一次 Production 的建模耗時（CPLEX 時鐘）；使用模型檔時，包含讀檔與建立變數、限制式查找索引的時間。</summary>
         public TimeSpan BuildModelElapsed => Engine?.ModelApplyElapsed ?? TimeSpan.Zero;
 
-        /// <summary>
-        /// 使用指定的模型與求解器設定，建立新引擎並求解一次。
-        /// 結果以 Trial 寫成 Experiment/{專案名}-solve-trial.csv 與 -meta.csv，每次 Solve 覆寫；不寫 -summary.csv。
-        /// 找到可用解後才執行 onSolved。
-        /// </summary>
-        /// <param name="model">要求解的模型。</param>
-        /// <param name="config">求解器設定；執行時複製一份，之後修改原設定不會影響這次求解。</param>
-        /// <param name="onSolved">只在成功後執行，通常用來讀解、驗證、寫出。</param>
-        /// <param name="beforeSolve">建模完成後、求解前執行，例如開啟收斂軌跡。</param>
-        public bool Solve(OptModel model, CplexConfig config,
-            Action<OptEngine> onSolved = null, Action<OptEngine> beforeSolve = null)
+        // 先保存 Engine 再建模，失敗時仍可讀取診斷資訊；前一次的 engine 在這裡釋放。
+        internal void ReplaceEngine(OptEngine engine)
         {
-            if (model == null)
-                throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(model), "model 不得為 null"),
-                    "求解設定不合法", "正式求解", nameof(Solve), Name, "模型為空");
-            if (config == null)
-                throw Logging.ErrorOnce(
-                    new ArgumentNullException(nameof(config), "config 不得為 null"),
-                    "求解設定不合法", "正式求解", nameof(Solve), model.Name, "設定為空");
-
-            try
-            {
-                return SolveCore(model, config, onSolved, beforeSolve);
-            }
-            catch (Exception ex)
-            {
-                Logging.ErrorOnce(ex, "求解執行失敗", null, nameof(Solve), model.Name,
-                    ex.GetBaseException().Message);
-                throw;
-            }
-        }
-
-        private bool SolveCore(OptModel model, CplexConfig config,
-            Action<OptEngine> onSolved, Action<OptEngine> beforeSolve)
-        {
+            Engine?.Dispose();
+            Engine = engine;
             IsSuccess = false;
             Trial = null;
-            // 實驗可能切換 log，求解前須切回專案 log。
-            Logging.SetLogFileName(Name);
-
-            string runId = NextRunId();
-            Engine?.Dispose();
-            // 先保存 Engine，失敗時仍可讀取診斷資訊。
-            Engine = new OptEngine(config.Clone(), _projectConfig.Clone());
-            Engine.SetModelName(Name);
-            Trial = Engine.RunModel(model, "solve", captureTrajectory: false, beforeSolve, out bool solved);
-            Trial.ExperimentId = runId;
-            Trial.TrialId = 1;
-            IsSuccess = solved;
-
-            // 先存紀錄，避免 onSolved 失敗時遺失求解結果。
-            var record = new Experiment(Name, SolveExperimentName, $"正式求解紀錄：{model.Name}") { WriteSummary = false };
-            record.AddTrial(Trial);
-            record.Save();
-
-            if (IsSuccess) onSolved?.Invoke(Engine);
-
-            TotalElapsed = Engine.ElapsedSinceRunStart;
-            return IsSuccess;
         }
 
-        /// <summary>釋放最近一次 Solve 的 engine（CPLEX native 資源）。</summary>
+        /// <summary>釋放最近一次 Production 的 engine（CPLEX native 資源）。</summary>
         public void Dispose() => Engine?.Dispose();
 
         #endregion
 
-        /// <summary>正式求解紀錄的實驗名：檔名為 {專案名}-solve-trial.csv 等。</summary>
-        public const string SolveExperimentName = "solve";
+        /// <summary>正式環境紀錄的實驗名：檔名為 {專案名}-production-trial.csv 等。</summary>
+        public const string ProductionExperimentName = "production";
+
+        /// <summary>
+        /// 建立正式環境：與 <see cref="Experiment"/> 用同一組 AddProjectConfig / AddModel / AddSolverConfig / AddTrial / OnSolved / Run，差別只在預設值。
+        /// 只能一組模型 × 一組設定，多了在 Run 時丟例外、不執行；engine 留在 <see cref="Engine"/> 供取解，不開收斂軌跡，
+        /// ProjectConfig 預設 <c>new ProjectConfig()</c>，紀錄寫成 Experiment/{專案名}-production-trial.csv 與 -meta.csv（每次覆寫，不寫 -summary.csv），log 寫在專案 log。
+        /// </summary>
+        /// <param name="description">寫進 -meta.csv 的說明；省略時寫「正式環境紀錄：{模型名}」。</param>
+        public OptExperiment Production(string description = null)
+            => new OptExperiment(this, ProductionExperimentName, description, isProduction: true);
 
         /// <summary>
         /// 建立實驗，讓每個模型分別搭配每組求解器設定，並以 Trial 保存每次結果。
+        /// 每組跑完就釋放 engine，預設開收斂軌跡，ProjectConfig 預設 <see cref="ProjectConfig.Quiet"/>。
         /// 建立時就把 log 切到 {專案名}-{實驗名}_exp，之後的前置動作（例：warm-up）也收在同一檔。
         /// </summary>
-        /// <param name="name">實驗名，輸出檔為 {專案名}-{實驗名}-trial.csv 等（<see cref="SolveExperimentName"/> 留給正式求解）；同名實驗再跑一次整組覆寫。</param>
+        /// <param name="name">實驗名，輸出檔為 {專案名}-{實驗名}-trial.csv 等（<see cref="ProductionExperimentName"/> 留給正式環境）；同名實驗再跑一次整組覆寫。</param>
         /// <param name="description">實驗目的，寫進 -meta.csv。</param>
         public OptExperiment Experiment(string name, string description = null)
-            => new OptExperiment(this, name, description);
+            => new OptExperiment(this, name, description, isProduction: false);
 
         #region 批次識別
 

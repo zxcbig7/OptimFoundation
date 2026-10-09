@@ -56,16 +56,16 @@ namespace RosteringProblem
 
             // ── 2. 模型 ────────────────────────────────────────────
             var model = new OptModel("Canonical")
-                .AddVariables(engine => engine.BuildVars<VariableB_ShiftAssign>(data.set_Date, data.set_Employee, data.set_Group))
-                .AddVariables(engine => engine.BuildVars<VariableB_GroupMismatch>(data.set_Date, data.set_Employee))
-                .AddVariables(engine => engine.BuildVars<VariableB_NightToDay>(data.set_Date, data.set_Employee))
-                .AddVariables(engine => engine.BuildVars<VariableB_DoubleOffFlag>(data.set_Date, data.set_Employee))
-                .AddVariables(engine => engine.BuildVars<VariableB_DoubleOffLT2>(data.set_Employee))
-                .AddVariables(engine => engine.BuildVars<VariableB_Off1Day>(data.set_Date, data.set_Employee))
-                .AddVariables(engine => engine.BuildVars<VariableB_SixDayWork>(data.set_Date, data.set_Employee))
-                .AddVariables(engine => engine.BuildVars<VariableC_BelowAVG>(data.set_Employee))
-                .AddVariables(engine => engine.BuildVars<VariableC_WeekendLT4>(data.set_Employee))
-                .AddObjective(engine => new ObjectiveFunction(
+                .AddVariables<VariableB_ShiftAssign>(data.set_Date, data.set_Employee, data.set_Group)
+                .AddVariables<VariableB_GroupMismatch>(data.set_Date, data.set_Employee)
+                .AddVariables<VariableB_NightToDay>(data.set_Date, data.set_Employee)
+                .AddVariables<VariableB_DoubleOffFlag>(data.set_Date, data.set_Employee)
+                .AddVariables<VariableB_DoubleOffLT2>(data.set_Employee)
+                .AddVariables<VariableB_Off1Day>(data.set_Date, data.set_Employee)
+                .AddVariables<VariableB_SixDayWork>(data.set_Date, data.set_Employee)
+                .AddVariables<VariableC_BelowAVG>(data.set_Employee)
+                .AddVariables<VariableC_WeekendLT4>(data.set_Employee)
+                .AddObjective<ObjectiveFunction>(
                     data.set_Date,
                     data.set_Employee,
                     offOneDayPenalty,
@@ -74,27 +74,27 @@ namespace RosteringProblem
                     nightToDayPenalty,
                     doubleOffLT2Penalty,
                     belowAvgPenalty,
-                    weekend4DayPenalty).Build(engine))
-                .AddConstraints(engine => new Constraint_FullfillDemand(
-                    data.set_Date, data.set_Employee, data.set_Group, data.parameter_ShiftDemand).Build(engine))
-                .AddConstraints(engine => new Constraint_OneGroup(
-                    data.set_Date, data.set_Employee, data.set_Group, one).Build(engine))
-                .AddConstraints(engine => new Constraint_PreAssign(
-                    data.parameter_PreAssign, one).Build(engine))
-                .AddConstraints(engine => new Constraint_SixDayWork(
-                    data.set_Date, data.set_Employee, sixDayWindow, one).Build(engine))
-                .AddConstraints(engine => new Constraint_NightToDay(
-                    data.set_Date, data.set_Employee, data.parameter_NightToDay, nightToDayWindow, one).Build(engine))
-                .AddConstraints(engine => new Constraint_OffOneDay(
-                    data.set_Date, data.set_Employee, offOneDayWindow, one).Build(engine))
-                .AddConstraints(engine => new Constraint_CrossGroup(
-                    data.set_Date, data.set_Employee, data.parameter_CrossGroup).Build(engine))
-                .AddConstraints(engine => new Constraint_BelowAVG(
-                    data.set_Date, data.set_Employee, data.parameter_ShiftDemand).Build(engine))
-                .AddConstraints(engine => new Constraint_WeekendLT4(
-                    data.set_Date, data.set_Employee, weekendOffThreshold).Build(engine))
-                .AddConstraints(engine => new Constraint_DoubleOffLT2(
-                    data.set_Date, data.set_Employee, doubleOffWindow, doubleOffThreshold, one).Build(engine));
+                    weekend4DayPenalty)
+                .AddConstraints<Constraint_FullfillDemand>(
+                    data.set_Date, data.set_Employee, data.set_Group, data.parameter_ShiftDemand)
+                .AddConstraints<Constraint_OneGroup>(
+                    data.set_Date, data.set_Employee, data.set_Group, one)
+                .AddConstraints<Constraint_PreAssign>(
+                    data.parameter_PreAssign, one)
+                .AddConstraints<Constraint_SixDayWork>(
+                    data.set_Date, data.set_Employee, sixDayWindow, one)
+                .AddConstraints<Constraint_NightToDay>(
+                    data.set_Date, data.set_Employee, data.parameter_NightToDay, nightToDayWindow, one)
+                .AddConstraints<Constraint_OffOneDay>(
+                    data.set_Date, data.set_Employee, offOneDayWindow, one)
+                .AddConstraints<Constraint_CrossGroup>(
+                    data.set_Date, data.set_Employee, data.parameter_CrossGroup)
+                .AddConstraints<Constraint_BelowAVG>(
+                    data.set_Date, data.set_Employee, data.parameter_ShiftDemand)
+                .AddConstraints<Constraint_WeekendLT4>(
+                    data.set_Date, data.set_Employee, weekendOffThreshold)
+                .AddConstraints<Constraint_DoubleOffLT2>(
+                    data.set_Date, data.set_Employee, doubleOffWindow, doubleOffThreshold, one);
 
             // ── 3. 環境 ────────────────────────────────────────────
             // 模式 2：exp，使用不同 solver 設定重複求解，記錄比較結果。
@@ -125,17 +125,17 @@ namespace RosteringProblem
                         "tuning-r3",
                         "S3 R3: baseline vs Symmetry=3 x 5 seeds, rotated order")
                     .AddModel(model)
-                    .AddConfig("warmup-exclude", warmup)
-                    .AddConfig("r3-s1-baseline", Seeded(1))
-                    .AddConfig("r3-s1-symmetry3", SymmetryBreaking(1))
-                    .AddConfig("r3-s2-symmetry3", SymmetryBreaking(2))
-                    .AddConfig("r3-s2-baseline", Seeded(2))
-                    .AddConfig("r3-s3-baseline", Seeded(3))
-                    .AddConfig("r3-s3-symmetry3", SymmetryBreaking(3))
-                    .AddConfig("r3-s4-symmetry3", SymmetryBreaking(4))
-                    .AddConfig("r3-s4-baseline", Seeded(4))
-                    .AddConfig("r3-s5-baseline", Seeded(5))
-                    .AddConfig("r3-s5-symmetry3", SymmetryBreaking(5))
+                    .AddSolverConfig("warmup-exclude", warmup)
+                    .AddSolverConfig("r3-s1-baseline", Seeded(1))
+                    .AddSolverConfig("r3-s1-symmetry3", SymmetryBreaking(1))
+                    .AddSolverConfig("r3-s2-symmetry3", SymmetryBreaking(2))
+                    .AddSolverConfig("r3-s2-baseline", Seeded(2))
+                    .AddSolverConfig("r3-s3-baseline", Seeded(3))
+                    .AddSolverConfig("r3-s3-symmetry3", SymmetryBreaking(3))
+                    .AddSolverConfig("r3-s4-symmetry3", SymmetryBreaking(4))
+                    .AddSolverConfig("r3-s4-baseline", Seeded(4))
+                    .AddSolverConfig("r3-s5-baseline", Seeded(5))
+                    .AddSolverConfig("r3-s5-symmetry3", SymmetryBreaking(5))
                     .Run();
 
                 foreach (var trial in result.Trials)
@@ -149,10 +149,13 @@ namespace RosteringProblem
             model.AddConstraints(engine =>
                 engine.ExportModel($"{engine.ModelName}_SAV_{engine.StartTime}.sav"));
 
-            project.LoadConfig(projectConfig);
-            bool solved = project.Solve(model, productionBaseline,
-                onSolved: engine => RosteringProblemSolution.ReadAndValidate(engine, data).Print());
-            return solved ? 0 : 1;
+            project.Production()
+                .AddProjectConfig(projectConfig)
+                .AddModel(model)
+                .AddSolverConfig("production", productionBaseline)
+                .OnSolved(engine => RosteringProblemSolution.ReadAndValidate(engine, data).Print())
+                .Run();
+            return project.IsSuccess ? 0 : 1;
         }
     }
 }

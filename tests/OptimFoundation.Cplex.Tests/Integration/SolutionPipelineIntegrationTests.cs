@@ -152,9 +152,13 @@ namespace OptimFoundation.Cplex.Tests.Integration
                 })
                 .ReadSolution(fileName);
 
-            using var optProject = new OptProject(project, retentionDays: 0)
-                .LoadConfig(new ProjectConfig { EnableSolverLog = false });
-            Assert.True(optProject.Solve(model, new CplexConfig()));
+            using var optProject = new OptProject(project, retentionDays: 0);
+            optProject.Production()
+                .AddProjectConfig(new ProjectConfig { EnableSolverLog = false })
+                .AddModel(model)
+                .AddSolverConfig("production", new CplexConfig())
+                .Run();
+            Assert.True(optProject.IsSuccess);
             Assert.Equal(6.0, optProject.Engine.GetObjectiveValue(), precision: 6);
             Assert.Contains("[解檔讀入完成]", ReadLog(project));
         }

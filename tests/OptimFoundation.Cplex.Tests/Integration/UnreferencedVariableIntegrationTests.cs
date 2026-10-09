@@ -218,7 +218,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             new OptProject(name, retentionDays: 0).Experiment("exp", "unreferenced variables")
                 .AddModel(consistent)
                 .AddModel(unreferenced)
-                .AddConfig("base", Config())
+                .AddSolverConfig("base", Config())
                 .Run();
 
             string meta = File.ReadAllText(FolderDir.Experiment.GetPathFile($"{name}-exp-meta.csv"));

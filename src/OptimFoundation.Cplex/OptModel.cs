@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using System.Runtime.ExceptionServices;
 using OptimFoundation.Core;
 
 namespace OptimFoundation.Cplex
@@ -36,6 +39,13 @@ namespace OptimFoundation.Cplex
             return this;
         }
 
+        /// <summary>
+        /// 加入一個建立變數的步驟，套用時呼叫 <see cref="EngineBase{TModel, TVar, TExpr, TConstr}.BuildVars{TVariable}"/>；
+        /// 型別由類別名前綴決定，sets 依 TVariable 的維度順序傳入，零維變數不傳。
+        /// </summary>
+        public OptModel AddVariables<TVariable>(params object[] sets)
+            => AddVariables(engine => engine.BuildVars<TVariable>(sets));
+
         /// <summary>加入一個建立目標式的步驟。</summary>
         public OptModel AddObjective(Action<OptEngine> build)
         {
@@ -52,6 +62,75 @@ namespace OptimFoundation.Cplex
                 new ArgumentNullException(nameof(build), "build 不得為 null"),
                 "模型定義不合法", null, nameof(AddConstraints), Name, "建立動作為空"));
             return this;
+        }
+
+
+        /// <summary>
+        /// 回傳一行模型定義摘要：模型名，以及變數、目標式、限制式、起始解各註冊了幾個步驟。
+        /// 數的是 AddXxx 呼叫次數，不是變數或限制式的實際數量（一個 AddVariables 可能建出上千顆變數）；實際數量在套用後由 CPLEX 提供，見 Trial。
+        /// </summary>
+        /// <returns>例：<c>模型=Canonical | 變數=3 目標式=1 限制式=4 起始解=0</c>。</returns>
+        public string ModelSummary()
+        {
+            var summary = new List<string>();
+            summary.Add($"模型={Name}");
+            summary.Add($"變數={_variableSteps.Count} 目標式={_objectiveSteps.Count} 限制式={_constraintSteps.Count} 起始解={_startSteps.Count}");
+            return string.Join(" | ", summary);
+        }
+
+
+        /// <summary>
+        /// 加入一個建立目標式的步驟：當下以 args 建立 TObjective，套用時呼叫它的 Build(OptEngine)。
+        /// args 依建構子參數順序傳入；型別在執行期比對，找不到符合的建構子或 Build(OptEngine) 時當場丟例外。
+        /// </summary>
+        public OptModel AddObjective<TObjective>(params object[] args)
+            => AddObjective(CreateBuildStep(typeof(TObjective), args, nameof(AddObjective)));
+
+        /// <summary>
+        /// 加入一個建立限制式的步驟：當下以 args 建立 TConstraint，套用時呼叫它的 Build(OptEngine)。
+        /// args 依建構子參數順序傳入；型別在執行期比對，找不到符合的建構子或 Build(OptEngine) 時當場丟例外。
+        /// </summary>
+        public OptModel AddConstraints<TConstraint>(params object[] args)
+            => AddConstraints(CreateBuildStep(typeof(TConstraint), args, nameof(AddConstraints)));
+
+        // 物件在組裝時建立一次，實驗的每個 trial 都對同一個物件呼叫 Build。
+        private Action<OptEngine> CreateBuildStep(Type type, object[] args, string caller)
+        {
+            MethodInfo build = type.GetMethod("Build", BindingFlags.Public | BindingFlags.Instance, null, new[] { typeof(OptEngine) }, null);
+            if (build == null || build.ReturnType != typeof(void))
+                throw Logging.ErrorOnce(
+                    new MissingMethodException($"{type.Name} 沒有 public void Build(OptEngine engine)"),
+                    "模型定義不合法", null, caller, type.Name, "找不到 Build(OptEngine)", $"模型={Name}");
+
+            object instance;
+            try
+            {
+                instance = Activator.CreateInstance(type, args);
+            }
+            catch (Exception ex) when (ex is MissingMethodException || ex is AmbiguousMatchException)
+            {
+                string given = args == null ? "" : string.Join(", ", args.Select(a => a == null ? "null" : TypeName(a.GetType())));
+                string available = string.Join("；", type.GetConstructors().Select(c =>
+                    "(" + string.Join(", ", c.GetParameters().Select(p => $"{TypeName(p.ParameterType)} {p.Name}")) + ")"));
+                throw Logging.ErrorOnce(
+                    new ArgumentException($"{type.Name} 找不到符合引數的建構子；傳入=({given})；可用建構子={available}", nameof(args), ex),
+                    "模型定義不合法", null, caller, type.Name, "建構子引數不符", $"模型={Name} 傳入=({given})");
+            }
+            catch (TargetInvocationException ex) when (ex.InnerException != null)
+            {
+                Logging.ErrorOnce(ex.InnerException, "模型定義失敗", null, caller, type.Name, ex.InnerException.Message, $"模型={Name}");
+                ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+                throw;
+            }
+
+            return (Action<OptEngine>)build.CreateDelegate(typeof(Action<OptEngine>), instance);
+        }
+
+        private static string TypeName(Type type)
+        {
+            if (!type.IsGenericType) return type.Name;
+            string name = type.Name.Substring(0, type.Name.IndexOf('`'));
+            return $"{name}<{string.Join(", ", type.GetGenericArguments().Select(TypeName))}>";
         }
 
         #endregion

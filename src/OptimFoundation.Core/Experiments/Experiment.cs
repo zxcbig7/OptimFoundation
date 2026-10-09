@@ -13,7 +13,7 @@ namespace OptimFoundation.Core
     {
         /// <summary>專案名，輸出檔名的前段：FolderDir.Experiment 下的 {Project}-{Name}-trial.csv 等。</summary>
         public string Project { get; set; }
-        /// <summary>實驗名，輸出檔名的後段（例：tuning-r1；正式求解是 solve）。</summary>
+        /// <summary>實驗名，輸出檔名的後段（例：tuning-r1；正式環境是 production）。</summary>
         public string Name { get; set; }
         /// <summary>實驗目的描述（自由文字，寫進 -meta.csv 供日後辨識）。</summary>
         public string Description { get; set; }
@@ -22,7 +22,7 @@ namespace OptimFoundation.Core
         /// <summary>本實驗的所有 Trial（每次求解一筆）。</summary>
         public List<Trial> Trials { get; set; }
 
-        /// <summary>Save 時是否寫 -summary.csv，預設 true。正式求解紀錄只有一筆、沒有可比的設定，OptProject 會設成 false。</summary>
+        /// <summary>Save 時是否寫 -summary.csv，預設 true。正式環境紀錄只有一筆、沒有可比的設定，OptProject 會設成 false。</summary>
         public bool WriteSummary { get; set; } = true;
 
         /// <summary>
@@ -174,7 +174,7 @@ namespace OptimFoundation.Core
         /// <param name="label">這次 Trial 的標籤（如 "emphasis=2"）</param>
         /// <param name="solveAction">執行一次求解的動作，回傳是否成功</param>
         /// <param name="captureTrajectory">
-        /// 求解前啟用軌跡（須引擎支援）；callback 可能影響搜尋與耗時，正式求解及設定採用驗證應關閉。
+        /// 求解前啟用軌跡（須引擎支援）；callback 可能影響搜尋與耗時，正式環境及設定採用驗證應關閉。
         /// </param>
         public static Trial Capture(ISolverEngine engine, string label, Func<bool> solveAction, bool captureTrajectory = true)
         {

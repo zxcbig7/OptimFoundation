@@ -36,7 +36,10 @@ namespace OptimFoundation.Cplex.Tests.Unit
             foreach (string method in forbidden)
                 Assert.Null(typeof(OptModel).GetMethod(method, BindingFlags.Public | BindingFlags.Instance));
 
-            Assert.NotNull(typeof(OptProject).GetMethod("Solve", BindingFlags.Public | BindingFlags.Instance));
+            // 正式環境與實驗回傳同一種 builder；舊入口 Solve 已改名 Production
+            Assert.Null(typeof(OptProject).GetMethod("Solve", BindingFlags.Public | BindingFlags.Instance));
+            Assert.Equal(typeof(OptExperiment), typeof(OptProject).GetMethod("Production", BindingFlags.Public | BindingFlags.Instance)!.ReturnType);
+            Assert.Equal(typeof(OptExperiment), typeof(OptProject).GetMethod("Experiment", BindingFlags.Public | BindingFlags.Instance)!.ReturnType);
             Assert.Null(typeof(OptExperiment).GetMethod("Solve", BindingFlags.Public | BindingFlags.Instance));
         }
 
@@ -50,10 +53,15 @@ namespace OptimFoundation.Cplex.Tests.Unit
         }
 
         [Fact]
-        public void ConfigConsumers_AreAllNamedLoadConfig()
+        public void ConfigConsumers_NameWhichConfigTheyTake()
         {
-            Assert.NotNull(typeof(OptProject).GetMethod("LoadConfig", new[] { typeof(ProjectConfig) }));
-            Assert.NotNull(typeof(OptExperiment).GetMethod("LoadConfig", new[] { typeof(ProjectConfig) }));
+            // builder 用 AddProjectConfig / AddSolverConfig 寫明是哪一種設定；OptProject 不再有第二個入口
+            Assert.Null(typeof(OptProject).GetMethod("LoadConfig", new[] { typeof(ProjectConfig) }));
+            Assert.NotNull(typeof(OptExperiment).GetMethod("AddProjectConfig", new[] { typeof(ProjectConfig) }));
+            Assert.NotNull(typeof(OptExperiment).GetMethod("AddSolverConfig", new[] { typeof(string), typeof(CplexConfig) }));
+            Assert.Null(typeof(OptExperiment).GetMethod("LoadConfig"));
+            Assert.Null(typeof(OptExperiment).GetMethod("AddConfig"));
+            // engine 層吃 solver 設定仍是 LoadConfig
             Assert.NotNull(typeof(OptEngine).GetMethod("LoadConfig", new[] { typeof(ISolverConfig) }));
 
             foreach (var type in new[] { typeof(OptProject), typeof(OptExperiment), typeof(OptEngine) })

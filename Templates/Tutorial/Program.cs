@@ -32,15 +32,15 @@ namespace Tutorial
             };
 
             // ── 2. 模型 ────────────────────────────────────────────
-            var model = new OptModel("Canonical");
-            model.AddVariables(engine => engine.BuildVars<VariableC_Produce>(data.set_Product, data.set_Date, data.set_Shift));
-            model.AddVariables(engine => engine.BuildVars<VariableB_Setup>(data.set_Product, data.set_Date, data.set_Shift));
-            model.AddVariables(engine => engine.BuildVars<VariableI_Batch>(data.set_Product, data.set_Date));
-            model.AddObjective(engine => new ObjectiveFunction(data.set_Product, data.set_Date, data.set_Shift, data.parameter_UnitProfit, data.parameter_SetupCost).Build(engine));
-            model.AddConstraints(engine => new Constraint_Capacity(data.set_Product, data.set_Machine, data.set_Date, data.set_Shift, data.parameter_MachineHours, data.parameter_Capacity).Build(engine));
-            model.AddConstraints(engine => new Constraint_Demand(data.set_Product, data.set_Date, data.set_Shift, data.parameter_Demand).Build(engine));
-            model.AddConstraints(engine => new Constraint_BatchDef(data.set_Product, data.set_Date, data.set_Shift, data.parameter_BatchSize).Build(engine));
-            model.AddConstraints(engine => new Constraint_SetupLink(data.set_Product, data.set_Date, data.set_Shift, data.BigM).Build(engine));
+            var model = new OptModel("Canonical")
+                .AddVariables<VariableC_Produce>(data.set_Product, data.set_Date, data.set_Shift)
+                .AddVariables<VariableB_Setup>(data.set_Product, data.set_Date, data.set_Shift)
+                .AddVariables<VariableI_Batch>(data.set_Product, data.set_Date)
+                .AddObjective<ObjectiveFunction>(data.set_Product, data.set_Date, data.set_Shift, data.parameter_UnitProfit, data.parameter_SetupCost)
+                .AddConstraints<Constraint_Capacity>(data.set_Product, data.set_Machine, data.set_Date, data.set_Shift, data.parameter_MachineHours, data.parameter_Capacity)
+                .AddConstraints<Constraint_Demand>(data.set_Product, data.set_Date, data.set_Shift, data.parameter_Demand)
+                .AddConstraints<Constraint_BatchDef>(data.set_Product, data.set_Date, data.set_Shift, data.parameter_BatchSize)
+                .AddConstraints<Constraint_SetupLink>(data.set_Product, data.set_Date, data.set_Shift, data.BigM);
 
             var model2 = OptModel.ReadModel("Model.lp", "Model2");
 
@@ -56,9 +56,9 @@ namespace Tutorial
 
                 var result = project.Experiment("tuning-r1", "同一模型 × 三組 MIP emphasis 對照")
                     .AddModel(model)
-                    .AddConfig("balanced", balanced)
-                    .AddConfig("feasible-first", feasibleFirst)
-                    .AddConfig("optimal-first", optimalFirst)
+                    .AddSolverConfig("balanced", balanced)
+                    .AddSolverConfig("feasible-first", feasibleFirst)
+                    .AddSolverConfig("optimal-first", optimalFirst)
                     .Run();
 
                 foreach (var trial in result.Trials)
@@ -67,10 +67,13 @@ namespace Tutorial
             }
 
             // 預設：正式求解
-            project.LoadConfig(projectConfig);
-            bool solved = project.Solve(model, productionBaseline,
-                onSolved: engine => TutorialSolution.ReadAndValidate(engine, data).Print());
-            return solved ? 0 : 1;
+            project.Production()
+                .AddProjectConfig(projectConfig)
+                .AddModel(model)
+                .AddSolverConfig("production", productionBaseline)
+                .OnSolved(engine => TutorialSolution.ReadAndValidate(engine, data).Print())
+                .Run();
+            return project.IsSuccess ? 0 : 1;
         }
     }
 }

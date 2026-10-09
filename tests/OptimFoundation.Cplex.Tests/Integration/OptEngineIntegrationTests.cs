@@ -1,3 +1,4 @@
+using System.Reflection;
 using OptimFoundation.Core;
 using OptimFoundation.Cplex.Tests.Mocks;
 using Xunit;
@@ -26,8 +27,8 @@ namespace OptimFoundation.Cplex.Tests.Integration
             return engine;
         }
 
-        [Fact(DisplayName = "Solve：engine 名稱與 log 檔名都以專案名為根，建立專案時印出專案設定")]
-        public void Solve_UsesProjectNameForEngineAndLog()
+        [Fact(DisplayName = "Production：engine 名稱與 log 檔名都以專案名為根，建立專案時印出專案設定")]
+        public void Production_UsesProjectNameForEngineAndLog()
         {
             if (!CplexAvailable) return;
 
@@ -40,10 +41,14 @@ namespace OptimFoundation.Cplex.Tests.Integration
                     engine.AddLHS(1.0, new VarS { S = "x" });
                     engine.CreateMinimize();
                 });
-            using var project = new OptProject(projectName, retentionDays: 0)
-                .LoadConfig(new ProjectConfig { EnableSolverLog = false });
+            using var project = new OptProject(projectName, retentionDays: 0);
 
-            Assert.True(project.Solve(model, new CplexConfig { TimeLimit = 30 }));
+            project.Production()
+                .AddProjectConfig(new ProjectConfig { EnableSolverLog = false })
+                .AddModel(model)
+                .AddSolverConfig("production", new CplexConfig { TimeLimit = 30 })
+                .Run();
+            Assert.True(project.IsSuccess);
             Assert.Equal(projectName, project.Engine.ModelName);
 
             string logFile = Directory.GetFiles(FolderDir.Log.GetPath(), $"{projectName}_*.txt")
@@ -212,6 +217,33 @@ namespace OptimFoundation.Cplex.Tests.Integration
             Assert.Contains("VarS@B", names);
         }
 
+        [Fact(DisplayName = "AddVariables<T>(sets) 與 AddVariables(e => e.BuildVars<T>(sets)) 建出同一批變數（含多維與零維）")]
+        public void AddVariablesGeneric_MatchesLambdaForm()
+        {
+            if (!CplexAvailable) return;
+            var nodes = new List<string> { "A", "B" };
+            var dates = new List<DateTime> { new DateTime(2026, 1, 1), new DateTime(2026, 1, 2) };
+
+            var shortForm = new OptModel("Short")
+                .AddVariables<VariableC_ArcFlowByDate>(nodes, nodes, dates)
+                .AddVariables<VariableC_ZeroDim>();
+            var lambdaForm = new OptModel("Lambda")
+                .AddVariables(e => e.BuildVars<VariableC_ArcFlowByDate>(nodes, nodes, dates))
+                .AddVariables(e => e.BuildVars<VariableC_ZeroDim>());
+
+            using var shortEngine = BuildEngine();
+            using var lambdaEngine = BuildEngine();
+            ApplyTo(shortForm, shortEngine);
+            ApplyTo(lambdaForm, lambdaEngine);
+
+            Assert.Equal(9, shortEngine.VariableCount);
+            Assert.Equal(lambdaEngine.GetSetVarNames<VariableC_ArcFlowByDate>(), shortEngine.GetSetVarNames<VariableC_ArcFlowByDate>());
+            Assert.Equal(lambdaEngine.GetSetVarNames<VariableC_ZeroDim>(), shortEngine.GetSetVarNames<VariableC_ZeroDim>());
+        }
+
+        private static void ApplyTo(OptModel model, OptEngine engine)
+            => typeof(OptModel).GetMethod("ApplyTo", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(model, new object[] { engine });
+
 
         [Fact(DisplayName = "Infeasible 模型 → Status = Infeasible")]
         public void Infeasible_Model_ReturnsInfeasibleStatus()
@@ -279,7 +311,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
         }
 
         [Fact]
-        public void OptProjectSolve_OnSolved_RunsExactlyOnceAfterSuccessfulSolve()
+        public void OptProjectProduction_OnSolved_RunsExactlyOnceAfterSuccessfulSolve()
         {
             if (!CplexAvailable) return;
             int calls = 0;
@@ -291,15 +323,20 @@ namespace OptimFoundation.Cplex.Tests.Integration
                     e.CreateMinimize();
                 });
 
-            using var project = new OptProject("on-solved-success", retentionDays: 0)
-                .LoadConfig(new ProjectConfig { EnableSolverLog = false });
+            using var project = new OptProject("on-solved-success", retentionDays: 0);
 
-            Assert.True(project.Solve(model, new CplexConfig(), onSolved: _ => calls++));
+            project.Production()
+                .AddProjectConfig(new ProjectConfig { EnableSolverLog = false })
+                .AddModel(model)
+                .AddSolverConfig("production", new CplexConfig())
+                .OnSolved(_ => calls++)
+                .Run();
+            Assert.True(project.IsSuccess);
             Assert.Equal(1, calls);
         }
 
         [Fact]
-        public void OptProjectSolve_OnSolved_DoesNotRunAfterFailedSolve()
+        public void OptProjectProduction_OnSolved_DoesNotRunAfterFailedSolve()
         {
             if (!CplexAvailable) return;
             int calls = 0;
@@ -318,10 +355,15 @@ namespace OptimFoundation.Cplex.Tests.Integration
                     e.CreateLessEqual(0.0, "UB");
                 });
 
-            using var project = new OptProject("on-solved-failure", retentionDays: 0)
-                .LoadConfig(new ProjectConfig { EnableSolverLog = false });
+            using var project = new OptProject("on-solved-failure", retentionDays: 0);
 
-            Assert.False(project.Solve(model, new CplexConfig(), onSolved: _ => calls++));
+            project.Production()
+                .AddProjectConfig(new ProjectConfig { EnableSolverLog = false })
+                .AddModel(model)
+                .AddSolverConfig("production", new CplexConfig())
+                .OnSolved(_ => calls++)
+                .Run();
+            Assert.False(project.IsSuccess);
             Assert.Equal(SolveStatus.Infeasible, project.Engine.Status);
             Assert.Equal(0, calls);
             // 失敗也照記一筆 Trial
@@ -334,10 +376,14 @@ namespace OptimFoundation.Cplex.Tests.Integration
         {
             if (!CplexAvailable) return;
             string tag = "empty-execute-" + Guid.NewGuid().ToString("N");
-            using var project = new OptProject(tag, retentionDays: 0)
-                .LoadConfig(new ProjectConfig { EnableSolverLog = false });
+            using var project = new OptProject(tag, retentionDays: 0);
 
-            Assert.True(project.Solve(new OptModel(tag), new CplexConfig()));
+            project.Production()
+                .AddProjectConfig(new ProjectConfig { EnableSolverLog = false })
+                .AddModel(new OptModel(tag))
+                .AddSolverConfig("production", new CplexConfig())
+                .Run();
+            Assert.True(project.IsSuccess);
             Assert.Equal(SolveStatus.Optimal, project.Engine.Status);
             Assert.Contains("[模型為空]", ReadLatestLog(tag));
         }

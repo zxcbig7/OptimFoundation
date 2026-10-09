@@ -141,9 +141,9 @@ namespace OptimFoundation.Cplex.Tests.Integration
                 Experiment result = Project(name).Experiment("exp", "2 x 3")
                     .AddModel(BuildModel("Model1"))
                     .AddModel(BuildModel("Model2"))
-                    .AddConfig("baseline", baseline)
-                    .AddConfig("emphasis", emphasis)
-                    .AddConfig("threads", threads)
+                    .AddSolverConfig("baseline", baseline)
+                    .AddSolverConfig("emphasis", emphasis)
+                    .AddSolverConfig("threads", threads)
                     .Run();
 
                 Assert.Equal(6, result.Trials.Count);
@@ -207,7 +207,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             var config = new CplexConfig { TimeLimit = 30 };
             var experiment = Project("collision").Experiment("exp", "duplicate final label")
                 .AddModel(model)
-                .AddConfig("baseline", config)
+                .AddSolverConfig("baseline", config)
                 .AddTrial(model, "baseline", config);
 
             InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => experiment.Run());
@@ -218,10 +218,10 @@ namespace OptimFoundation.Cplex.Tests.Integration
         public void OptExperiment_DuplicateAddConfigLabel_Throws()
         {
             var experiment = Project("duplicate-config").Experiment("exp", "duplicate config label")
-                .AddConfig("baseline", new CplexConfig());
+                .AddSolverConfig("baseline", new CplexConfig());
 
             ArgumentException error = Assert.Throws<ArgumentException>(
-                () => experiment.AddConfig("baseline", new CplexConfig()));
+                () => experiment.AddSolverConfig("baseline", new CplexConfig()));
             Assert.Contains("baseline", error.Message);
         }
 
@@ -254,9 +254,9 @@ namespace OptimFoundation.Cplex.Tests.Integration
             try
             {
                 Project(projectName).Experiment("tuning-r1", "單一模型命名")
-                    .LoadConfig(new ProjectConfig { EnableSolverLog = false, ExportLP = true })
+                    .AddProjectConfig(new ProjectConfig { EnableSolverLog = false, ExportLP = true })
                     .AddModel(TrivialModel("Canonical"))
-                    .AddConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
+                    .AddSolverConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
                     .Run();
 
                 Assert.Single(ExportedModelFiles($"{projectName}-r1-baseline_LP_*.lp"));
@@ -281,10 +281,10 @@ namespace OptimFoundation.Cplex.Tests.Integration
             try
             {
                 Project(projectName).Experiment("tuning-r1", "多模型命名")
-                    .LoadConfig(new ProjectConfig { EnableSolverLog = false, ExportLP = true })
+                    .AddProjectConfig(new ProjectConfig { EnableSolverLog = false, ExportLP = true })
                     .AddModel(TrivialModel("ModelA"))
                     .AddModel(TrivialModel("ModelB"))
-                    .AddConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
+                    .AddSolverConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
                     .Run();
 
                 Assert.Single(ExportedModelFiles($"{projectName}-ModelA-r1-baseline_LP_*.lp"));
@@ -312,7 +312,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
 
                 Experiment result = experiment
                     .AddModel(TrivialModel("Canonical"))
-                    .AddConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
+                    .AddSolverConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
                     .Run();
 
                 Assert.Equal(projectName, result.Project);
@@ -345,7 +345,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
                 OptProject project = Project(projectName);
                 Experiment RunOnce() => project.Experiment("tuning-r1", "重跑")
                     .AddModel(TrivialModel("Canonical"))
-                    .AddConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
+                    .AddSolverConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
                     .Run();
 
                 string fullName = projectName + "-tuning-r1";
@@ -376,7 +376,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             {
                 Project(projectName).Experiment("tuning-r1", "log 命名")
                     .AddModel(TrivialModel("Canonical"))
-                    .AddConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
+                    .AddSolverConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
                     .Run();
 
                 Assert.NotEmpty(Directory.GetFiles(FolderDir.Log.GetPath(), $"{expName}_exp_*.txt"));
@@ -399,14 +399,14 @@ namespace OptimFoundation.Cplex.Tests.Integration
                 OptProject project = Project(projectName);
                 project.Experiment("traj-on", "軌跡開")
                     .AddModel(TrivialModel("Canonical"))
-                    .AddConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
-                    .AddConfig("r1-same-config", new CplexConfig { TimeLimit = 30 })
-                    .AddConfig("r1-symmetry0", new CplexConfig { TimeLimit = 30, Symmetry = 0 })
+                    .AddSolverConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
+                    .AddSolverConfig("r1-same-config", new CplexConfig { TimeLimit = 30 })
+                    .AddSolverConfig("r1-symmetry0", new CplexConfig { TimeLimit = 30, Symmetry = 0 })
                     .Run();
                 project.Experiment("traj-off", "軌跡關")
                     .CaptureTrajectory(false)
                     .AddModel(TrivialModel("Canonical"))
-                    .AddConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
+                    .AddSolverConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
                     .Run();
 
                 // 兩個實驗各一組檔
@@ -490,7 +490,7 @@ namespace OptimFoundation.Cplex.Tests.Integration
             {
                 Project(projectName).Experiment("structure", "模型結構")
                     .AddModel(model)
-                    .AddConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
+                    .AddSolverConfig("r1-baseline", new CplexConfig { TimeLimit = 30 })
                     .Run();
 
                 List<string[]> rows = ReadExperimentCsv(projectName + "-structure", "trial");

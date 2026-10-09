@@ -46,18 +46,18 @@ namespace FJSP_BASIC_BRICK
 
             // ── 2. 正式模型：全部使用必須滿足的限制式 ─────────
             var model = new OptModel("Canonical")
-                .AddVariables(engine => engine.BuildVars<VariableB_Assign>(data.set_Lot, data.set_Operation, data.set_Eqp))
-                .AddVariables(engine => engine.BuildVars<VariableB_Precede>(data.set_Lot, data.set_Operation, data.set_Lot, data.set_Operation))
-                .AddVariables(engine => engine.BuildVars<VariableC_Start>(data.set_Lot, data.set_Operation))
-                .AddVariables(engine => engine.BuildVars<VariableC_Complete>(data.set_Lot, data.set_Operation))
-                .AddVariables(engine => engine.BuildVars<VariableC_Makespan>())
-                .AddObjective(engine => new ObjectiveFunction().Build(engine))
-                .AddConstraints(engine => new Constraint_AssignOneEqp(data.set_Lot, data.set_Operation, data.set_Eqp, exactlyOne).Build(engine))
-                .AddConstraints(engine => new Constraint_CompleteDef(data.set_Lot, data.set_Operation, data.set_Eqp, data.parameter_ProcessTime).Build(engine))
-                .AddConstraints(engine => new Constraint_RoutePrecedence(data.set_Lot, data.set_Operation).Build(engine))
-                .AddConstraints(engine => new Constraint_NoOverlap(data.set_Lot, data.set_Operation, data.set_Eqp, bigM, noOverlapForwardOffset, noOverlapBackwardOffset).Build(engine))
-                .AddConstraints(engine => new Constraint_MakespanDef(data.set_Lot, data.set_Operation).Build(engine))
-                .AddConstraints(engine => new Constraint_MakespanWindow(makespanFloor, makespanDeadline).Build(engine));
+                .AddVariables<VariableB_Assign>(data.set_Lot, data.set_Operation, data.set_Eqp)
+                .AddVariables<VariableB_Precede>(data.set_Lot, data.set_Operation, data.set_Lot, data.set_Operation)
+                .AddVariables<VariableC_Start>(data.set_Lot, data.set_Operation)
+                .AddVariables<VariableC_Complete>(data.set_Lot, data.set_Operation)
+                .AddVariables<VariableC_Makespan>()
+                .AddObjective<ObjectiveFunction>()
+                .AddConstraints<Constraint_AssignOneEqp>(data.set_Lot, data.set_Operation, data.set_Eqp, exactlyOne)
+                .AddConstraints<Constraint_CompleteDef>(data.set_Lot, data.set_Operation, data.set_Eqp, data.parameter_ProcessTime)
+                .AddConstraints<Constraint_RoutePrecedence>(data.set_Lot, data.set_Operation)
+                .AddConstraints<Constraint_NoOverlap>(data.set_Lot, data.set_Operation, data.set_Eqp, bigM, noOverlapForwardOffset, noOverlapBackwardOffset)
+                .AddConstraints<Constraint_MakespanDef>(data.set_Lot, data.set_Operation)
+                .AddConstraints<Constraint_MakespanWindow>(makespanFloor, makespanDeadline);
 
             // ── 3. 環境 ────────────────────────────────────────────
             // 模式 2：exp，比較 solver 設定，並求解兩個 Phase 3 示範模型：允許超時但加罰分，以及刻意造成無可行解。
@@ -65,35 +65,35 @@ namespace FJSP_BASIC_BRICK
             {
                 // 實驗模型加入軟性完工目標；獨立組裝以保持正式模型不變。
                 var softModel = new OptModel("Canonical-SoftMakespanDemo")
-                    .AddVariables(engine => engine.BuildVars<VariableB_Assign>(data.set_Lot, data.set_Operation, data.set_Eqp))
-                    .AddVariables(engine => engine.BuildVars<VariableB_Precede>(data.set_Lot, data.set_Operation, data.set_Lot, data.set_Operation))
-                    .AddVariables(engine => engine.BuildVars<VariableC_Start>(data.set_Lot, data.set_Operation))
-                    .AddVariables(engine => engine.BuildVars<VariableC_Complete>(data.set_Lot, data.set_Operation))
-                    .AddVariables(engine => engine.BuildVars<VariableC_Makespan>())
-                    .AddObjective(engine => new ObjectiveFunction().Build(engine))
-                    .AddConstraints(engine => new Constraint_AssignOneEqp(data.set_Lot, data.set_Operation, data.set_Eqp, exactlyOne).Build(engine))
-                    .AddConstraints(engine => new Constraint_CompleteDef(data.set_Lot, data.set_Operation, data.set_Eqp, data.parameter_ProcessTime).Build(engine))
-                    .AddConstraints(engine => new Constraint_RoutePrecedence(data.set_Lot, data.set_Operation).Build(engine))
-                    .AddConstraints(engine => new Constraint_NoOverlap(data.set_Lot, data.set_Operation, data.set_Eqp, bigM, noOverlapForwardOffset, noOverlapBackwardOffset).Build(engine))
-                    .AddConstraints(engine => new Constraint_MakespanDef(data.set_Lot, data.set_Operation).Build(engine))
-                    .AddConstraints(engine => new Constraint_MakespanWindow(makespanFloor, makespanDeadline).Build(engine))
-                    .AddConstraints(engine => new Constraint_MakespanTargetSoft(softMakespanTarget, makespanPenalty).Build(engine));
+                    .AddVariables<VariableB_Assign>(data.set_Lot, data.set_Operation, data.set_Eqp)
+                    .AddVariables<VariableB_Precede>(data.set_Lot, data.set_Operation, data.set_Lot, data.set_Operation)
+                    .AddVariables<VariableC_Start>(data.set_Lot, data.set_Operation)
+                    .AddVariables<VariableC_Complete>(data.set_Lot, data.set_Operation)
+                    .AddVariables<VariableC_Makespan>()
+                    .AddObjective<ObjectiveFunction>()
+                    .AddConstraints<Constraint_AssignOneEqp>(data.set_Lot, data.set_Operation, data.set_Eqp, exactlyOne)
+                    .AddConstraints<Constraint_CompleteDef>(data.set_Lot, data.set_Operation, data.set_Eqp, data.parameter_ProcessTime)
+                    .AddConstraints<Constraint_RoutePrecedence>(data.set_Lot, data.set_Operation)
+                    .AddConstraints<Constraint_NoOverlap>(data.set_Lot, data.set_Operation, data.set_Eqp, bigM, noOverlapForwardOffset, noOverlapBackwardOffset)
+                    .AddConstraints<Constraint_MakespanDef>(data.set_Lot, data.set_Operation)
+                    .AddConstraints<Constraint_MakespanWindow>(makespanFloor, makespanDeadline)
+                    .AddConstraints<Constraint_MakespanTargetSoft>(softMakespanTarget, makespanPenalty);
 
                 // 加入不可達上限，示範無解時的 IIS 分析。
                 var infeasibleModel = new OptModel("Canonical-InfeasibleCapDemo")
-                    .AddVariables(engine => engine.BuildVars<VariableB_Assign>(data.set_Lot, data.set_Operation, data.set_Eqp))
-                    .AddVariables(engine => engine.BuildVars<VariableB_Precede>(data.set_Lot, data.set_Operation, data.set_Lot, data.set_Operation))
-                    .AddVariables(engine => engine.BuildVars<VariableC_Start>(data.set_Lot, data.set_Operation))
-                    .AddVariables(engine => engine.BuildVars<VariableC_Complete>(data.set_Lot, data.set_Operation))
-                    .AddVariables(engine => engine.BuildVars<VariableC_Makespan>())
-                    .AddObjective(engine => new ObjectiveFunction().Build(engine))
-                    .AddConstraints(engine => new Constraint_AssignOneEqp(data.set_Lot, data.set_Operation, data.set_Eqp, exactlyOne).Build(engine))
-                    .AddConstraints(engine => new Constraint_CompleteDef(data.set_Lot, data.set_Operation, data.set_Eqp, data.parameter_ProcessTime).Build(engine))
-                    .AddConstraints(engine => new Constraint_RoutePrecedence(data.set_Lot, data.set_Operation).Build(engine))
-                    .AddConstraints(engine => new Constraint_NoOverlap(data.set_Lot, data.set_Operation, data.set_Eqp, bigM, noOverlapForwardOffset, noOverlapBackwardOffset).Build(engine))
-                    .AddConstraints(engine => new Constraint_MakespanDef(data.set_Lot, data.set_Operation).Build(engine))
-                    .AddConstraints(engine => new Constraint_MakespanWindow(makespanFloor, makespanDeadline).Build(engine))
-                    .AddConstraints(engine => new Constraint_MakespanInfeasibleCap(infeasibleMakespanCap).Build(engine));
+                    .AddVariables<VariableB_Assign>(data.set_Lot, data.set_Operation, data.set_Eqp)
+                    .AddVariables<VariableB_Precede>(data.set_Lot, data.set_Operation, data.set_Lot, data.set_Operation)
+                    .AddVariables<VariableC_Start>(data.set_Lot, data.set_Operation)
+                    .AddVariables<VariableC_Complete>(data.set_Lot, data.set_Operation)
+                    .AddVariables<VariableC_Makespan>()
+                    .AddObjective<ObjectiveFunction>()
+                    .AddConstraints<Constraint_AssignOneEqp>(data.set_Lot, data.set_Operation, data.set_Eqp, exactlyOne)
+                    .AddConstraints<Constraint_CompleteDef>(data.set_Lot, data.set_Operation, data.set_Eqp, data.parameter_ProcessTime)
+                    .AddConstraints<Constraint_RoutePrecedence>(data.set_Lot, data.set_Operation)
+                    .AddConstraints<Constraint_NoOverlap>(data.set_Lot, data.set_Operation, data.set_Eqp, bigM, noOverlapForwardOffset, noOverlapBackwardOffset)
+                    .AddConstraints<Constraint_MakespanDef>(data.set_Lot, data.set_Operation)
+                    .AddConstraints<Constraint_MakespanWindow>(makespanFloor, makespanDeadline)
+                    .AddConstraints<Constraint_MakespanInfeasibleCap>(infeasibleMakespanCap);
 
                 var baseline = productionBaseline.Clone();
                 var feasibility = baseline.Clone();
@@ -107,9 +107,9 @@ namespace FJSP_BASIC_BRICK
                     .AddModel(model)
                     .AddModel(softModel)
                     .AddModel(infeasibleModel)
-                    .AddConfig("r1-balanced", baseline)
-                    .AddConfig("r1-emphasis=feasibility", feasibility)
-                    .AddConfig("r1-emphasis=optimal", optimal)
+                    .AddSolverConfig("r1-balanced", baseline)
+                    .AddSolverConfig("r1-emphasis=feasibility", feasibility)
+                    .AddSolverConfig("r1-emphasis=optimal", optimal)
                     .Run();
 
                 foreach (var trial in result.Trials)
@@ -118,10 +118,13 @@ namespace FJSP_BASIC_BRICK
             }
 
             // 模式 3（預設）：正式求解
-            project.LoadConfig(projectConfig);
-            bool solved = project.Solve(model, productionBaseline,
-                onSolved: engine => FJSP_BASIC_BRICKSolution.ReadAndValidate(engine, data).Print());
-            return solved ? 0 : 1;
+            project.Production()
+                .AddProjectConfig(projectConfig)
+                .AddModel(model)
+                .AddSolverConfig("production", productionBaseline)
+                .OnSolved(engine => FJSP_BASIC_BRICKSolution.ReadAndValidate(engine, data).Print())
+                .Run();
+            return project.IsSuccess ? 0 : 1;
         }
     }
 }

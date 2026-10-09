@@ -70,7 +70,7 @@ namespace OptimFoundation.Cplex
         /// </summary>
         public MIPStartEffort MipStartEffort { get; set; } = MIPStartEffort.Auto;
 
-        #region 跑一次 OptModel（OptProject.Solve 與 OptExperiment 共用的唯一執行路徑）
+        #region 跑一次 OptModel（OptProject.Production 與 OptExperiment 共用的唯一執行路徑）
         // 耗時統一用 CPLEX 時鐘（Cplex.GetCplexTime，單位秒）。
         private double _runStartCplexTime;
         private double _modelApplySeconds;
@@ -83,11 +83,11 @@ namespace OptimFoundation.Cplex
 
         /// <summary>
         /// 依序初始化引擎、套用模型、執行 beforeSolve、求解，最後回傳含模型名稱的 <see cref="Trial"/> 紀錄。
-        /// 呼叫端負責複製設定、建立與釋放引擎；正式求解會保留引擎供取解，實驗則在記錄結果後釋放。
+        /// 呼叫端負責複製設定、建立與釋放引擎；正式環境會保留引擎供取解，實驗則在記錄結果後釋放。
         /// </summary>
         /// <param name="model">要套用的模型定義。</param>
-        /// <param name="label">Trial 標籤（正式求解為 "solve"，實驗為設定名）。</param>
-        /// <param name="captureTrajectory">是否開收斂軌跡；callback 會改變搜尋路徑，正式求解不開。</param>
+        /// <param name="label">Trial 標籤（AddSolverConfig / AddTrial 給的設定名）。</param>
+        /// <param name="captureTrajectory">是否開收斂軌跡；callback 會改變搜尋路徑，正式環境不開。</param>
         /// <param name="beforeSolve">模型建好後、Solve 前要執行的動作；可為 null。</param>
         /// <param name="solved">Solve 是否回報可用解（Optimal 或 Feasible）。</param>
         internal Trial RunModel(OptModel model, string label, bool captureTrajectory,
